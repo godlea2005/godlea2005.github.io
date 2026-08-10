@@ -30,7 +30,7 @@
 - React 18 + Vite + TypeScript。
 - 无重型 UI 库；以原生 CSS 变量、Grid、`clamp()` 与可访问的语义化元素实现。
 - `src/content/site.ts` 为唯一的静态内容适配层；未来可替换为 REST/GraphQL/CMS 查询，而页面组件保持不变。
-- `src/lib/theme.ts` 处理主题持久化；默认遵循系统主题，用户切换后写入 `localStorage`。
+- `src/lib/theme.ts` 处理主题持久化；首次访问默认深色，用户切换后写入 `localStorage`。
 - `.env.example` 明确预留 `VITE_API_BASE_URL`、`VITE_CONTACT_ENDPOINT` 和 `VITE_ANALYTICS_ID`，不提交任何密钥。
 
 ## 交互与状态
@@ -50,4 +50,3 @@
 
 - 登录、后台管理、真实数据库、真实表单投递、文章详情页和多语言。
 - 这些不阻碍未来上线：内容模型、环境变量和 URL 层已为它们留出稳定边界。
-
