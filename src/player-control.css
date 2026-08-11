@@ -1,0 +1,45 @@
+.control-row > div {
+  align-items: center;
+  justify-content: center;
+}
+
+.control-row .primary-play {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
+}
+
+.play-icon {
+  width: 0;
+  height: 0;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-left: 14px solid #111;
+  transform: translateX(2px);
+}
+
+.pause-icon {
+  position: relative;
+  width: 14px;
+  height: 18px;
+}
+
+.pause-icon::before,
+.pause-icon::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 18px;
+  border-radius: 1px;
+  background: #111;
+}
+
+.pause-icon::before {
+  left: 1px;
+}
+
+.pause-icon::after {
+  right: 1px;
+}

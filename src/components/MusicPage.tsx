@@ -1,51 +1,64 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import '../music.css'
+import '../lyrics.css'
+import '../player-control.css'
+import { parseLrc, type ParsedLyric } from '../lib/lrc'
 
-const tracks = [
-  { title: '夜航信号', artist: 'Wenhao Studio', duration: '3:42', hue: '246' },
-  { title: '雨后的工作台', artist: 'Ambient Notes', duration: '4:18', hue: '188' },
-  { title: '像素与月光', artist: 'Digital Sketches', duration: '2:56', hue: '322' },
-  { title: '凌晨四点的界面', artist: 'Quiet Systems', duration: '3:28', hue: '35' },
+type Track = { title: string; artist: string; src: string; lrcSrc: string; hue: string }
+
+const tracks: Track[] = [
+  { title: '红色高跟鞋', artist: '蔡健雅', src: '/music/red-heels.mp3', lrcSrc: '/music/red-heels.lrc', hue: '350' },
+  { title: '说了再见', artist: '阿杰', src: '/music/said-goodbye.mp3', lrcSrc: '/music/said-goodbye.lrc', hue: '218' },
 ]
 
-const lyrics = ['夜色在屏幕边缘缓慢经过', '一束信号穿过安静的城市', '把没有说完的想法留在这里', '等待下一次播放']
+const formatTime = (seconds: number) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}` : '0:00'
 
 export function MusicPage() {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const lyricRef = useRef<HTMLDivElement>(null)
   const [trackIndex, setTrackIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(18)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(60)
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [lyricsOpen, setLyricsOpen] = useState(true)
-  const [mode, setMode] = useState<'列表循环' | '单曲循环' | '随机播放'>('列表循环')
+  const [singleLoop, setSingleLoop] = useState(false)
+  const [error, setError] = useState('')
+  const [lyrics, setLyrics] = useState<ParsedLyric[]>([])
   const track = tracks[trackIndex]
+  const activeLyric = lyrics.reduce((active, line, index) => currentTime >= line.time ? index : active, -1)
 
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume / 100 }, [volume])
   useEffect(() => {
-    if (!playing) return
-    const timer = window.setInterval(() => setProgress((value) => value >= 100 ? 0 : value + 0.35), 250)
-    return () => window.clearInterval(timer)
-  }, [playing])
+    let current = true
+    setLyrics([])
+    void fetch(track.lrcSrc).then(response => response.ok ? response.text() : '').then(source => {
+      if (current) setLyrics(parseLrc(source))
+    }).catch(() => { if (current) setLyrics([]) })
+    return () => { current = false }
+  }, [track.lrcSrc])
+  useEffect(() => { lyricRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [activeLyric])
 
-  const changeTrack = (offset: number) => {
-    setTrackIndex((value) => (value + offset + tracks.length) % tracks.length)
-    setProgress(0)
-    setPlaying(true)
+  const togglePlay = async () => {
+    const audio = audioRef.current
+    if (!audio) return
+    setError('')
+    try { if (audio.paused) await audio.play(); else audio.pause() } catch { setError('请再次点击播放。') }
   }
+  const selectTrack = (index: number) => {
+    setTrackIndex(index); setCurrentTime(0); setDuration(0); setPlaylistOpen(false); setError('')
+    window.setTimeout(() => { void audioRef.current?.play().catch(() => setPlaying(false)) }, 0)
+  }
+  const changeTrack = (offset: number) => selectTrack((trackIndex + offset + tracks.length) % tracks.length)
 
-  const cycleMode = () => setMode((value) => value === '列表循环' ? '单曲循环' : value === '单曲循环' ? '随机播放' : '列表循环')
-
-  return (
-    <main className="immersive-music" style={{ '--track-hue': track.hue } as React.CSSProperties}>
-      <div className="music-atmosphere" aria-hidden="true"><div className="music-orb" /><div className="music-rings"><i/><i/><i/><i/></div><div className={playing ? 'spectrum active' : 'spectrum'}>{Array.from({ length: 56 }, (_, index) => <i key={index} style={{ '--bar': `${20 + ((index * 17) % 72)}%`, '--delay': `${(index % 9) * -0.08}s` } as React.CSSProperties} />)}</div></div>
-      <div className="music-page-top"><a href="#top">← 返回主页</a><div><span>WENHAO / MUSIC</span><b>沉浸式可视化</b></div><button onClick={() => setPlaylistOpen(!playlistOpen)}>☷ 歌单</button></div>
-      <section className="track-identity" aria-label="当前曲目"><p>NOW PLAYING / {String(trackIndex + 1).padStart(2, '0')}</p><h1>{track.title}</h1><span>{track.artist}</span></section>
-      {lyricsOpen && <section className="floating-lyrics" aria-label="歌词">{lyrics.map((line, index) => <p className={Math.floor(progress / 25) === index ? 'active' : ''} key={line}>{line}</p>)}</section>}
-      <section className="music-control-deck" aria-label="音乐播放器">
-        <div className="progress-row"><span>{Math.floor(progress * 2.22 / 60)}:{String(Math.floor(progress * 2.22 % 60)).padStart(2, '0')}</span><input aria-label="进度" type="range" min="0" max="100" step="0.1" value={progress} onChange={(event) => setProgress(Number(event.target.value))}/><span>{track.duration}</span></div>
-        <div className="control-row"><button onClick={cycleMode} title={mode}>↻ <span>{mode}</span></button><div><button onClick={() => changeTrack(-1)} aria-label="上一首">‹‹</button><button className="primary-play" onClick={() => setPlaying(!playing)} aria-label={playing ? '暂停' : '播放'}>{playing ? 'Ⅱ' : '▶'}</button><button onClick={() => changeTrack(1)} aria-label="下一首">››</button></div><label>VOL <input aria-label="音量" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))}/><span>{volume}</span></label></div>
-        <div className="secondary-row"><button onClick={() => setLyricsOpen(!lyricsOpen)}>{lyricsOpen ? '隐藏歌词' : '显示歌词'}</button><span>授权音源接入前为交互演示</span></div>
-      </section>
-      <aside className={playlistOpen ? 'music-playlist open' : 'music-playlist'} aria-label="歌单切换"><header><div><small>PLAYLIST</small><h2>歌单切换</h2></div><b>{String(tracks.length).padStart(2, '0')}</b><button onClick={() => setPlaylistOpen(false)}>×</button></header>{tracks.map((item, index) => <button className={index === trackIndex ? 'selected' : ''} onClick={() => { setTrackIndex(index); setProgress(0); setPlaying(true); setPlaylistOpen(false) }} key={item.title}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{item.title}</b><small>{item.artist}</small></div><em>{item.duration}</em></button>)}</aside>
-    </main>
-  )
+  return <main className="immersive-music" style={{ '--track-hue': track.hue } as CSSProperties}>
+    <audio ref={audioRef} src={track.src} preload="metadata" onLoadedMetadata={e => setDuration(e.currentTarget.duration)} onTimeUpdate={e => setCurrentTime(e.currentTarget.currentTime)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { if (singleLoop && audioRef.current) { audioRef.current.currentTime = 0; void audioRef.current.play() } else changeTrack(1) }} onError={() => setError('音频文件加载失败。')} />
+    <div className="music-atmosphere" aria-hidden="true"><div className="music-orb"/><div className="music-rings"><i/><i/><i/><i/></div><div className={playing ? 'spectrum active' : 'spectrum'}/></div>
+    <div className="music-page-top"><a href="#top">← 返回主页</a><div><span>WENHAO / MUSIC</span><b>沉浸式可视化</b></div><button onClick={() => setPlaylistOpen(true)}>☷ 歌单</button></div>
+    <section className="track-identity" aria-label="当前曲目"><p>NOW PLAYING / {String(trackIndex + 1).padStart(2, '0')}</p><h1>{track.title}</h1><span>{track.artist}</span></section>
+    {lyricsOpen && <section className="floating-lyrics real-lyrics" aria-label="歌词" ref={lyricRef}>{lyrics.length ? lyrics.map((line, index) => <p data-active={index === activeLyric} className={index === activeLyric ? 'active' : ''} key={`${line.time}-${line.text}`}>{line.text}</p>) : <div className="lyrics-unavailable"><p className="active">歌词待授权导入</p><small>替换对应 LRC 后自动按时间轴滚动</small></div>}</section>}
+    <section className="music-control-deck" aria-label="音乐播放器"><div className="progress-row"><span>{formatTime(currentTime)}</span><input aria-label="进度" type="range" min="0" max={duration || 0} step="0.1" value={currentTime} onChange={e => { const value = Number(e.target.value); if (audioRef.current) audioRef.current.currentTime = value; setCurrentTime(value) }}/><span>{formatTime(duration)}</span></div><div className="control-row"><button onClick={() => setSingleLoop(!singleLoop)}>↻ <span>{singleLoop ? '单曲循环' : '列表循环'}</span></button><div><button onClick={() => changeTrack(-1)} aria-label="上一首">‹‹</button><button className="primary-play" onClick={togglePlay} aria-label={playing ? '暂停' : '播放'}><span className={playing ? 'pause-icon' : 'play-icon'} aria-hidden="true" /></button><button onClick={() => changeTrack(1)} aria-label="下一首">››</button></div><label>VOL <input aria-label="音量" type="range" min="0" max="100" value={volume} onChange={e => setVolume(Number(e.target.value))}/><span>{volume}</span></label></div><div className="secondary-row"><button onClick={() => setLyricsOpen(!lyricsOpen)}>{lyricsOpen ? '隐藏歌词' : '显示歌词'}</button><span>{error || 'LOCAL AUDIO / READY'}</span></div></section>
+    <aside className={playlistOpen ? 'music-playlist open' : 'music-playlist'} aria-label="歌单切换"><header><div><small>PLAYLIST</small><h2>歌单切换</h2></div><b>{String(tracks.length).padStart(2, '0')}</b><button onClick={() => setPlaylistOpen(false)}>×</button></header>{tracks.map((item, index) => <button className={index === trackIndex ? 'selected' : ''} onClick={() => selectTrack(index)} key={item.title}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{item.title}</b><small>{item.artist}</small></div><em>{index === trackIndex && playing ? 'PLAYING' : 'LOCAL'}</em></button>)}</aside>
+  </main>
 }
