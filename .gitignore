@@ -4,5 +4,6 @@ dist/
 .env.local
 .playwright-cli/
 .superpowers/
+.worktrees/
 vite-preview.log
 vite-preview-error.log
