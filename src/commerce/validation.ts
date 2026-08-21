@@ -130,7 +130,8 @@ export const validateProjectInput = (input: CommerceProjectInput): ValidationRes
     return { ok: false, errors: ['项目输入无效'] }
   }
 
-  if (typeof input.name !== 'string' || input.name.trim().length < 1 || input.name.trim().length > MAX_NAME_LENGTH) {
+  const normalizedName = typeof input.name === 'string' ? input.name.replace(/\s/g, '') : ''
+  if (normalizedName.length < 1 || normalizedName.length > MAX_NAME_LENGTH) {
     errors.push('商品名称去空格后必须为 1–80 字')
   }
 
