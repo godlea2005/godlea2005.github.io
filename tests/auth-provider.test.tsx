@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 
 const mocks = vi.hoisted(() => {
   const auth = {
@@ -47,8 +48,16 @@ function AdminProbe() {
 function OAuthProbe() {
   const auth = useAuth()
   return <>
-    <p>{auth.user?.id ?? 'no-user'}</p>
+    <p>{`${auth.providers.github ? 'provider-ready' : 'provider-pending'}:${auth.user?.id ?? 'no-user'}`}</p>
     <button type="button" onClick={() => void auth.signIn('github', '#guestbook')}>连接 GitHub</button>
+  </>
+}
+
+function FocusProbe() {
+  const auth = useAuth()
+  return <>
+    <p>{auth.ready ? '认证就绪' : '认证中'}</p>
+    <button type="button" onClick={() => void auth.requireLogin('#ai-commerce')}>开始分析</button>
   </>
 }
 
@@ -102,7 +111,7 @@ describe('site authentication provider', () => {
     const user = userEvent.setup()
     render(<AuthProvider><OAuthProbe /></AuthProvider>)
 
-    await screen.findByText('anonymous-user')
+    await screen.findByText('provider-ready:anonymous-user')
     await user.click(screen.getByRole('button', { name: '连接 GitHub' }))
 
     expect(mocks.auth.linkIdentity).toHaveBeenCalledWith(expect.objectContaining({
@@ -118,7 +127,7 @@ describe('site authentication provider', () => {
     mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession } })
     render(<AuthProvider><OAuthProbe /></AuthProvider>)
 
-    await screen.findByText('member-user')
+    await screen.findByText('provider-ready:member-user')
     await user.click(screen.getByRole('button', { name: '连接 GitHub' }))
 
     expect(mocks.auth.signInWithOAuth).toHaveBeenCalled()
@@ -132,7 +141,7 @@ describe('site authentication provider', () => {
     mocks.auth.exchangeCodeForSession.mockResolvedValue({ data: { session: signedInSession }, error: null })
     render(<AuthProvider><OAuthProbe /></AuthProvider>)
 
-    await screen.findByText('member-user')
+    await screen.findByText('provider-ready:member-user')
     await waitFor(() => expect(window.location.search).toBe(''))
 
     expect(mocks.auth.exchangeCodeForSession).toHaveBeenCalledWith('code-1', { flowId: 'flow-1' })
@@ -159,5 +168,91 @@ describe('site authentication provider', () => {
 
     expect(await screen.findByText('anonymous-user:visitor')).toBeInTheDocument()
     expect(mocks.auth.onAuthStateChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs a normal OAuth error callback once in StrictMode and preserves its return hash', async () => {
+    window.history.replaceState({}, '', '/?auth=site&error_code=access_denied#ignored')
+    window.sessionStorage.setItem('wenhao-site:return-hash', '#guestbook')
+    render(<StrictMode><AuthProvider><OAuthProbe /></AuthProvider></StrictMode>)
+
+    await waitFor(() => expect(window.location.search).toBe(''))
+
+    expect(window.location.hash).toBe('#guestbook')
+  })
+
+  it('runs an identity-already-exists callback retry once in StrictMode', async () => {
+    window.history.replaceState({}, '', '/?auth=site&error_code=identity_already_exists#ignored')
+    window.sessionStorage.setItem('wenhao-site:return-hash', '#guestbook')
+    window.sessionStorage.setItem('wenhao-site:oauth-intent', JSON.stringify({ provider: 'github', mode: 'link' }))
+    let resolveSignIn: ((value: { data: { url: string }; error: null }) => void) | undefined
+    mocks.auth.signInWithOAuth.mockImplementation(() => new Promise((resolve) => { resolveSignIn = resolve }))
+    render(<StrictMode><AuthProvider><OAuthProbe /></AuthProvider></StrictMode>)
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(mocks.auth.signInWithOAuth).toHaveBeenCalledTimes(1)
+
+    expect(window.sessionStorage.getItem('wenhao-site:return-hash')).toBe('#guestbook')
+    resolveSignIn?.({ data: { url: '#oauth' }, error: null })
+  })
+
+  it('uses the current anonymous Supabase session even before React state has a user', async () => {
+    let resolveInitialSession: ((value: { data: { session: typeof anonymousSession } }) => void) | undefined
+    mocks.auth.getSession.mockImplementationOnce(() => new Promise((resolve) => { resolveInitialSession = resolve }))
+    const user = userEvent.setup()
+    render(<AuthProvider><OAuthProbe /></AuthProvider>)
+
+    await screen.findByText('provider-ready:no-user')
+    await user.click(screen.getByRole('button', { name: '连接 GitHub' }))
+
+    expect(mocks.auth.linkIdentity).toHaveBeenCalled()
+    expect(mocks.auth.signInWithOAuth).not.toHaveBeenCalled()
+    resolveInitialSession?.({ data: { session: anonymousSession } })
+  })
+
+  it('traps modal focus and restores the triggering control after closing', async () => {
+    const user = userEvent.setup()
+    render(<AuthProvider><FocusProbe /></AuthProvider>)
+    await screen.findByText('认证就绪')
+    const trigger = screen.getByRole('button', { name: '开始分析' })
+    trigger.focus()
+
+    await user.click(trigger)
+    const dialog = await screen.findByRole('dialog', { name: '登录后继续' })
+    const github = screen.getByRole('button', { name: 'GitHub 登录' })
+    const google = screen.getByRole('button', { name: 'Google 登录' })
+    const close = screen.getByRole('button', { name: '关闭登录' })
+    await waitFor(() => expect(github).toHaveFocus())
+
+    await user.tab()
+    expect(google).toHaveFocus()
+    await user.tab()
+    expect(close).toHaveFocus()
+    await user.tab()
+    expect(github).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(close).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(google).toHaveFocus()
+    await user.keyboard('{Escape}')
+
+    expect(dialog).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it.each([
+    ['an OAuth response error', { data: { url: null }, error: new Error('provider failure') }],
+    ['a missing OAuth authorization URL', { data: { url: null }, error: null }],
+  ])('clears pending OAuth state after %s', async (_label, response) => {
+    mocks.auth.linkIdentity.mockResolvedValue(response)
+    const user = userEvent.setup()
+    render(<AuthProvider><FocusProbe /></AuthProvider>)
+    await screen.findByText('认证就绪')
+    await user.click(screen.getByRole('button', { name: '开始分析' }))
+    await user.click(await screen.findByRole('button', { name: 'GitHub 登录' }))
+
+    await screen.findByRole('status')
+
+    expect(window.sessionStorage.getItem('wenhao-site:oauth-intent')).toBeNull()
+    expect(window.sessionStorage.getItem('wenhao-site:return-hash')).toBeNull()
   })
 })

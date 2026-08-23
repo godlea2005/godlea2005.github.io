@@ -22,6 +22,12 @@ export type AuthContextValue = AuthState & {
 }
 
 type OAuthIntent = { provider: SocialProvider; mode: 'link' | 'sign-in' }
+type OAuthCallbackResult = {
+  handled: boolean
+  navigating: boolean
+  session: Session | null
+  error: string
+}
 
 const initialState: AuthState = {
   configured: supabaseConfigured,
@@ -40,6 +46,7 @@ const returnHashKey = 'wenhao-site:return-hash'
 const oauthParameterNames = ['auth', 'code', 'sb_flow_id', 'error', 'error_code', 'error_description']
 let anonymousSessionPromise: Promise<Session | null> | null = null
 let oauthCallbackPromise: Promise<Session | null> | null = null
+let oauthCallbackInitializationPromise: Promise<OAuthCallbackResult> | null = null
 
 const getRedirectUrl = () => `${window.location.origin}${window.location.pathname}?auth=site`
 const normalizeReturnHash = (value: string | null | undefined) => value?.startsWith('#') ? value : '#ai-commerce'
@@ -55,6 +62,7 @@ const readOAuthIntent = (): OAuthIntent | null => {
 
 const saveOAuthIntent = (intent: OAuthIntent) => window.sessionStorage.setItem(oauthIntentKey, JSON.stringify(intent))
 const clearOAuthIntent = () => window.sessionStorage.removeItem(oauthIntentKey)
+const clearReturnHash = () => window.sessionStorage.removeItem(returnHashKey)
 
 const saveReturnHash = (returnHash?: string) => {
   window.sessionStorage.setItem(returnHashKey, normalizeReturnHash(returnHash))
@@ -62,7 +70,7 @@ const saveReturnHash = (returnHash?: string) => {
 
 const takeReturnHash = () => {
   const returnHash = normalizeReturnHash(window.sessionStorage.getItem(returnHashKey))
-  window.sessionStorage.removeItem(returnHashKey)
+  clearReturnHash()
   return returnHash
 }
 
@@ -84,12 +92,13 @@ const explainOAuthError = (code: string, description: string) => {
 
 async function ensureAnonymousSession() {
   if (!supabase) return null
-  const { data } = await supabase.auth.getSession()
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
   if (data.session) return data.session
   if (!anonymousSessionPromise) {
     anonymousSessionPromise = supabase.auth.signInAnonymously()
-      .then(({ data: result, error }) => {
-        if (error) throw error
+      .then(({ data: result, error: signInError }) => {
+        if (signInError) throw signInError
         return result.session
       })
       .finally(() => { anonymousSessionPromise = null })
@@ -114,6 +123,68 @@ async function resolveOAuthCallback() {
   return oauthCallbackPromise
 }
 
+async function beginOAuth(provider: SocialProvider, mode: OAuthIntent['mode'], returnHash?: string) {
+  if (!supabase) throw new Error('Supabase 尚未配置')
+  saveOAuthIntent({ provider, mode })
+  if (returnHash) saveReturnHash(returnHash)
+  const credentials = {
+    provider: provider as Provider,
+    options: { redirectTo: getRedirectUrl(), skipBrowserRedirect: true },
+  }
+  try {
+    const result = mode === 'link'
+      ? await supabase.auth.linkIdentity(credentials)
+      : await supabase.auth.signInWithOAuth(credentials)
+    if (result.error) throw result.error
+    if (!result.data.url) throw new Error('登录服务没有返回授权地址')
+    window.location.assign(result.data.url)
+  } catch (error) {
+    clearOAuthIntent()
+    clearReturnHash()
+    throw error
+  }
+}
+
+async function initializeOAuthCallback(): Promise<OAuthCallbackResult> {
+  if (!supabase) return { handled: false, navigating: false, session: null, error: '' }
+  const params = new URLSearchParams(window.location.search)
+  const callbackErrorCode = params.get('error_code') ?? params.get('error') ?? ''
+  const callbackErrorDescription = params.get('error_description') ?? ''
+  const code = params.get('code')
+  const isCallback = Boolean(callbackErrorCode || code || params.get('auth') === 'site')
+  if (!isCallback) return { handled: false, navigating: false, session: null, error: '' }
+
+  if (callbackErrorCode) {
+    const intent = readOAuthIntent()
+    if (callbackErrorCode === 'identity_already_exists' && intent?.mode === 'link') {
+      await beginOAuth(intent.provider, 'sign-in')
+      return { handled: true, navigating: true, session: null, error: '' }
+    }
+    clearOAuthIntent()
+    normalizeAuthUrl()
+    return {
+      handled: true,
+      navigating: false,
+      session: await ensureAnonymousSession(),
+      error: explainOAuthError(callbackErrorCode, callbackErrorDescription),
+    }
+  }
+
+  const oauthSession = await resolveOAuthCallback()
+  const session = oauthSession ?? await ensureAnonymousSession()
+  if (oauthSession) clearOAuthIntent()
+  normalizeAuthUrl()
+  return { handled: true, navigating: false, session, error: '' }
+}
+
+function getOAuthCallbackInitialization() {
+  if (!oauthCallbackInitializationPromise) {
+    oauthCallbackInitializationPromise = initializeOAuthCallback()
+      .finally(() => { oauthCallbackInitializationPromise = null })
+  }
+  return oauthCallbackInitializationPromise
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -127,7 +198,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let session = initialSession
     if (session.user.is_anonymous) {
       await new Promise((resolve) => window.setTimeout(resolve, 120))
-      const { data } = await supabase.auth.getSession()
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw error
       session = data.session ?? session
       if (session.user.is_anonymous) {
         setState((value) => ({
@@ -162,66 +234,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const beginOAuth = useCallback(async (provider: SocialProvider, mode: OAuthIntent['mode'], returnHash?: string) => {
-    if (!supabase) throw new Error('Supabase 尚未配置')
-    saveOAuthIntent({ provider, mode })
-    if (returnHash) saveReturnHash(returnHash)
-    const credentials = {
-      provider: provider as Provider,
-      options: { redirectTo: getRedirectUrl(), skipBrowserRedirect: true },
-    }
-    const result = mode === 'link'
-      ? await supabase.auth.linkIdentity(credentials)
-      : await supabase.auth.signInWithOAuth(credentials)
-    if (result.error) {
-      clearOAuthIntent()
-      throw result.error
-    }
-    if (!result.data.url) {
-      clearOAuthIntent()
-      throw new Error('登录服务没有返回授权地址')
-    }
-    window.location.assign(result.data.url)
-  }, [])
-
   useEffect(() => {
     if (!supabase) return
     let active = true
-    const params = new URLSearchParams(window.location.search)
-    const callbackErrorCode = params.get('error_code') ?? params.get('error') ?? ''
-    const callbackErrorDescription = params.get('error_description') ?? ''
-    const intent = readOAuthIntent()
 
     void getSocialProviderStatus()
       .then((providers) => { if (active) setState((value) => ({ ...value, providers })) })
       .catch(() => { /* provider buttons remain safely disabled */ })
 
     void (async () => {
-      if (callbackErrorCode) {
-        if (callbackErrorCode === 'identity_already_exists' && intent?.mode === 'link') {
-          setState((value) => ({ ...value, error: '账号已存在，正在切换为登录…' }))
-          await beginOAuth(intent.provider, 'sign-in')
-          return
-        }
-        clearOAuthIntent()
-        normalizeAuthUrl()
-        const session = await ensureAnonymousSession()
-        if (active) {
-          await applySession(session)
-          setState((value) => ({ ...value, error: explainOAuthError(callbackErrorCode, callbackErrorDescription) }))
-        }
-        return
-      }
-
-      const oauthSession = await resolveOAuthCallback()
-      const session = oauthSession ?? await ensureAnonymousSession()
+      const callback = await getOAuthCallbackInitialization()
+      if (!active || callback.navigating) return
+      const session = callback.handled ? callback.session : await ensureAnonymousSession()
       if (!active) return
       await applySession(session)
-      if (oauthSession) clearOAuthIntent()
-      if (params.has('code') || params.get('auth') === 'site') normalizeAuthUrl()
+      if (callback.error) setState((value) => ({ ...value, error: callback.error }))
     })()
       .catch(async (error: unknown) => {
-        clearOAuthIntent()
+        const params = new URLSearchParams(window.location.search)
         if (params.has('code') || params.get('auth') === 'site') normalizeAuthUrl()
         const session = await ensureAnonymousSession().catch(() => null)
         if (!active) return
@@ -240,15 +270,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }, 0)
     })
     return () => { active = false; listener.subscription.unsubscribe() }
-  }, [applySession, beginOAuth])
+  }, [applySession])
 
   const signIn = useCallback(async (provider: SocialProvider, returnHash?: string) => {
     if (!supabase) throw new Error('Supabase 尚未配置')
     if (!state.providers[provider]) throw new Error(`${provider === 'google' ? 'Google' : 'GitHub'} 登录尚未在 Supabase 保存生效`)
     setState((value) => ({ ...value, error: '' }))
-    if (returnHash) saveReturnHash(returnHash)
-    await beginOAuth(provider, state.user && state.isAnonymous ? 'link' : 'sign-in')
-  }, [beginOAuth, state.isAnonymous, state.providers, state.user])
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw error
+      const session = data.session ?? await ensureAnonymousSession()
+      await beginOAuth(provider, session?.user.is_anonymous ? 'link' : 'sign-in', returnHash)
+    } catch (error) {
+      clearOAuthIntent()
+      clearReturnHash()
+      throw error
+    }
+  }, [state.providers])
 
   const signOut = useCallback(async () => {
     if (!supabase) return
@@ -274,10 +312,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [signIn])
 
+  const closeDialog = useCallback(() => setDialogOpen(false), [])
   const value = useMemo<AuthContextValue>(() => ({ ...state, signIn, signOut, requireLogin }), [requireLogin, signIn, signOut, state])
   return <AuthContext.Provider value={value}>
     {children}
-    <AuthDialog open={dialogOpen} providers={state.providers} error={state.error} onClose={() => setDialogOpen(false)} onSignIn={signInFromDialog} />
+    <AuthDialog open={dialogOpen} ready={state.ready} providers={state.providers} error={state.error} onClose={closeDialog} onSignIn={signInFromDialog} />
   </AuthContext.Provider>
 }
 

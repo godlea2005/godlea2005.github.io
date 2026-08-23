@@ -83,8 +83,8 @@ export function GuestIdentityPanel({ open, value, auth, onClose, onSave, onConne
       {auth.configured && auth.isAnonymous && <div className="identity-oauth">
         <p><span />连接账号后，可跨设备找回留言</p>
         <div>
-          <button type="button" disabled={working || !auth.providers.github} onClick={() => void connect('github')}>GitHub 登录</button>
-          <button type="button" disabled={working || !auth.providers.google} onClick={() => void connect('google')}>{auth.providers.google ? 'Google 登录' : 'Google 未启用'}</button>
+          <button type="button" disabled={working || !auth.ready || !auth.providers.github} onClick={() => void connect('github')}>GitHub 登录</button>
+          <button type="button" disabled={working || !auth.ready || !auth.providers.google} onClick={() => void connect('google')}>{auth.providers.google ? 'Google 登录' : 'Google 未启用'}</button>
         </div>
       </div>}
       {error && <p className="dialog-error">{error}</p>}
