@@ -1,4 +1,36 @@
-# Supabase 留言板部署
+# Supabase 部署
+
+## 可复现 CLI 部署
+
+在仓库根目录安装/使用 Supabase CLI 后，按迁移文件顺序部署：
+
+```powershell
+npx.cmd supabase link --project-ref ujwwwqlpwdplulzslgpi
+npx.cmd supabase db push
+```
+
+`db push` 会应用 `migrations/202608120001_guestbook.sql` 和
+`migrations/202608210001_ai_commerce.sql`。执行前应在目标项目确认备份与
+project ref；本仓库不保存数据库密码、service role key 或 OAuth Secret。
+
+AI 电商迁移会自动完成以下工作：
+
+- 为现有 `auth.users` 回填额度，并为每个用户写至多一条 `signup_grant` 流水；以后新用户由 `auth.users` 触发器初始化。
+- 把现有 `guestbook_admins` 幂等迁移到通用 `site_admins`。
+- 创建私有 `commerce-assets` bucket，限制为 JPEG/PNG/WebP、单文件 8 MiB，并按当前用户 UUID 的第一层目录授权。
+- 为项目、资源、任务、额度和管理员接口启用 RLS 与最小 RPC 权限；匿名身份仍可使用留言板，但不能进入 commerce 数据或生成流程。
+
+如需单独核对或修复站长迁移，可在 SQL Editor 运行同一条幂等 SQL：
+
+```sql
+insert into public.site_admins (user_id)
+select user_id from public.guestbook_admins
+on conflict (user_id) do nothing;
+```
+
+产品图片必须由浏览器上传到 `commerce-assets/<当前用户 UUID>/<项目 UUID>/...`。
+删除项目时，客户端先依据 Storage RLS 删除该项目的全部对象；全部成功后再调用
+`delete_commerce_project(uuid)` 删除数据库行。迁移不会创建公开产品图 bucket，也不会引入额外的删除 Edge Function。
 
 ## 1. 执行数据库迁移
 
