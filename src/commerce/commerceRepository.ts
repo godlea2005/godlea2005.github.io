@@ -228,7 +228,7 @@ const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => 
   return fields.reduce<CommerceProjectDetails>((details, field) => {
     const value = input[field]
     if (typeof value === 'string') {
-      if (/\bblob:|data:image\/[a-z0-9.+-]+;base64,/i.test(value)) {
+      if (/\bblob:|data:[^,]*;base64,/i.test(value)) {
         throw validationError([`${field} 不支持保存图片 URL 或 Base64 数据`])
       }
       details[field] = value
@@ -348,13 +348,13 @@ class SupabaseCommerceRepository implements CommerceRepository {
         .from(assetBucket)
         .upload(storagePath, file, { contentType: file.type, upsert: false })
       if (uploadError) {
-        await this.markAssetFailed(asset.id)
+        const failedStateError = await this.markAssetFailed(asset.id)
         onProgress({
           completedFiles: uploaded.length,
           totalFiles: files.length,
           currentFile: { name: file.name, state: 'failed' },
         })
-        throw mapCommerceError(uploadError)
+        throw failedStateError ?? mapCommerceError(uploadError)
       }
 
       const { error: readyError } = await this.client
@@ -362,13 +362,13 @@ class SupabaseCommerceRepository implements CommerceRepository {
         .update({ state: 'ready' })
         .eq('id', asset.id)
       if (readyError) {
-        await this.markAssetFailed(asset.id)
+        const failedStateError = await this.markAssetFailed(asset.id)
         onProgress({
           completedFiles: uploaded.length,
           totalFiles: files.length,
           currentFile: { name: file.name, state: 'failed' },
         })
-        throw mapCommerceError(readyError)
+        throw failedStateError ?? mapCommerceError(readyError)
       }
 
       const readyAsset = { ...asset, state: 'ready' as const }
@@ -383,11 +383,15 @@ class SupabaseCommerceRepository implements CommerceRepository {
     return uploaded
   }
 
-  private async markAssetFailed(assetId: string): Promise<void> {
+  private async markAssetFailed(assetId: string): Promise<CommerceRepositoryError | null> {
     try {
-      await this.client.from('commerce_project_assets').update({ state: 'failed' }).eq('id', assetId)
-    } catch {
-      // The primary upload error is more useful to the user; a later retry can repair the failed row.
+      const { error } = await this.client
+        .from('commerce_project_assets')
+        .update({ state: 'failed' })
+        .eq('id', assetId)
+      return error ? mapCommerceError(error) : null
+    } catch (error) {
+      return mapCommerceError(error)
     }
   }
 

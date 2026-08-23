@@ -48,6 +48,7 @@ const makeClient = (options: {
   rpcResponses?: Record<string, SupabaseResult<unknown>>
   storageUploadError?: unknown
   storageRemoveError?: unknown
+  assetUpdateError?: unknown
 } = {}) => {
   const assetQuery = query(options.assetResponse ?? {
     data: {
@@ -57,6 +58,8 @@ const makeClient = (options: {
     },
     error: null,
   })
+  const assetUpdateQuery = query({ data: null, error: options.assetUpdateError ?? null })
+  assetQuery.update.mockReturnValue(assetUpdateQuery)
   const projectQuery = query(options.projectResponse ?? { data: [], error: null })
   const generationQuery = query(options.generationResponse ?? { data: null, error: null })
   const storage = {
@@ -74,7 +77,7 @@ const makeClient = (options: {
     functions: { invoke: vi.fn().mockResolvedValue({ data: { generationId: 'generation-1', status: 'queued' }, error: null }) },
     rpc: vi.fn((name: string) => Promise.resolve(options.rpcResponses?.[name] ?? { data: null, error: null })),
   }
-  return { client, assetQuery, projectQuery, generationQuery, storage }
+  return { client, assetQuery, assetUpdateQuery, projectQuery, generationQuery, storage }
 }
 
 describe('commerce repository', () => {
@@ -129,6 +132,17 @@ describe('commerce repository', () => {
 
     expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
     expect(mock.assetQuery.update.mock.invocationCallOrder[0]).toBeGreaterThan(mock.storage.upload.mock.invocationCallOrder[0])
+  })
+
+  it('surfaces a failed-state write error instead of silently leaving an uploading asset behind', async () => {
+    const failedStateError = { message: 'database unavailable' }
+    const mock = makeClient({ storageUploadError: { message: 'bucket unavailable' }, assetUpdateError: failedStateError })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .rejects.toMatchObject({ code: 'NETWORK', cause: failedStateError })
+
+    expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
   })
 
   it('removes every owned storage object before deleting the project record', async () => {
@@ -217,6 +231,17 @@ describe('commerce repository', () => {
     await expect(repository.createProject({
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file],
       notes: 'data:image/png;base64,AAAA',
+    })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
+
+    expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
+  it('rejects Base64 data URLs with media-type parameters before persisting project input', async () => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file],
+      notes: 'data:image/png;charset=utf-8;base64,AAAA',
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
     expect(projectQuery.insert).not.toHaveBeenCalled()
