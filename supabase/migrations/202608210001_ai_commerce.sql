@@ -63,7 +63,7 @@ create table if not exists public.commerce_project_assets (
 
 create table if not exists public.commerce_generations (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.commerce_projects(id) on delete cascade,
+  project_id uuid references public.commerce_projects(id) on delete set null,
   user_id uuid not null references auth.users(id) on delete cascade,
   idempotency_key text not null check (char_length(btrim(idempotency_key)) between 1 and 200),
   status text not null default 'queued' check (status in ('queued','processing','completed','failed','cancelled')),
@@ -78,10 +78,6 @@ create table if not exists public.commerce_generations (
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
-  constraint commerce_generations_project_owner_fkey
-    foreign key (project_id, user_id)
-    references public.commerce_projects(id, user_id)
-    on delete cascade,
   unique (user_id, idempotency_key),
   check ((status = 'completed' and result_data is not null) or status <> 'completed')
 );
@@ -137,6 +133,9 @@ create index if not exists commerce_project_assets_cleanup_idx
   on public.commerce_project_assets(state, expires_at, created_at);
 create index if not exists commerce_generations_user_created_idx
   on public.commerce_generations(user_id, created_at desc);
+create index if not exists commerce_generations_project_idx
+  on public.commerce_generations(project_id)
+  where project_id is not null;
 create index if not exists commerce_generations_status_created_idx
   on public.commerce_generations(status, created_at);
 create index if not exists credit_ledger_user_created_idx
@@ -390,22 +389,6 @@ begin
     + pg_catalog.get_byte(lock_bytes, 7);
   perform pg_catalog.pg_advisory_xact_lock(lock_key_one, lock_key_two);
 
-  select generation.*
-  into existing_generation
-  from public.commerce_generations as generation
-  where generation.user_id = current_user_id
-    and generation.idempotency_key = normalized_key;
-
-  if found then
-    if existing_generation.project_id <> p_project_id then
-      raise exception 'idempotency key already used for another project' using errcode = '23505';
-    end if;
-
-    return query
-    select existing_generation.id, existing_generation.status, false;
-    return;
-  end if;
-
   select entitlement_row.*
   into entitlement
   from public.user_entitlements as entitlement_row
@@ -418,6 +401,22 @@ begin
 
   if entitlement.disabled then
     raise exception 'commerce account disabled' using errcode = '42501';
+  end if;
+
+  select generation.*
+  into existing_generation
+  from public.commerce_generations as generation
+  where generation.user_id = current_user_id
+    and generation.idempotency_key = normalized_key;
+
+  if found then
+    if existing_generation.project_id is distinct from p_project_id then
+      raise exception 'idempotency key already used for another project' using errcode = '23505';
+    end if;
+
+    return query
+    select existing_generation.id, existing_generation.status, false;
+    return;
   end if;
 
   select pg_catalog.count(*)
@@ -626,6 +625,9 @@ set search_path = ''
 as $$
 declare
   current_user_id uuid := auth.uid();
+  lock_bytes bytea;
+  lock_key_one integer;
+  lock_key_two integer;
 begin
   if current_user_id is null or not exists (
     select 1
@@ -634,6 +636,43 @@ begin
       and not coalesce(auth_user.is_anonymous, false)
   ) then
     raise exception 'commerce authentication required' using errcode = '28000';
+  end if;
+
+  if p_project_id is null then
+    raise exception 'project is required' using errcode = '22023';
+  end if;
+
+  -- 与 begin_commerce_generation 使用同一用户锁，防止生成创建与删除交错。
+  lock_bytes := pg_catalog.uuid_send(current_user_id);
+  lock_key_one :=
+    (pg_catalog.get_byte(lock_bytes, 0) & 127) * 16777216
+    + pg_catalog.get_byte(lock_bytes, 1) * 65536
+    + pg_catalog.get_byte(lock_bytes, 2) * 256
+    + pg_catalog.get_byte(lock_bytes, 3);
+  lock_key_two :=
+    (pg_catalog.get_byte(lock_bytes, 4) & 127) * 16777216
+    + pg_catalog.get_byte(lock_bytes, 5) * 65536
+    + pg_catalog.get_byte(lock_bytes, 6) * 256
+    + pg_catalog.get_byte(lock_bytes, 7);
+  perform pg_catalog.pg_advisory_xact_lock(lock_key_one, lock_key_two);
+
+  if not exists (
+    select 1
+    from public.commerce_projects as project
+    where project.id = p_project_id
+      and project.user_id = current_user_id
+  ) then
+    raise exception 'project not found or forbidden' using errcode = 'P0002';
+  end if;
+
+  if exists (
+    select 1
+    from public.commerce_generations as generation
+    where generation.project_id = p_project_id
+      and generation.user_id = current_user_id
+      and generation.status in ('queued', 'processing')
+  ) then
+    raise exception 'project has an active generation' using errcode = '55000';
   end if;
 
   delete from public.commerce_projects
@@ -843,7 +882,7 @@ begin
   select
     generation.id,
     generation.project_id,
-    project.name,
+    coalesce(project.name, '已删除项目'::text),
     generation.user_id,
     auth_user.email::text,
     project.platform,
@@ -858,13 +897,13 @@ begin
     generation.started_at,
     generation.completed_at
   from public.commerce_generations as generation
-  join public.commerce_projects as project on project.id = generation.project_id
+  left join public.commerce_projects as project on project.id = generation.project_id
   join auth.users as auth_user on auth_user.id = generation.user_id
   where normalized_search = ''
      or coalesce(auth_user.email, '') ilike '%' || normalized_search || '%'
      or generation.id::text ilike '%' || normalized_search || '%'
-     or project.name ilike '%' || normalized_search || '%'
-     or project.platform ilike '%' || normalized_search || '%'
+     or coalesce(project.name, '已删除项目') ilike '%' || normalized_search || '%'
+     or coalesce(project.platform, '') ilike '%' || normalized_search || '%'
      or generation.status ilike '%' || normalized_search || '%'
      or coalesce(generation.provider, '') ilike '%' || normalized_search || '%'
      or coalesce(generation.model, '') ilike '%' || normalized_search || '%'
@@ -1069,6 +1108,14 @@ begin
 
   merged_settings := old_settings || p_settings;
 
+  if merged_settings -> 'new_user_credits' is null
+     or merged_settings -> 'default_daily_limit' is null
+     or merged_settings -> 'max_project_images' is null
+     or merged_settings -> 'storage_soft_limit_bytes' is null
+     or merged_settings -> 'storage_target_bytes' is null then
+    raise exception 'all five application settings must exist' using errcode = '22023';
+  end if;
+
   begin
     new_user_credits := (merged_settings ->> 'new_user_credits')::integer;
     default_daily_limit := (merged_settings ->> 'default_daily_limit')::integer;
@@ -1078,6 +1125,14 @@ begin
   exception when others then
     raise exception 'setting values must be integers' using errcode = '22023';
   end;
+
+  if new_user_credits is null
+     or default_daily_limit is null
+     or max_project_images is null
+     or storage_soft_limit_bytes is null
+     or storage_target_bytes is null then
+    raise exception 'all five application settings must be non-null integers' using errcode = '22023';
+  end if;
 
   if new_user_credits not between 1 and 1000000 then
     raise exception 'new_user_credits must be between 1 and 1000000' using errcode = '22023';
@@ -1139,6 +1194,17 @@ revoke all on public.platform_presets from public, anon, authenticated;
 revoke all on public.cleanup_runs from public, anon, authenticated;
 revoke all on public.admin_audit_log from public, anon, authenticated;
 
+revoke all on public.site_admins from service_role;
+revoke all on public.app_settings from service_role;
+revoke all on public.user_entitlements from service_role;
+revoke all on public.credit_ledger from service_role;
+revoke all on public.commerce_projects from service_role;
+revoke all on public.commerce_project_assets from service_role;
+revoke all on public.commerce_generations from service_role;
+revoke all on public.platform_presets from service_role;
+revoke all on public.cleanup_runs from service_role;
+revoke all on public.admin_audit_log from service_role;
+
 grant select on public.user_entitlements to authenticated;
 grant select on public.credit_ledger to authenticated;
 grant select, insert, update on public.commerce_projects to authenticated;
@@ -1146,16 +1212,13 @@ grant select, insert, update, delete on public.commerce_project_assets to authen
 grant select on public.commerce_generations to authenticated;
 grant select on public.platform_presets to authenticated;
 
-grant select on public.site_admins to service_role;
 grant select on public.app_settings to service_role;
-grant select on public.user_entitlements to service_role;
-grant select on public.credit_ledger to service_role;
 grant select on public.commerce_projects to service_role;
-grant select, update on public.commerce_project_assets to service_role;
-grant select, update on public.commerce_generations to service_role;
+grant select on public.commerce_project_assets to service_role;
+grant update (state, deleted_at) on public.commerce_project_assets to service_role;
+grant select on public.commerce_generations to service_role;
 grant select on public.platform_presets to service_role;
-grant select, insert, update on public.cleanup_runs to service_role;
-grant select on public.admin_audit_log to service_role;
+grant insert on public.cleanup_runs to service_role;
 
 drop policy if exists "commerce_entitlements_select_own" on public.user_entitlements;
 create policy "commerce_entitlements_select_own"

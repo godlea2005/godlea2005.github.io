@@ -30,7 +30,9 @@ on conflict (user_id) do nothing;
 
 产品图片必须由浏览器上传到 `commerce-assets/<当前用户 UUID>/<项目 UUID>/...`。
 删除项目时，客户端先依据 Storage RLS 删除该项目的全部对象；全部成功后再调用
-`delete_commerce_project(uuid)` 删除数据库行。迁移不会创建公开产品图 bucket，也不会引入额外的删除 Edge Function。
+`delete_commerce_project(uuid)` 删除数据库行。若项目仍有 `queued` / `processing`
+任务，RPC 会拒绝删除；任务进入终态后可重试。项目删除后任务、结果、计费和幂等
+历史继续保留，仅把任务的 `project_id` 置空。迁移不会创建公开产品图 bucket，也不会引入额外的删除 Edge Function。
 
 ## 1. 执行数据库迁移
 
