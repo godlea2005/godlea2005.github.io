@@ -346,6 +346,8 @@ describe('commerce repository', () => {
   it.each([
     ['CRLF', ('A'.repeat(76) + '\r\n').repeat(4)],
     ['spaces', Array.from({ length: 4 }, () => 'A'.repeat(76)).join(' ')],
+    ['16-character space groups', Array.from({ length: 17 }, () => 'A'.repeat(16)).join(' ')],
+    ['31-character CRLF groups', Array.from({ length: 12 }, () => 'A'.repeat(31)).join('\r\n')],
   ])('rejects long raw Base64 folded with %s before persisting project input', async (_label, notes) => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
 
@@ -359,6 +361,28 @@ describe('commerce repository', () => {
   it('does not mistake ordinary long prose for raw Base64', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
     const notes = 'This is a normal product description with many short words, punctuation, and useful details. '.repeat(12)
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
+    })).resolves.toBeDefined()
+
+    expect(projectQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      input_data: expect.objectContaining({ notes }),
+    }))
+  })
+
+  it.each([
+    ['Chinese prose', '这是一段普通的中文产品说明，包含材质感受、适用场景和用户关注点。'.repeat(30)],
+    ['unpunctuated English prose', (() => {
+      let prose = Array.from(
+        { length: 80 },
+        (_, index) => ['This', 'ordinary', 'product', 'description', 'uses', 'natural', 'words'][index % 7],
+      ).join(' ')
+      while (prose.replace(/[ \t\r\n]/g, '').length % 4 !== 0) prose += ' a'
+      return prose
+    })()],
+  ])('allows ordinary %s even when it is long', async (_label, notes) => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
 
     await expect(repository.createProject({
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,

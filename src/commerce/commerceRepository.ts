@@ -262,12 +262,30 @@ const rowToAdminSettings = (value: unknown): CommerceAdminSettings => {
 const containsLongRawBase64 = (value: string): boolean => {
   if (/[a-z0-9+/]{256,}={0,2}/i.test(value)) return true
 
-  const foldedCandidates = value.match(
-    /(?:[a-z0-9+/]{32,}={0,2}[ \t\r\n]+)+[a-z0-9+/]{32,}={0,2}/gi,
-  ) ?? []
-  return foldedCandidates.some((candidate) =>
-    candidate.replace(/[ \t\r\n]/g, '').length >= 256,
-  )
+  const foldedCandidates = value.match(/[a-z0-9+/=\x09-\x0d\x20]{256,}/gi) ?? []
+  return foldedCandidates.some((candidate) => {
+    const compact = candidate.replace(/[\x09-\x0d\x20]/g, '')
+    if (
+      compact.length < 256
+      || compact.length % 4 !== 0
+      || !/^[a-z0-9+/]+={0,2}$/i.test(compact)
+    ) return false
+
+    const tokens = candidate.trim().split(/[\x09-\x0d\x20]+/).filter(Boolean)
+    const tokenLengths = tokens.length > 2
+      ? tokens.slice(0, -1).map((token) => token.length)
+      : tokens.map((token) => token.length)
+    const averageTokenLength = tokenLengths.reduce((sum, length) => sum + length, 0) / tokenLengths.length
+    const widthCounts = new Map<number, number>()
+    tokenLengths.forEach((length) => widthCounts.set(length, (widthCounts.get(length) ?? 0) + 1))
+    const dominantWidthShare = Math.max(...widthCounts.values()) / tokenLengths.length
+    const looksLikeOrdinaryEnglishProse = tokens.length >= 8
+      && tokens.every((token) => /^[a-z]+$/i.test(token))
+      && averageTokenLength <= 12
+      && dominantWidthShare < 0.75
+
+    return !looksLikeOrdinaryEnglishProse
+  })
 }
 
 const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => {
