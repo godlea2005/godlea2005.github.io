@@ -259,47 +259,60 @@ const rowToAdminSettings = (value: unknown): CommerceAdminSettings => {
   }
 }
 
-const containsLongRawBase64 = (value: string): boolean => {
-  if (/[a-z0-9+/]{256,}={0,2}/i.test(value)) return true
-
-  const foldedCandidates = value.match(/[a-z0-9+/=\x09-\x0d\x20]{256,}/gi) ?? []
-  return foldedCandidates.some((candidate) => {
+const containsUnsafeBase64Payload = (value: string): boolean => {
+  const candidates = value.match(/[a-z0-9+/=\x09-\x0d\x20]{16,}/gi) ?? []
+  const decodedCandidates = candidates.flatMap((candidate) => {
     const compact = candidate.replace(/[\x09-\x0d\x20]/g, '')
     const remainder = compact.length % 4
     const existingPadding = compact.match(/=+$/)?.[0].length ?? 0
     if (
-      compact.length < 256
-      || remainder === 1
+      remainder === 1
       || (existingPadding > 0 && remainder !== 0)
       || !/^[a-z0-9+/]+={0,2}$/i.test(compact)
-    ) return false
+    ) return []
 
-    let decoded = ''
     try {
-      decoded = globalThis.atob(`${compact}${'='.repeat((4 - remainder) % 4)}`)
+      return [{
+        candidate,
+        compact,
+        decoded: globalThis.atob(`${compact}${'='.repeat((4 - remainder) % 4)}`),
+      }]
     } catch {
-      return false
+      return []
     }
+  })
 
+  const hasImageMagic = decodedCandidates.some(({ decoded }) => {
     const byteAt = (index: number) => decoded.charCodeAt(index)
-    const hasImageMagic = (
-      byteAt(0) === 0x89 && decoded.slice(1, 4) === 'PNG'
+    return (
+      byteAt(0) === 0x89
+      && decoded.slice(1, 4) === 'PNG'
+      && byteAt(4) === 0x0d
+      && byteAt(5) === 0x0a
+      && byteAt(6) === 0x1a
+      && byteAt(7) === 0x0a
     ) || (
       byteAt(0) === 0xff && byteAt(1) === 0xd8 && byteAt(2) === 0xff
     ) || (
       decoded.slice(0, 4) === 'RIFF' && decoded.slice(8, 12) === 'WEBP'
     )
-    if (hasImageMagic) return true
+  })
+  if (hasImageMagic) return true
+  if (/[a-z0-9+/]{256,}={0,2}/i.test(value)) return true
 
+  return decodedCandidates.some(({ candidate, compact }) => {
+    if (compact.length < 256) return false
     const tokens = candidate.trim().split(/[\x09-\x0d\x20]+/).filter(Boolean)
     const averageTokenLength = tokens.reduce((sum, token) => sum + token.length, 0) / tokens.length
-    const naturalCaseCount = tokens.filter((token) => /^[a-z]+$|^[A-Z][a-z]+$/.test(token)).length
+    const naturalCaseCount = tokens.filter((token) => /^[a-z]+$|^[A-Z][a-z]+$|^[A-Z]+$/.test(token)).length
     const vowelWordCount = tokens.filter((token) => /[aeiouy]/i.test(token)).length
+    const repeatedCharacterCount = tokens.filter((token) => /^([a-z])\1+$/i.test(token)).length
     const looksLikeOrdinaryEnglishProse = tokens.length >= 8
       && tokens.every((token) => /^[a-z]+$/i.test(token))
       && averageTokenLength <= 16
       && naturalCaseCount / tokens.length >= 0.8
       && vowelWordCount / tokens.length >= 0.6
+      && repeatedCharacterCount / tokens.length < 0.5
 
     return !looksLikeOrdinaryEnglishProse
   })
@@ -314,7 +327,7 @@ const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => 
     const value = input[field]
     if (typeof value === 'string') {
       const containsTransientUrl = /blob:|data:[^,\s]*;base64,/i.test(value)
-      if (containsTransientUrl || containsLongRawBase64(value)) {
+      if (containsTransientUrl || containsUnsafeBase64Payload(value)) {
         throw validationError([`${field} 不支持保存图片 URL 或 Base64 数据`])
       }
       details[field] = value

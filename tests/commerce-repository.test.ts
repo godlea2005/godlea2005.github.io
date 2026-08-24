@@ -321,6 +321,26 @@ describe('commerce repository', () => {
     expect(projectQuery.insert).not.toHaveBeenCalled()
   })
 
+  it.each((() => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    const unpadded = png.replace(/=+$/, '')
+    return [
+      ['continuous padded PNG', png],
+      ['folded unpadded PNG', Array.from(
+        { length: Math.ceil(unpadded.length / 16) },
+        (_, index) => unpadded.slice(index * 16, (index + 1) * 16),
+      ).join('\r\n')],
+    ]
+  })())('rejects a real short %s raw Base64 image', async (_label, notes) => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
+    })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
+
+    expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
   it('rejects Base64 data URLs with media-type parameters before persisting project input', async () => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
 
@@ -394,6 +414,7 @@ describe('commerce repository', () => {
       while (prose.replace(/[ \t\r\n]/g, '').length % 4 !== 0) prose += ' a'
       return prose
     })()],
+    ['uppercase English keywords', 'SOFT WARM WOOL COAT CALM FEEL WORN BODY COZY MILD EACH COLD DAYS TIME '.repeat(8).trim()],
   ])('allows ordinary %s even when it is long', async (_label, notes) => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
 
