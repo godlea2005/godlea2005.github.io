@@ -196,6 +196,18 @@ describe('commerce repository', () => {
     expect(mock.assetQuery.update).toHaveBeenNthCalledWith(2, { state: 'failed' })
   })
 
+  it('marks an asset failed when the ready-state update resolves with an error', async () => {
+    const readyFailure = { message: 'ready update unavailable' }
+    const mock = makeClient({ readyUpdateError: readyFailure })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .rejects.toMatchObject({ code: 'NETWORK', cause: readyFailure })
+
+    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(1, { state: 'ready' })
+    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(2, { state: 'failed' })
+  })
+
   it('removes every owned storage object before deleting the project record', async () => {
     const mock = makeClient({
       assetResponse: { data: [{ storage_path: 'user-1/project-1/a.png' }, { storage_path: 'user-1/project-1/b.webp' }], error: null },
@@ -329,6 +341,32 @@ describe('commerce repository', () => {
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
     expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['CRLF', ('A'.repeat(76) + '\r\n').repeat(4)],
+    ['spaces', Array.from({ length: 4 }, () => 'A'.repeat(76)).join(' ')],
+  ])('rejects long raw Base64 folded with %s before persisting project input', async (_label, notes) => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
+    })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
+
+    expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
+  it('does not mistake ordinary long prose for raw Base64', async () => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
+    const notes = 'This is a normal product description with many short words, punctuation, and useful details. '.repeat(12)
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
+    })).resolves.toBeDefined()
+
+    expect(projectQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      input_data: expect.objectContaining({ notes }),
+    }))
   })
 
   it('uses the actual composite foreign-key hint when embedding project assets', async () => {

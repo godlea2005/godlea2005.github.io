@@ -259,6 +259,17 @@ const rowToAdminSettings = (value: unknown): CommerceAdminSettings => {
   }
 }
 
+const containsLongRawBase64 = (value: string): boolean => {
+  if (/[a-z0-9+/]{256,}={0,2}/i.test(value)) return true
+
+  const foldedCandidates = value.match(
+    /(?:[a-z0-9+/]{32,}={0,2}[ \t\r\n]+)+[a-z0-9+/]{32,}={0,2}/gi,
+  ) ?? []
+  return foldedCandidates.some((candidate) =>
+    candidate.replace(/[ \t\r\n]/g, '').length >= 256,
+  )
+}
+
 const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => {
   const fields: Array<keyof CommerceProjectDetails> = [
     'category', 'specifications', 'priceRange', 'sellingPoints', 'audience', 'brandTone',
@@ -268,8 +279,7 @@ const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => 
     const value = input[field]
     if (typeof value === 'string') {
       const containsTransientUrl = /blob:|data:[^,\s]*;base64,/i.test(value)
-      const containsRawBase64 = /[a-z0-9+/]{256,}={0,2}/i.test(value)
-      if (containsTransientUrl || containsRawBase64) {
+      if (containsTransientUrl || containsLongRawBase64(value)) {
         throw validationError([`${field} 不支持保存图片 URL 或 Base64 数据`])
       }
       details[field] = value
