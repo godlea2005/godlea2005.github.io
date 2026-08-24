@@ -41,14 +41,26 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
   return builder
 }
 
+const rejectedQuery = (error: unknown): QueryBuilder => {
+  const builder = query({ data: null, error: null })
+  builder.then = (_onfulfilled, onrejected) => Promise.reject(error).then(undefined, onrejected)
+  return builder
+}
+
 const makeClient = (options: {
   assetResponse?: SupabaseResult<unknown>
   projectResponse?: SupabaseResult<unknown>
   generationResponse?: SupabaseResult<unknown>
   rpcResponses?: Record<string, SupabaseResult<unknown>>
   storageUploadError?: unknown
+  storageUploadReject?: unknown
   storageRemoveError?: unknown
-  assetUpdateError?: unknown
+  readyUpdateError?: unknown
+  readyUpdateReject?: unknown
+  failedUpdateError?: unknown
+  authUser?: { id: string; is_anonymous?: boolean } | null
+  authError?: unknown
+  functionResponse?: SupabaseResult<unknown>
 } = {}) => {
   const assetQuery = query(options.assetResponse ?? {
     data: {
@@ -58,26 +70,42 @@ const makeClient = (options: {
     },
     error: null,
   })
-  const assetUpdateQuery = query({ data: null, error: options.assetUpdateError ?? null })
-  assetQuery.update.mockReturnValue(assetUpdateQuery)
+  const readyUpdateQuery = options.readyUpdateReject
+    ? rejectedQuery(options.readyUpdateReject)
+    : query({ data: null, error: options.readyUpdateError ?? null })
+  const failedUpdateQuery = query({ data: null, error: options.failedUpdateError ?? null })
+  assetQuery.update.mockImplementation((payload: { state?: string }) =>
+    payload.state === 'failed' ? failedUpdateQuery : readyUpdateQuery,
+  )
   const projectQuery = query(options.projectResponse ?? { data: [], error: null })
   const generationQuery = query(options.generationResponse ?? { data: null, error: null })
+  const storageUpload = vi.fn().mockResolvedValue({ data: { path: 'uploaded' }, error: options.storageUploadError ?? null })
+  if (options.storageUploadReject) storageUpload.mockRejectedValue(options.storageUploadReject)
   const storage = {
-    upload: vi.fn().mockResolvedValue({ data: { path: 'uploaded' }, error: options.storageUploadError ?? null }),
+    upload: storageUpload,
     remove: vi.fn().mockResolvedValue({ data: [], error: options.storageRemoveError ?? null }),
   }
   const client = {
-    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }) },
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: options.authUser === undefined ? { id: 'user-1' } : options.authUser },
+        error: options.authError ?? null,
+      }),
+    },
     from: vi.fn((table: string) => {
       if (table === 'commerce_project_assets') return assetQuery
       if (table === 'commerce_generations') return generationQuery
       return projectQuery
     }),
     storage: { from: vi.fn(() => storage) },
-    functions: { invoke: vi.fn().mockResolvedValue({ data: { generationId: 'generation-1', status: 'queued' }, error: null }) },
+    functions: {
+      invoke: vi.fn().mockResolvedValue(options.functionResponse ?? {
+        data: { generationId: 'generation-1', status: 'queued' }, error: null,
+      }),
+    },
     rpc: vi.fn((name: string) => Promise.resolve(options.rpcResponses?.[name] ?? { data: null, error: null })),
   }
-  return { client, assetQuery, assetUpdateQuery, projectQuery, generationQuery, storage }
+  return { client, assetQuery, readyUpdateQuery, failedUpdateQuery, projectQuery, generationQuery, storage }
 }
 
 describe('commerce repository', () => {
@@ -136,13 +164,36 @@ describe('commerce repository', () => {
 
   it('surfaces a failed-state write error instead of silently leaving an uploading asset behind', async () => {
     const failedStateError = { message: 'database unavailable' }
-    const mock = makeClient({ storageUploadError: { message: 'bucket unavailable' }, assetUpdateError: failedStateError })
+    const mock = makeClient({ storageUploadError: { message: 'bucket unavailable' }, failedUpdateError: failedStateError })
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
       .rejects.toMatchObject({ code: 'NETWORK', cause: failedStateError })
 
     expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
+  })
+
+  it('marks an asset failed when Storage rejects instead of returning an error result', async () => {
+    const storageFailure = new TypeError('Failed to fetch')
+    const mock = makeClient({ storageUploadReject: storageFailure })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .rejects.toMatchObject({ code: 'NETWORK', cause: storageFailure })
+
+    expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
+  })
+
+  it('marks an asset failed when the ready-state update rejects', async () => {
+    const readyFailure = new TypeError('Failed to fetch')
+    const mock = makeClient({ readyUpdateReject: readyFailure })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .rejects.toMatchObject({ code: 'NETWORK', cause: readyFailure })
+
+    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(1, { state: 'ready' })
+    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(2, { state: 'failed' })
   })
 
   it('removes every owned storage object before deleting the project record', async () => {
@@ -188,6 +239,28 @@ describe('commerce repository', () => {
     expect(client.functions.invoke).toHaveBeenCalledWith('analyze-commerce', {
       body: { projectId: 'project-1', idempotencyKey: 'request-1' },
     })
+  })
+
+  it.each([
+    [402, { code: 'INSUFFICIENT_CREDITS', message: 'insufficient credits' }, 'CREDITS_EXHAUSTED'],
+    [410, { code: 'ASSETS_EXPIRED', message: 'assets expired' }, 'ASSETS_EXPIRED'],
+    [429, { code: 'RATE_LIMITED', message: 'too many requests' }, 'RATE_LIMITED'],
+    [401, { code: 'AUTH_REQUIRED', message: 'login required' }, 'AUTH_REQUIRED'],
+    [403, { code: 'FORBIDDEN', message: 'forbidden' }, 'AUTH_REQUIRED'],
+  ])('decodes FunctionsHttpError Response bodies for HTTP %s', async (status, body, expectedCode) => {
+    const error = {
+      name: 'FunctionsHttpError',
+      message: 'Edge Function returned a non-2xx status code',
+      context: new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }
+    const mock = makeClient({ functionResponse: { data: null, error } })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.startGeneration('project-1', 'request-1'))
+      .rejects.toMatchObject({ code: expectedCode, cause: error })
   })
 
   it.each([
@@ -245,6 +318,72 @@ describe('commerce repository', () => {
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
     expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
+  it('rejects long raw Base64 payloads before persisting project input', async () => {
+    const file = new File(['x'], 'a.png', { type: 'image/png' })
+
+    await expect(repository.createProject({
+      name: '保温杯', mode: 'professional', platform: 'ozon', files: [file],
+      notes: 'A'.repeat(512),
+    })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
+
+    expect(projectQuery.insert).not.toHaveBeenCalled()
+  })
+
+  it('uses the actual composite foreign-key hint when embedding project assets', async () => {
+    await repository.listProjects()
+
+    expect(projectQuery.select).toHaveBeenCalledWith(expect.stringContaining(
+      'commerce_project_assets!commerce_project_assets_project_owner_fkey(',
+    ))
+  })
+
+  it('treats a repeated delete RPC P0002 as an idempotent success', async () => {
+    const mock = makeClient({
+      assetResponse: { data: [], error: null },
+      rpcResponses: {
+        delete_commerce_project: { data: null, error: { code: 'P0002', message: 'project not found' } },
+      },
+    })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.deleteProject('project-1')).resolves.toBeUndefined()
+  })
+
+  it('requires a non-anonymous authenticated user before every user and administrator call', async () => {
+    const settings = {
+      newUserCredits: 3, defaultDailyLimit: 10, maxProjectImages: 6,
+      storageSoftLimitBytes: 800000000, storageTargetBytes: 650000000,
+    }
+    const operations = [
+      (repo: CommerceRepository) => repo.getEntitlement(),
+      (repo: CommerceRepository) => repo.createProject({
+        name: '杯子', mode: 'quick', platform: 'ozon',
+        files: [new File(['x'], 'a.png', { type: 'image/png' })],
+      }),
+      (repo: CommerceRepository) => repo.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()),
+      (repo: CommerceRepository) => repo.startGeneration('project-1', 'request-1'),
+      (repo: CommerceRepository) => repo.getGeneration('generation-1'),
+      (repo: CommerceRepository) => repo.listProjects(),
+      (repo: CommerceRepository) => repo.deleteProject('project-1'),
+      (repo: CommerceRepository) => repo.setProjectLocked('project-1', true),
+      (repo: CommerceRepository) => repo.getAdminDashboard(),
+      (repo: CommerceRepository) => repo.setUserEntitlement({
+        userId: 'user-2', credits: 999, unlimited: false, disabled: false, reason: 'friend',
+      }),
+      (repo: CommerceRepository) => repo.updateAdminSettings(settings, 'capacity review'),
+    ]
+
+    for (const operation of operations) {
+      const mock = makeClient({ authUser: { id: 'anonymous-1', is_anonymous: true } })
+      const anonymousRepository = createCommerceRepository(mock.client as never)
+      await expect(operation(anonymousRepository)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' })
+      expect(mock.client.from).not.toHaveBeenCalled()
+      expect(mock.client.rpc).not.toHaveBeenCalled()
+      expect(mock.client.functions.invoke).not.toHaveBeenCalled()
+      expect(mock.client.storage.from).not.toHaveBeenCalled()
+    }
   })
 
   it('maps deleted-project generations with a nullable project id', async () => {

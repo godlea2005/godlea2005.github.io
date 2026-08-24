@@ -67,6 +67,40 @@ const errorDetails = (error: unknown) => {
   }
 }
 
+const responseErrorDetails = async (error: unknown) => {
+  const record = asRecord(error)
+  const context = record.context
+  let status = asNumber(record.status)
+  let body: DatabaseRow = {}
+
+  if (isRecord(context)) {
+    status ||= asNumber(context.status)
+    const clone = context.clone
+    const text = context.text
+    if (typeof text === 'function') {
+      try {
+        const readable = typeof clone === 'function' ? clone.call(context) : context
+        const rawBody = await (readable as { text: () => Promise<string> }).text()
+        if (rawBody) {
+          try {
+            body = asRecord(JSON.parse(rawBody))
+          } catch {
+            body = { message: rawBody }
+          }
+        }
+      } catch {
+        // The status still gives actionable meaning if a consumed body cannot be cloned.
+      }
+    }
+  }
+
+  return {
+    code: asString(body.code) || asString(record.code),
+    message: asString(body.message) || asString(body.error) || asString(record.message),
+    status,
+  }
+}
+
 /** Converts backend and transport failures to copy that tells a workspace user what to do next. */
 export const mapCommerceError = (error: unknown): CommerceRepositoryError => {
   if (error instanceof CommerceRepositoryError) return error
@@ -74,19 +108,24 @@ export const mapCommerceError = (error: unknown): CommerceRepositoryError => {
   const { code, message, status } = errorDetails(error)
   const normalized = `${code} ${message}`.toLowerCase()
 
-  if (code === '28000' || status === 401 || /auth|jwt|session|anonymous|login/.test(normalized)) {
+  if (code === '28000' || status === 401 || status === 403 || /auth|jwt|session|anonymous|login/.test(normalized)) {
     return new CommerceRepositoryError('AUTH_REQUIRED', '登录已失效，请重新登录后继续。', error)
   }
-  if (/insufficient credits|credits? exhausted|次数不足|余额不足/.test(normalized)) {
+  if (status === 402 || /insufficient[ _-]credits|credits?[ _-]exhausted|次数不足|余额不足/.test(normalized)) {
     return new CommerceRepositoryError('CREDITS_EXHAUSTED', '可用次数不足，请稍后获取额度后再试。', error)
   }
   if (/daily generation limit|rate limit|too many|频率|限流/.test(normalized) || status === 429) {
     return new CommerceRepositoryError('RATE_LIMITED', '请求过于频繁，请稍后再试。', error)
   }
-  if (/expired|expires|过期/.test(normalized)) {
+  if (status === 410 || /expired|expires|过期/.test(normalized)) {
     return new CommerceRepositoryError('ASSETS_EXPIRED', '图片已过期，请重新上传后再试。', error)
   }
   return new CommerceRepositoryError('NETWORK', '网络或服务暂时不可用，请检查连接后重试。', error)
+}
+
+const mapFunctionInvokeError = async (error: unknown): Promise<CommerceRepositoryError> => {
+  const mapped = mapCommerceError(await responseErrorDetails(error))
+  return new CommerceRepositoryError(mapped.code, mapped.message, error)
 }
 
 const validationError = (messages: string[]) =>
@@ -228,7 +267,9 @@ const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => 
   return fields.reduce<CommerceProjectDetails>((details, field) => {
     const value = input[field]
     if (typeof value === 'string') {
-      if (/\bblob:|data:[^,]*;base64,/i.test(value)) {
+      const containsTransientUrl = /blob:|data:[^,\s]*;base64,/i.test(value)
+      const containsRawBase64 = /[a-z0-9+/]{256,}={0,2}/i.test(value)
+      if (containsTransientUrl || containsRawBase64) {
         throw validationError([`${field} 不支持保存图片 URL 或 Base64 数据`])
       }
       details[field] = value
@@ -268,7 +309,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
     return this.configuredClient
   }
 
-  private async currentUserId(): Promise<string> {
+  private async requireAuthenticatedUser(): Promise<string> {
     const { data, error } = await this.client.auth.getUser()
     if (error) throw mapCommerceError(error)
     const user = data.user
@@ -279,6 +320,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async getEntitlement(): Promise<CommerceEntitlement> {
+    await this.requireAuthenticatedUser()
     const { data, error } = await this.client.rpc('get_my_entitlement')
     if (error) throw mapCommerceError(error)
     const row = asArray(data)[0]
@@ -290,7 +332,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
     const validation = validateProjectInput(input)
     if (!validation.ok) throw validationError(validation.errors)
 
-    const userId = await this.currentUserId()
+    const userId = await this.requireAuthenticatedUser()
     const { data, error } = await this.client
       .from('commerce_projects')
       .insert({
@@ -317,7 +359,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
     )
     if (validationErrors.length > 0) throw validationError(validationErrors)
 
-    const userId = await this.currentUserId()
+    const userId = await this.requireAuthenticatedUser()
     const uploaded: CommerceAsset[] = []
 
     for (const [index, file] of files.entries()) {
@@ -344,9 +386,15 @@ class SupabaseCommerceRepository implements CommerceRepository {
       if (!assetData) throw mapCommerceError(new Error('asset response missing'))
 
       const asset = rowToAsset(assetData)
-      const { error: uploadError } = await this.client.storage
-        .from(assetBucket)
-        .upload(storagePath, file, { contentType: file.type, upsert: false })
+      let uploadError: unknown = null
+      try {
+        const uploadResult = await this.client.storage
+          .from(assetBucket)
+          .upload(storagePath, file, { contentType: file.type, upsert: false })
+        uploadError = uploadResult.error
+      } catch (error) {
+        uploadError = error
+      }
       if (uploadError) {
         const failedStateError = await this.markAssetFailed(asset.id)
         onProgress({
@@ -357,10 +405,16 @@ class SupabaseCommerceRepository implements CommerceRepository {
         throw failedStateError ?? mapCommerceError(uploadError)
       }
 
-      const { error: readyError } = await this.client
-        .from('commerce_project_assets')
-        .update({ state: 'ready' })
-        .eq('id', asset.id)
+      let readyError: unknown = null
+      try {
+        const readyResult = await this.client
+          .from('commerce_project_assets')
+          .update({ state: 'ready' })
+          .eq('id', asset.id)
+        readyError = readyResult.error
+      } catch (error) {
+        readyError = error
+      }
       if (readyError) {
         const failedStateError = await this.markAssetFailed(asset.id)
         onProgress({
@@ -396,10 +450,11 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async startGeneration(projectId: string, idempotencyKey: string): Promise<GenerationStartResult> {
+    await this.requireAuthenticatedUser()
     const { data, error } = await this.client.functions.invoke('analyze-commerce', {
       body: { projectId, idempotencyKey },
     })
-    if (error) throw mapCommerceError(error)
+    if (error) throw await mapFunctionInvokeError(error)
     const response = asRecord(data)
     const generationId = asString(response.generationId)
     const status = asString(response.status) as CommerceGenerationStatus
@@ -408,6 +463,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async getGeneration(id: string): Promise<CommerceGeneration> {
+    await this.requireAuthenticatedUser()
     const { data, error } = await this.client
       .from('commerce_generations')
       .select('id,project_id,user_id,idempotency_key,status,result_data,provider,model,usage,error_code,error_message,credit_charged,refunded_at,created_at,started_at,completed_at')
@@ -419,16 +475,17 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async listProjects(): Promise<CommerceProject[]> {
+    await this.requireAuthenticatedUser()
     const { data, error } = await this.client
       .from('commerce_projects')
-      .select('id,user_id,name,platform,mode,input_data,locked,created_at,updated_at,commerce_project_assets(id,project_id,user_id,storage_path,mime_type,size_bytes,expires_at,state,deleted_at,created_at)')
+      .select('id,user_id,name,platform,mode,input_data,locked,created_at,updated_at,commerce_project_assets!commerce_project_assets_project_owner_fkey(id,project_id,user_id,storage_path,mime_type,size_bytes,expires_at,state,deleted_at,created_at)')
       .order('created_at', { ascending: false })
     if (error) throw mapCommerceError(error)
     return asArray(data).map(rowToProject)
   }
 
   async deleteProject(id: string): Promise<void> {
-    const userId = await this.currentUserId()
+    const userId = await this.requireAuthenticatedUser()
     const { data, error } = await this.client
       .from('commerce_project_assets')
       .select('storage_path')
@@ -445,15 +502,17 @@ class SupabaseCommerceRepository implements CommerceRepository {
     }
 
     const { error: deleteError } = await this.client.rpc('delete_commerce_project', { p_project_id: id })
-    if (deleteError) throw mapCommerceError(deleteError)
+    if (deleteError && errorDetails(deleteError).code !== 'P0002') throw mapCommerceError(deleteError)
   }
 
   async setProjectLocked(id: string, locked: boolean): Promise<void> {
+    await this.requireAuthenticatedUser()
     const { error } = await this.client.from('commerce_projects').update({ locked }).eq('id', id)
     if (error) throw mapCommerceError(error)
   }
 
   async getAdminDashboard(): Promise<CommerceAdminDashboard> {
+    await this.requireAuthenticatedUser()
     const [overview, users, generations, settings] = await Promise.all([
       this.client.rpc('admin_commerce_overview'),
       this.client.rpc('admin_list_users', { p_search: '', p_limit: adminPageSize, p_offset: 0 }),
@@ -473,6 +532,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async setUserEntitlement(input: SetUserEntitlementInput): Promise<void> {
+    await this.requireAuthenticatedUser()
     const { error } = await this.client.rpc('admin_set_entitlement', {
       p_user_id: input.userId,
       p_credits: input.credits,
@@ -484,6 +544,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async updateAdminSettings(settings: CommerceAdminSettings, reason: string): Promise<void> {
+    await this.requireAuthenticatedUser()
     const { error } = await this.client.rpc('admin_update_settings', {
       p_settings: {
         new_user_credits: settings.newUserCredits,
