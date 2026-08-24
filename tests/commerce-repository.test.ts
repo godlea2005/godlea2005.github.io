@@ -348,6 +348,14 @@ describe('commerce repository', () => {
     ['spaces', Array.from({ length: 4 }, () => 'A'.repeat(76)).join(' ')],
     ['16-character space groups', Array.from({ length: 17 }, () => 'A'.repeat(16)).join(' ')],
     ['31-character CRLF groups', Array.from({ length: 12 }, () => 'A'.repeat(31)).join('\r\n')],
+    ['unpadded mod-2 Tab groups', Array.from(
+      { length: Math.ceil(258 / 16) },
+      (_, index) => 'A'.repeat(258).slice(index * 16, (index + 1) * 16),
+    ).join('\t')],
+    ['unpadded mod-3 mixed ASCII whitespace', Array.from(
+      { length: Math.ceil(259 / 31) },
+      (_, index) => 'A'.repeat(259).slice(index * 31, (index + 1) * 31),
+    ).map((chunk, index) => `${chunk}${['\t', '\r\n', '\v', '\f', ' '][index % 5]}`).join('')],
   ])('rejects long raw Base64 folded with %s before persisting project input', async (_label, notes) => {
     const file = new File(['x'], 'a.png', { type: 'image/png' })
 
@@ -378,6 +386,11 @@ describe('commerce repository', () => {
         { length: 80 },
         (_, index) => ['This', 'ordinary', 'product', 'description', 'uses', 'natural', 'words'][index % 7],
       ).join(' ')
+      while (prose.replace(/[ \t\r\n]/g, '').length % 4 !== 0) prose += ' a'
+      return prose
+    })()],
+    ['uniform-width English keywords', (() => {
+      let prose = 'This coat will feel soft when worn with warm wool that will keep your body cozy each cold day '.repeat(5).trim()
       while (prose.replace(/[ \t\r\n]/g, '').length % 4 !== 0) prose += ' a'
       return prose
     })()],
