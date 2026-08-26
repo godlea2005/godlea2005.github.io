@@ -318,7 +318,15 @@ test('begin RPC errors map to safe public status codes', async () => {
 
 test('new generation returns 202 and registers a secret-free background task', async () => {
   const calls: Array<Record<string, string>> = []
+  const rpcCalls: Array<{ name: string; parameters: Record<string, unknown> }> = []
   const { handler, backgroundTasks } = handlerWith({
+    createUserClient: () => ({
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID, is_anonymous: false } }, error: null }) },
+      rpc: async (name, parameters) => {
+        rpcCalls.push({ name, parameters })
+        return { data: [{ generation_id: GENERATION_ID, status: 'queued', charged: true }], error: null }
+      },
+    }),
     processGeneration: async (input) => { calls.push(input) },
   })
   const response = await handler(validRequest())
@@ -327,6 +335,10 @@ test('new generation returns 202 and registers a secret-free background task', a
   assertEquals(backgroundTasks.length, 1)
   await Promise.all(backgroundTasks)
   assertEquals(calls, [{ generationId: GENERATION_ID, userId: USER_ID }])
+  assertEquals(rpcCalls, [{
+    name: 'begin_commerce_generation',
+    parameters: { p_project_id: UUID, p_idempotency_key: 'request-1' },
+  }])
 })
 
 test('idempotent completed and processing generations are reused without duplicate work', async () => {
@@ -417,7 +429,7 @@ test('signed URL failure skips AI, fails/refunds safely, and does not leave proc
 
 test('Edge entry can be imported without granting environment permission', async () => {
   if (typeof Deno === 'undefined') return
-  await import(`./${'index.ts'}`)
+  await import(/* @vite-ignore */ './index.ts')
 })
 
 test('new Supabase key maps take priority and legacy keys remain compatible', () => {
@@ -529,11 +541,30 @@ test('Supabase background adapter matches production query, Storage, state, and 
   assertEquals(context.generation, { id: GENERATION_ID, projectId: UUID, userId: USER_ID, status: 'queued' })
   assertEquals(await store.createSignedUrls([`${USER_ID}/${UUID}/a.jpg`], 600), ['https://signed.invalid/a.jpg'])
   await store.markAssetsState(['asset-1'], 'processing')
-  await store.completeGeneration({ generationId: GENERATION_ID, result: sampleResult(), provider: 'openai', model: 'gpt-5.4-mini', usage: { total_tokens: 12 } })
+  const completedResult = sampleResult()
+  await store.completeGeneration({ generationId: GENERATION_ID, result: completedResult, provider: 'openai', model: 'gpt-5.4-mini', usage: { total_tokens: 12 } })
   await store.failGeneration({ generationId: GENERATION_ID, code: 'PROVIDER_ERROR', message: 'safe message' })
 
   assert(calls.some((call) => call.operation === 'storage.commerce-assets' && (call.value as { seconds: number }).seconds === 600))
   assert(calls.some((call) => call.operation === 'commerce_project_assets.in.id'))
-  assert(calls.some((call) => call.operation === 'rpc.complete_commerce_generation'))
-  assert(calls.some((call) => call.operation === 'rpc.fail_commerce_generation'))
+  assert(calls.some((call) => call.operation === 'commerce_generations.eq.id' && call.value === GENERATION_ID))
+  assert(calls.some((call) => call.operation === 'commerce_projects.eq.id' && call.value === UUID))
+  assert(calls.some((call) => call.operation === 'commerce_projects.eq.user_id' && call.value === USER_ID))
+  assert(calls.some((call) => call.operation === 'commerce_project_assets.eq.project_id' && call.value === UUID))
+  assert(calls.some((call) => call.operation === 'commerce_project_assets.eq.user_id' && call.value === USER_ID))
+  assert(calls.some((call) => call.operation === 'commerce_project_assets.eq.state' && call.value === 'ready'))
+  assert(calls.some((call) => call.operation === 'commerce_project_assets.is.deleted_at' && call.value === null))
+  assert(calls.some((call) => call.operation === 'platform_presets.eq.platform' && call.value === 'ozon'))
+  assertEquals(calls.find((call) => call.operation === 'rpc.complete_commerce_generation')?.value, {
+    p_generation_id: GENERATION_ID,
+    p_result: completedResult,
+    p_provider: 'openai',
+    p_model: 'gpt-5.4-mini',
+    p_usage: { total_tokens: 12 },
+  })
+  assertEquals(calls.find((call) => call.operation === 'rpc.fail_commerce_generation')?.value, {
+    p_generation_id: GENERATION_ID,
+    p_error_code: 'PROVIDER_ERROR',
+    p_error_message: 'safe message',
+  })
 })
