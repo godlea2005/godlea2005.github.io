@@ -1,10 +1,13 @@
 import { test as nodeTest } from 'node:test'
 import {
   createAnalyzeCommerceHandler,
+  createProductionAnalyzeHandler,
   createProcessGeneration,
+  createSupabaseBackgroundStore,
+  resolveSupabaseRuntimeKey,
   type BackgroundStore,
   type UserClient,
-} from './index.ts'
+} from '../_shared/commerce-runtime.ts'
 import { createOpenAiProvider, SafeProviderError } from '../_shared/ai-provider.ts'
 import { buildCommercePrompt } from '../_shared/commerce-prompt.ts'
 import {
@@ -410,4 +413,127 @@ test('signed URL failure skips AI, fails/refunds safely, and does not leave proc
   })
   await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({ generationId: GENERATION_ID, userId: USER_ID })
   assertEquals(harness.events, ['signed-error', 'fail'])
+})
+
+test('Edge entry can be imported without granting environment permission', async () => {
+  if (typeof Deno === 'undefined') return
+  await import(`./${'index.ts'}`)
+})
+
+test('new Supabase key maps take priority and legacy keys remain compatible', () => {
+  const values: Record<string, string> = {
+    SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: 'sb_publishable_new' }),
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_singular',
+    SUPABASE_ANON_KEY: 'legacy-anon',
+    SUPABASE_SECRET_KEYS: JSON.stringify({ default: 'sb_secret_new' }),
+    SUPABASE_SECRET_KEY: 'sb_secret_singular',
+    SUPABASE_SERVICE_ROLE_KEY: 'legacy-service',
+  }
+  const getEnv = (name: string) => values[name]
+  assertEquals(resolveSupabaseRuntimeKey(getEnv, 'publishable'), 'sb_publishable_new')
+  assertEquals(resolveSupabaseRuntimeKey(getEnv, 'secret'), 'sb_secret_new')
+
+  delete values.SUPABASE_PUBLISHABLE_KEYS
+  delete values.SUPABASE_PUBLISHABLE_KEY
+  delete values.SUPABASE_SECRET_KEYS
+  values.SUPABASE_SECRET_KEY = '   '
+  values.SUPABASE_PUBLISHABLE_KEY = '   '
+  assertEquals(resolveSupabaseRuntimeKey(getEnv, 'publishable'), 'legacy-anon')
+  assertEquals(resolveSupabaseRuntimeKey(getEnv, 'secret'), 'legacy-service')
+})
+
+test('production bootstrap fails before a request can begin when privileged client is unavailable', () => {
+  let createCalls = 0
+  let beginCalls = 0
+  try {
+    createProductionAnalyzeHandler({
+      getEnv: (name) => ({
+        SUPABASE_URL: 'https://project.invalid',
+        SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: 'publishable-test' }),
+        SUPABASE_SECRET_KEYS: JSON.stringify({ default: 'secret-test' }),
+        ALLOWED_ORIGINS: 'https://geniusli.cn',
+      } as Record<string, string>)[name],
+      createClient: () => {
+        createCalls += 1
+        throw new Error('client bootstrap failed')
+      },
+      aiProvider: { generate: async () => { throw new Error('not reached') } },
+      waitUntil: () => {},
+    })
+    throw new Error('bootstrap should reject')
+  } catch (error) {
+    assert(error instanceof Error)
+    assertStringIncludes(error.message, 'client bootstrap failed')
+  }
+  assertEquals(createCalls, 1)
+  assertEquals(beginCalls, 0)
+})
+
+test('Supabase background adapter matches production query, Storage, state, and RPC shapes', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = []
+  const rows: Record<string, unknown> = {
+    commerce_generations: { id: GENERATION_ID, project_id: UUID, user_id: USER_ID, status: 'queued' },
+    commerce_projects: {
+      id: UUID,
+      user_id: USER_ID,
+      name: baseProject.name,
+      platform: 'ozon',
+      mode: 'quick',
+      input_data: baseProject.inputData,
+    },
+    commerce_project_assets: [{
+      id: 'asset-1',
+      storage_path: `${USER_ID}/${UUID}/a.jpg`,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      state: 'ready',
+    }],
+    platform_presets: { display_name: 'Ozon', config: ozonPreset.config },
+  }
+
+  class Query {
+    private updateValue: unknown = undefined
+    private readonly table: string
+    constructor(table: string) { this.table = table }
+    select(value: string) { calls.push({ operation: `${this.table}.select`, value }); return this }
+    eq(column: string, value: unknown) { calls.push({ operation: `${this.table}.eq.${column}`, value }); return this }
+    is(column: string, value: unknown) { calls.push({ operation: `${this.table}.is.${column}`, value }); return this }
+    update(value: unknown) { this.updateValue = value; calls.push({ operation: `${this.table}.update`, value }); return this }
+    in(column: string, value: unknown) {
+      calls.push({ operation: `${this.table}.in.${column}`, value: { ids: value, update: this.updateValue } })
+      return Promise.resolve({ data: null, error: null })
+    }
+    maybeSingle() { return Promise.resolve({ data: rows[this.table], error: null }) }
+    order(column: string, value: unknown) {
+      calls.push({ operation: `${this.table}.order.${column}`, value })
+      return Promise.resolve({ data: rows[this.table], error: null })
+    }
+  }
+
+  const client = {
+    from: (table: string) => new Query(table),
+    rpc: async (name: string, parameters: Record<string, unknown>) => {
+      calls.push({ operation: `rpc.${name}`, value: parameters })
+      return { data: null, error: null }
+    },
+    storage: {
+      from: (bucket: string) => ({
+        createSignedUrl: async (path: string, seconds: number) => {
+          calls.push({ operation: `storage.${bucket}`, value: { path, seconds } })
+          return { data: { signedUrl: 'https://signed.invalid/a.jpg' }, error: null }
+        },
+      }),
+    },
+  }
+  const store = createSupabaseBackgroundStore(client)
+  const context = await store.loadContext(GENERATION_ID)
+  assertEquals(context.generation, { id: GENERATION_ID, projectId: UUID, userId: USER_ID, status: 'queued' })
+  assertEquals(await store.createSignedUrls([`${USER_ID}/${UUID}/a.jpg`], 600), ['https://signed.invalid/a.jpg'])
+  await store.markAssetsState(['asset-1'], 'processing')
+  await store.completeGeneration({ generationId: GENERATION_ID, result: sampleResult(), provider: 'openai', model: 'gpt-5.4-mini', usage: { total_tokens: 12 } })
+  await store.failGeneration({ generationId: GENERATION_ID, code: 'PROVIDER_ERROR', message: 'safe message' })
+
+  assert(calls.some((call) => call.operation === 'storage.commerce-assets' && (call.value as { seconds: number }).seconds === 600))
+  assert(calls.some((call) => call.operation === 'commerce_project_assets.in.id'))
+  assert(calls.some((call) => call.operation === 'rpc.complete_commerce_generation'))
+  assert(calls.some((call) => call.operation === 'rpc.fail_commerce_generation'))
 })

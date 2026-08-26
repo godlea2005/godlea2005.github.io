@@ -35,9 +35,15 @@ npx.cmd supabase functions deploy analyze-commerce
 ```
 
 禁止把 OpenAI 密钥写入 `.env.local`、Git、前端 `VITE_*` 变量或聊天记录。
-`SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY` 由 Supabase Edge Runtime
-提供，其中 service role key 仅在函数后台数据客户端内使用。本次仓库更改不会自动
-设置 Secrets、link 项目或部署函数。
+`SUPABASE_URL` 和项目密钥由 Supabase Edge Runtime 提供。函数按以下优先级读取：
+
+1. 新式 JSON key map 的 `default`：`SUPABASE_PUBLISHABLE_KEYS` / `SUPABASE_SECRET_KEYS`；
+2. 新式单 key：`SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY`；
+3. 迁移期 legacy fallback：`SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`。
+
+Secret/service role key 只用于函数启动时构造后台数据客户端。如果该客户端无法构造，
+函数不会开始接收请求，避免先扣额度再发现后台未就绪。建议在控制台切换到新式 key map，
+并在上线验证后再停用 legacy keys。本次仓库更改不会自动设置 Secrets、link 项目或部署函数。
 
 如需单独核对或修复站长迁移，可在 SQL Editor 运行同一条幂等 SQL：
 
