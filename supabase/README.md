@@ -20,6 +20,25 @@ AI 电商迁移会自动完成以下工作：
 - 创建私有 `commerce-assets` bucket，限制为 JPEG/PNG/WebP、单文件 8 MiB，并按当前用户 UUID 的第一层目录授权。
 - 为项目、资源、任务、额度和管理员接口启用 RLS 与最小 RPC 权限；匿名身份仍可使用留言板，但不能进入 commerce 数据或生成流程。
 
+## AI 分析函数
+
+`analyze-commerce` 使用 OpenAI Responses API 读取私有产品图，并严格返回主图方向、
+详情页分镜和作图提示词。产品图的 signed URL 只在后台任务中生成，有效期 10 分钟，
+不会返回浏览器。`verify_jwt = false` 仅用于兼容当前 publishable key；函数内部仍会
+使用 Bearer token 执行 `auth.getUser()` 并拒绝匿名用户。
+
+部署前，先在本机 PowerShell 进程中设置 `OPENAI_API_KEY`，再从仓库根目录执行：
+
+```powershell
+npx.cmd supabase secrets set "OPENAI_API_KEY=$env:OPENAI_API_KEY" "OPENAI_MODEL=gpt-5.4-mini" "ALLOWED_ORIGINS=https://geniusli.cn,http://127.0.0.1:5173"
+npx.cmd supabase functions deploy analyze-commerce
+```
+
+禁止把 OpenAI 密钥写入 `.env.local`、Git、前端 `VITE_*` 变量或聊天记录。
+`SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `SUPABASE_SERVICE_ROLE_KEY` 由 Supabase Edge Runtime
+提供，其中 service role key 仅在函数后台数据客户端内使用。本次仓库更改不会自动
+设置 Secrets、link 项目或部署函数。
+
 如需单独核对或修复站长迁移，可在 SQL Editor 运行同一条幂等 SQL：
 
 ```sql
