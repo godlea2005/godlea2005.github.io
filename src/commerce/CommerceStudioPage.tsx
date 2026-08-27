@@ -38,8 +38,11 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
   const [generationId, setGenerationId] = useState<string | null>(null)
   const attemptRef = useRef<Attempt | null>(null)
   const mountedRef = useRef(true)
+  const entitlementRequestRef = useRef(0)
   const authenticated = auth.ready && Boolean(auth.user) && !auth.isAnonymous
   const authenticatedUserId = authenticated ? auth.user!.id : null
+  const authenticatedUserIdRef = useRef<string | null>(authenticatedUserId)
+  authenticatedUserIdRef.current = authenticatedUserId
 
   useEffect(() => {
     mountedRef.current = true
@@ -47,15 +50,19 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
   }, [])
 
   const refreshEntitlement = useCallback(async () => {
+    const requestId = ++entitlementRequestRef.current
+    const requestedUserId = authenticatedUserId
     if (!authenticatedUserId) {
-      setCreditsLabel('登录后查看')
+      if (mountedRef.current && requestId === entitlementRequestRef.current) setCreditsLabel('登录后查看')
       return
     }
     try {
       const entitlement = await repository.getEntitlement()
-      if (mountedRef.current) setCreditsLabel(entitlement.unlimited ? '不限次数' : `${entitlement.credits} 次`)
+      if (mountedRef.current && requestId === entitlementRequestRef.current && requestedUserId === authenticatedUserIdRef.current) {
+        setCreditsLabel(entitlement.unlimited ? '不限次数' : `${entitlement.credits} 次`)
+      }
     } catch {
-      if (mountedRef.current) setCreditsLabel('读取失败')
+      if (mountedRef.current && requestId === entitlementRequestRef.current && requestedUserId === authenticatedUserIdRef.current) setCreditsLabel('读取失败')
     }
   }, [authenticatedUserId, repository])
 

@@ -94,6 +94,7 @@ export function CommerceProjectForm({
   const [previews, setPreviews] = useState<PreviewFile[]>([])
   const [consented, setConsented] = useState(false)
   const [fileError, setFileError] = useState('')
+  const [fileNotice, setFileNotice] = useState('')
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
   const livePreviews = useRef(new Map<string, string>())
 
@@ -129,6 +130,7 @@ export function CommerceProjectForm({
     const incoming = Array.from(event.target.files ?? [])
     event.target.value = ''
     setFileError('')
+    setFileNotice('')
     if (incoming.length === 0) return
     const knownFingerprints = new Set(previews.map((preview) => fileFingerprint(preview.file)))
     const uniqueIncoming: File[] = []
@@ -152,7 +154,7 @@ export function CommerceProjectForm({
       return
     }
     if (uniqueIncoming.length === 0) {
-      setFileError(`已跳过重复图片：${duplicateNames.join('、')}`)
+      setFileNotice(`已跳过重复图片：${duplicateNames.join('、')}`)
       return
     }
     const additions = uniqueIncoming.map((file) => {
@@ -163,7 +165,7 @@ export function CommerceProjectForm({
     })
     onMaterialChange?.()
     setPreviews((current) => [...current, ...additions])
-    if (duplicateNames.length > 0) setFileError(`已跳过重复图片：${duplicateNames.join('、')}`)
+    if (duplicateNames.length > 0) setFileNotice(`已跳过重复图片：${duplicateNames.join('、')}`)
   }
 
   const removeFile = (id: string) => {
@@ -173,6 +175,7 @@ export function CommerceProjectForm({
     onMaterialChange?.()
     setPreviews((current) => current.filter((preview) => preview.id !== id))
     setFileError('')
+    setFileNotice('')
   }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -181,8 +184,8 @@ export function CommerceProjectForm({
     void onSubmitted(input)
   }
 
-  const renderProfessionalFields = (step: 1 | 2) => values.mode === 'professional' && (
-    <div className="commerce-professional-fields">
+  const renderProfessionalFields = (step: 1 | 2) => (
+    <div className="commerce-professional-fields commerce-professional-group" data-professional-step={step}>
       {professionalFields.filter((field) => field.step === step).map((field) => (
         <label className="commerce-field" key={field.key}>
           <span>{field.label}</span>
@@ -212,22 +215,25 @@ export function CommerceProjectForm({
   return (
     <form className="commerce-workspace" data-current-step={currentStep} onSubmit={submit} noValidate>
       <div className="commerce-form-column">
-        <div className="commerce-mode-tabs" role="group" aria-label="分析模式">
-          {(['quick', 'professional'] as const).map((mode) => (
-            <button
-              type="button"
-              aria-pressed={values.mode === mode}
-              aria-label={mode === 'quick' ? '快速模式' : '专业模式'}
-              disabled={busy}
-              className={values.mode === mode ? 'is-active' : ''}
-              onClick={() => setMode(mode)}
-              key={mode}
-            >
-              {mode === 'quick' ? '快速模式' : '专业模式'}
-              <small>{mode === 'quick' ? '只填必要信息' : '补充完整营销语境'}</small>
-            </button>
-          ))}
-        </div>
+        <section className="commerce-mode-block" aria-labelledby="commerce-mode-heading">
+          <header className="commerce-sequence-heading"><span>01 / MODE</span><h2 id="commerce-mode-heading">选择分析深度</h2></header>
+          <div className="commerce-mode-tabs" role="group" aria-label="分析模式">
+            {(['quick', 'professional'] as const).map((mode) => (
+              <button
+                type="button"
+                aria-pressed={values.mode === mode}
+                aria-label={mode === 'quick' ? '快速模式' : '专业模式'}
+                disabled={busy}
+                className={values.mode === mode ? 'is-active' : ''}
+                onClick={() => setMode(mode)}
+                key={mode}
+              >
+                {mode === 'quick' ? '快速模式' : '专业模式'}
+                <small>{mode === 'quick' ? '只填必要信息' : '补充完整营销语境'}</small>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <div className="commerce-mobile-steps" role="group" aria-label="填写步骤" data-current-step={currentStep}>
           {(['产品', '市场', '确认'] as const).map((label, index) => {
@@ -236,32 +242,7 @@ export function CommerceProjectForm({
           })}
         </div>
 
-        <section className="commerce-form-section" data-step="1" data-active={currentStep === 1} aria-labelledby="commerce-product-heading">
-          <header><span>01 / PRODUCT</span><h2 id="commerce-product-heading">先看产品本身</h2></header>
-          <label className="commerce-field">
-            <span>产品名称</span>
-            <input disabled={busy} value={values.name} onChange={(event) => updateValue('name', event.target.value)} aria-label="产品名称" aria-describedby="commerce-name-requirement" maxLength={80} placeholder="例如：真空不锈钢保温杯" required />
-            <small id="commerce-name-requirement">必填，去除空格后不超过 80 字。</small>
-          </label>
-          <div className="commerce-upload-field">
-            <div><span>产品图片</span><small>JPEG / PNG / WebP，单张不超过 8 MB，最多 6 张</small></div>
-            <label className="commerce-upload-trigger">
-              <input aria-label="上传产品图" aria-describedby={fileError ? 'commerce-file-error' : undefined} aria-invalid={fileError ? true : undefined} disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addFiles} />
-              <span>选择图片</span><i>{previews.length} / 6</i>
-            </label>
-          </div>
-          {fileError && <p className="commerce-inline-error" id="commerce-file-error" role="alert">{fileError}</p>}
-          {previews.length > 0 && <ul className="commerce-previews" aria-label="已选产品图">
-            {previews.map((preview, index) => <li key={preview.id}>
-              <img src={preview.url} alt={`${preview.file.name} 预览`} />
-              <span><b>0{index + 1}</b>{preview.file.name}<small>{(preview.file.size / 1024 / 1024).toFixed(2)} MB</small></span>
-              <button type="button" disabled={busy} onClick={() => removeFile(preview.id)} aria-label={`移除 ${preview.file.name}`}>×</button>
-            </li>)}
-          </ul>}
-          {renderProfessionalFields(1)}
-        </section>
-
-        <section className="commerce-form-section" data-step="2" data-active={currentStep === 2} data-testid="market-step" aria-labelledby="commerce-market-heading">
+        <section className="commerce-form-section commerce-market-section" data-step="2" data-active={currentStep === 2} data-testid="market-step" aria-labelledby="commerce-market-heading">
           <header><span>02 / MARKET</span><h2 id="commerce-market-heading">选择销售语境</h2></header>
           <fieldset className="commerce-platforms">
             <legend>目标平台</legend>
@@ -270,11 +251,41 @@ export function CommerceProjectForm({
               <span><strong>{platform.name}</strong><small>{platform.context}</small></span><i aria-hidden="true" />
             </label>)}
           </fieldset>
-          {renderProfessionalFields(2)}
         </section>
 
+        <section className="commerce-form-section commerce-product-section" data-step="1" data-active={currentStep === 1} aria-labelledby="commerce-product-heading">
+          <header><span><b className="commerce-desktop-label">03 / PRODUCT</b><b className="commerce-mobile-label">01 / PRODUCT</b></span><h2 id="commerce-product-heading">先看产品本身</h2></header>
+          <label className="commerce-field">
+            <span>产品名称</span>
+            <input disabled={busy} value={values.name} onChange={(event) => updateValue('name', event.target.value)} aria-label="产品名称" aria-describedby="commerce-name-requirement" maxLength={80} placeholder="例如：真空不锈钢保温杯" required />
+            <small id="commerce-name-requirement">必填，去除空格后不超过 80 字。</small>
+          </label>
+          <div className="commerce-upload-field">
+            <div><span>产品图片</span><small>JPEG / PNG / WebP，单张不超过 8 MB，最多 6 张</small></div>
+            <label className="commerce-upload-trigger">
+              <input aria-label="上传产品图" aria-describedby={fileError ? 'commerce-file-error' : fileNotice ? 'commerce-file-notice' : undefined} aria-invalid={fileError ? true : undefined} disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addFiles} />
+              <span>选择图片</span><i>{previews.length} / 6</i>
+            </label>
+          </div>
+          {fileError && <p className="commerce-inline-error" id="commerce-file-error" role="alert">{fileError}</p>}
+          {fileNotice && <p className="commerce-inline-notice" id="commerce-file-notice" role="status" aria-label="文件提示">{fileNotice}</p>}
+          {previews.length > 0 && <ul className="commerce-previews" aria-label="已选产品图">
+            {previews.map((preview, index) => <li key={preview.id}>
+              <img src={preview.url} alt={`${preview.file.name} 预览`} />
+              <span><b>0{index + 1}</b>{preview.file.name}<small>{(preview.file.size / 1024 / 1024).toFixed(2)} MB</small></span>
+              <button type="button" disabled={busy} onClick={() => removeFile(preview.id)} aria-label={`移除 ${preview.file.name}`}>×</button>
+            </li>)}
+          </ul>}
+        </section>
+
+        {values.mode === 'professional' && <section className="commerce-professional-section" aria-labelledby="commerce-professional-heading">
+          <header className="commerce-sequence-heading"><span>04 / PROFESSIONAL BRIEF</span><h2 id="commerce-professional-heading">补充产品与市场语境</h2></header>
+          {renderProfessionalFields(1)}
+          {renderProfessionalFields(2)}
+        </section>}
+
         <section className="commerce-form-section commerce-confirm-section" data-step="3" data-active={currentStep === 3} data-testid="confirm-step" aria-labelledby="commerce-confirm-heading">
-          <header><span>03 / CONFIRM</span><h2 id="commerce-confirm-heading">确认素材处理</h2></header>
+          <header><span><b className="commerce-desktop-label">05 / CONFIRM</b><b className="commerce-mobile-label">03 / CONFIRM</b></span><h2 id="commerce-confirm-heading">确认素材处理</h2></header>
           <label className="commerce-consent">
             <input disabled={busy} type="checkbox" checked={consented} aria-describedby="commerce-consent-requirement" onChange={(event) => setConsented(event.target.checked)} required />
             <span><strong>我确认拥有这些素材的使用权，并同意本次 AI 处理。</strong>图片会通过短期签名地址发送给当前 AI 服务商进行分析；原图默认保留 7 天，之后自动清理。</span>

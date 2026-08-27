@@ -25,6 +25,16 @@ import { FloatingHeader } from '../src/components/FloatingHeader'
 const image = (name = 'cup.png', type = 'image/png', size = 1) =>
   new File([new Uint8Array(size)], name, { type })
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const project: CommerceProject = {
   id: 'project-1', userId: 'user-1', name: '保温杯', platform: 'ozon', mode: 'quick',
   inputData: {}, locked: false, createdAt: '2026-08-26T00:00:00.000Z',
@@ -144,10 +154,12 @@ describe('AI commerce project form', () => {
   it('skips duplicate files by stable fingerprint and explains why', async () => {
     render(<CommerceProjectForm onSubmitted={vi.fn()} />)
     const duplicate = image('same.png')
-    await userEvent.upload(screen.getByLabelText('上传产品图'), duplicate)
-    await userEvent.upload(screen.getByLabelText('上传产品图'), duplicate)
+    const input = screen.getByLabelText('上传产品图')
+    await userEvent.upload(input, duplicate)
+    await userEvent.upload(input, duplicate)
     expect(screen.getAllByRole('img', { name: /预览/ })).toHaveLength(1)
-    expect(screen.getByRole('alert')).toHaveTextContent('已跳过重复图片：same.png')
+    expect(screen.getByRole('status', { name: '文件提示' })).toHaveTextContent('已跳过重复图片：same.png')
+    expect(input).not.toHaveAttribute('aria-invalid')
   })
 
   it('exposes required guidance and pressed-button mode semantics', () => {
@@ -171,6 +183,24 @@ describe('AI commerce project form', () => {
     expect(screen.getByTestId('market-step')).toHaveAttribute('data-step', '2')
     fireEvent.click(stepButtons![2])
     expect(screen.getByTestId('confirm-step')).toHaveAttribute('data-step', '3')
+  })
+
+  it('keeps desktop content in mode, market, product, professional and consent order', async () => {
+    const view = render(<CommerceProjectForm onSubmitted={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: '专业模式' }))
+    const column = view.container.querySelector('.commerce-form-column')!
+    const ordered = Array.from(column.children).filter((node) =>
+      node.matches('.commerce-mode-block, [data-step="2"], [data-step="1"], .commerce-professional-section, [data-step="3"]'))
+    expect(ordered.map((node) => node.className)).toEqual([
+      'commerce-mode-block',
+      'commerce-form-section commerce-market-section',
+      'commerce-form-section commerce-product-section',
+      'commerce-professional-section',
+      'commerce-form-section commerce-confirm-section',
+    ])
+    expect(screen.getByText('01 / MODE')).toBeInTheDocument()
+    expect(screen.getByText('03 / PRODUCT')).toBeInTheDocument()
+    expect(screen.getByText('04 / PROFESSIONAL BRIEF')).toBeInTheDocument()
   })
 })
 
@@ -389,6 +419,45 @@ describe('AI commerce submission workflow', () => {
     await act(async () => { for (let index = 0; index < 5; index += 1) await Promise.resolve() })
     expect(screen.getByText('3 次')).toBeInTheDocument()
     expect(repository.getEntitlement).toHaveBeenCalledTimes(3)
+  })
+
+  it('ignores stale entitlement responses across initial, charged and refunded refreshes', async () => {
+    vi.useFakeTimers()
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const initial = deferred<Awaited<ReturnType<CommerceRepository['getEntitlement']>>>()
+    const charged = deferred<Awaited<ReturnType<CommerceRepository['getEntitlement']>>>()
+    const refunded = deferred<Awaited<ReturnType<CommerceRepository['getEntitlement']>>>()
+    const entitlement = (credits: number) => ({
+      userId: 'user-1', credits, unlimited: false, disabled: false, dailyLimit: 10,
+      updatedAt: '2026-08-26T00:00:00.000Z',
+    })
+    const repository = makeRepository({
+      getEntitlement: vi.fn()
+        .mockReturnValueOnce(initial.promise)
+        .mockReturnValueOnce(charged.promise)
+        .mockReturnValueOnce(refunded.promise),
+      getGeneration: vi.fn().mockResolvedValue(generation('failed')),
+    })
+    render(<CommerceStudioPage repository={repository} />)
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+      for (let index = 0; index < 10; index += 1) await Promise.resolve()
+    })
+    expect(repository.getEntitlement).toHaveBeenCalledTimes(2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(repository.getEntitlement).toHaveBeenCalledTimes(3)
+
+    await act(async () => { refunded.resolve(entitlement(3)); await Promise.resolve() })
+    expect(screen.getByText('3 次')).toBeInTheDocument()
+    await act(async () => {
+      charged.resolve(entitlement(2))
+      initial.resolve(entitlement(4))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('3 次')).toBeInTheDocument()
   })
 
   it('polls every two seconds, stops at a terminal status and clears the timer on unmount', async () => {
