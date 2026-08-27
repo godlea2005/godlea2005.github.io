@@ -9,6 +9,7 @@ import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 
 const MusicPage = lazy(() => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
 const GuestbookPage = lazy(() => import('./components/GuestbookPage').then((module) => ({ default: module.GuestbookPage })))
+const CommerceStudioPage = lazy(() => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
 
 const resolvePageHash = () => {
   const isGuestbookAuthReturn = new URLSearchParams(window.location.search).get('auth') === 'guestbook'
@@ -20,6 +21,8 @@ function App() {
   const [pageHash, setPageHash] = useState(resolvePageHash)
   const musicPage = pageHash === '#music'
   const guestbookPage = pageHash === '#guestbook'
+  const commercePage = pageHash === '#ai-commerce'
+  const subpage = musicPage || guestbookPage || commercePage
 
   useEffect(() => {
     const initial = getInitialTheme()
@@ -43,10 +46,10 @@ function App() {
   }
 
   return (
-    <div className={`site-shell${!musicPage && !guestbookPage ? ' is-home' : ''}`}>
+    <div className={`site-shell${!subpage ? ' is-home' : ''}`}>
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
 
-      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : <main id="top">
+      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : <main id="top">
         <StatusScene />
         <section className="notice-bar" aria-label="站点动态"><div className="notice-flow">{[...notices, ...notices].map((notice, index) => <p key={`${notice}-${index}`}><i>✦</i>{notice}</p>)}</div></section>
         <StudioMap />
@@ -58,7 +61,7 @@ function App() {
         </section>
       </main>}
 
-      {!musicPage && !guestbookPage && <footer className="site-footer frame" id="about">
+      {!subpage && <footer className="site-footer frame" id="about">
         <div><p className="footer-label">NEXT SIGNAL / 04</p><h2>如果你也在<br />认真做点什么。</h2></div>
         <div className="footer-contact"><p>可以在这里找到我</p><a href={`mailto:${site.contacts.email}`}>{site.contacts.email}<span>↗</span></a></div>
         <div className="footer-bottom"><span>© 2026 WENHAO</span><span>A SMALL DIGITAL STUDIO</span><span>MADE WITH CARE</span></div>

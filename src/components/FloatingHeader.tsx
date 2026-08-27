@@ -20,7 +20,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
-  const homeActive = pageHash !== '#music' && pageHash !== '#guestbook'
+  const homeActive = pageHash !== '#music' && pageHash !== '#guestbook' && pageHash !== '#ai-commerce'
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -63,6 +63,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
         <nav className={`floating-nav glass-pill${mobileOpen ? ' is-mobile-open' : ''}`} id="floating-nav" aria-label="主导航">
           <div className="floating-nav-primary">
             <a className={homeActive ? 'is-current' : ''} href="#top" onClick={closeNavigation}><span aria-hidden="true">⌂</span>主页</a>
+            <a className={pageHash === '#ai-commerce' ? 'is-current' : ''} href="#ai-commerce" onClick={closeNavigation}>AI 电商设计</a>
             <a href="#archive" onClick={closeNavigation}>个人主站 <sup>↗</sup></a>
             <a href="#notes" onClick={closeNavigation}>工具导航</a>
             {menuGroups.map((group) => (
