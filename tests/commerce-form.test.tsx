@@ -12,7 +12,7 @@ vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
   return { ...actual, useAuth: authMock.useAuth }
 })
 
-vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: () => null }))
+vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: ({ commerceMode = false }: { commerceMode?: boolean }) => <div data-testid="music-dock-mode" data-mode={commerceMode ? 'commerce' : 'default'} /> }))
 vi.mock('../src/components/StatusScene', () => ({ StatusScene: () => <section>HOME</section> }))
 vi.mock('../src/components/StudioMap', () => ({ StudioMap: () => null }))
 vi.mock('../src/components/ProjectArchive', () => ({ ProjectArchive: () => null }))
@@ -104,7 +104,9 @@ describe('AI commerce project form', () => {
   it('reveals every professional field without losing quick input', async () => {
     render(<CommerceProjectForm onSubmitted={vi.fn()} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '旅行杯')
-    await userEvent.click(screen.getByRole('tab', { name: '专业模式' }))
+    const professionalMode = screen.getByRole('button', { name: '专业模式' })
+    await userEvent.click(professionalMode)
+    expect(professionalMode).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByDisplayValue('旅行杯')).toBeInTheDocument()
     for (const label of ['产品类目', '规格参数', '价格区间', '核心卖点', '目标人群', '品牌语气', '竞品链接', '禁用词与禁改细节', '期望视觉风格', '补充说明']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument()
@@ -139,6 +141,24 @@ describe('AI commerce project form', () => {
     expect(screen.queryAllByRole('img', { name: /预览/ })).toHaveLength(0)
   })
 
+  it('skips duplicate files by stable fingerprint and explains why', async () => {
+    render(<CommerceProjectForm onSubmitted={vi.fn()} />)
+    const duplicate = image('same.png')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), duplicate)
+    await userEvent.upload(screen.getByLabelText('上传产品图'), duplicate)
+    expect(screen.getAllByRole('img', { name: /预览/ })).toHaveLength(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('已跳过重复图片：same.png')
+  })
+
+  it('exposes required guidance and pressed-button mode semantics', () => {
+    render(<CommerceProjectForm onSubmitted={vi.fn()} />)
+    expect(screen.getByText(/提交前还需要：产品名称、至少 1 张产品图、素材权利与 AI 处理确认/)).toBeInTheDocument()
+    expect(screen.getByLabelText('产品名称')).toBeRequired()
+    expect(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ })).toBeRequired()
+    expect(screen.getByRole('button', { name: '快速模式' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
   it('exposes product, market and confirmation mobile step semantics', async () => {
     const view = render(<CommerceProjectForm onSubmitted={vi.fn()} />)
     const stepper = view.container.querySelector<HTMLElement>('.commerce-mobile-steps')
@@ -166,8 +186,22 @@ describe('AI commerce submission workflow', () => {
     vi.clearAllMocks()
   })
 
-  it('checks the auth gate before any repository mutation', async () => {
+  it('requires OAuth before exposing fields or local file selection', async () => {
     const auth = signedInAuth({ user: null, isAnonymous: true, requireLogin: vi.fn(() => false) })
+    authMock.useAuth.mockReturnValue(auth)
+    const repository = makeRepository()
+    render(<CommerceStudioPage repository={repository} />)
+    expect(screen.queryByLabelText('上传产品图')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('产品名称')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /登录并进入工作台/ }))
+    expect(auth.requireLogin).toHaveBeenCalledWith('#ai-commerce')
+    expect(repository.createProject).not.toHaveBeenCalled()
+    expect(repository.uploadAssets).not.toHaveBeenCalled()
+    expect(repository.startGeneration).not.toHaveBeenCalled()
+  })
+
+  it('keeps the submit-time auth defense before every repository mutation', async () => {
+    const auth = signedInAuth({ requireLogin: vi.fn(() => false) })
     authMock.useAuth.mockReturnValue(auth)
     const repository = makeRepository()
     render(<CommerceStudioPage repository={repository} />)
@@ -246,6 +280,117 @@ describe('AI commerce submission workflow', () => {
     expect(document.body.textContent).not.toMatch(/%/)
   })
 
+  it('cleans a partially uploaded project before retrying without changing the idempotency key', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const firstProject = { ...project, id: 'project-partial' }
+    const retryProject = { ...project, id: 'project-retry' }
+    const order: string[] = []
+    const repository = makeRepository({
+      createProject: vi.fn()
+        .mockImplementationOnce(async () => { order.push('create:project-partial'); return firstProject })
+        .mockImplementationOnce(async () => { order.push('create:project-retry'); return retryProject }),
+      uploadAssets: vi.fn()
+        .mockImplementationOnce(async (projectId, files, onProgress) => {
+          order.push(`upload:${projectId}`)
+          onProgress({ completedFiles: 1, totalFiles: files.length, currentFile: { name: files[0].name, state: 'ready' } })
+          onProgress({ completedFiles: 1, totalFiles: files.length, currentFile: { name: files[1].name, state: 'failed' } })
+          throw new Error('第二张上传失败')
+        })
+        .mockImplementationOnce(async (projectId) => { order.push(`upload:${projectId}`); return [] }),
+      deleteProject: vi.fn(async (projectId) => { order.push(`delete:${projectId}`) }),
+      startGeneration: vi.fn(async (projectId, key) => {
+        order.push(`start:${projectId}:${key}`)
+        return { generationId: 'generation-retry', status: 'queued' }
+      }),
+    })
+    const createKey = vi.fn(() => 'stable-key')
+    render(<CommerceStudioPage repository={repository} createIdempotencyKey={createKey} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), [image('first.png'), image('second.png')])
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('临时项目已安全清理')
+    await userEvent.click(screen.getByRole('button', { name: '重试本次生成' }))
+    await waitFor(() => expect(repository.startGeneration).toHaveBeenCalledWith('project-retry', 'stable-key'))
+    expect(createKey).toHaveBeenCalledTimes(1)
+    expect(repository.uploadAssets).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(repository.uploadAssets).mock.calls.map((call) => call[0])).toEqual(['project-partial', 'project-retry'])
+    expect(order).toEqual([
+      'create:project-partial', 'upload:project-partial', 'delete:project-partial',
+      'create:project-retry', 'upload:project-retry', 'start:project-retry:stable-key',
+    ])
+  })
+
+  it('blocks blind retransmission when partial-project cleanup fails', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const repository = makeRepository({
+      uploadAssets: vi.fn().mockRejectedValue(new Error('第二张上传失败')),
+      deleteProject: vi.fn().mockRejectedValue(new Error('清理接口不可用')),
+    })
+    render(<CommerceStudioPage repository={repository} />)
+    await completeQuickForm()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('为避免重复图片已停止重传')
+    expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
+    expect(repository.uploadAssets).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['completed', '方案生成完成'],
+    ['failed', 'AI 服务未能完成分析'],
+    ['cancelled', '任务已取消'],
+  ] as const)('handles a direct %s response from startGeneration as terminal', async (terminalStatus, expectedCopy) => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const repository = makeRepository({
+      startGeneration: vi.fn().mockResolvedValue({ generationId: 'generation-direct', status: terminalStatus }),
+    })
+    render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await completeQuickForm()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    if (terminalStatus === 'completed') {
+      expect(await screen.findByText(expectedCopy)).toBeInTheDocument()
+    } else {
+      expect(await screen.findByRole('alert')).toHaveTextContent(expectedCopy)
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 20))
+    expect(repository.getGeneration).not.toHaveBeenCalled()
+    if (terminalStatus === 'completed') {
+      expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
+    } else {
+      expect(screen.getByRole('button', { name: '重试本次生成' })).toBeInTheDocument()
+    }
+  })
+
+  it('refreshes authoritative credits after generation acceptance and after a failed refund', async () => {
+    vi.useFakeTimers()
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const entitlement = (credits: number) => ({
+      userId: 'user-1', credits, unlimited: false, disabled: false, dailyLimit: 10,
+      updatedAt: '2026-08-26T00:00:00.000Z',
+    })
+    const repository = makeRepository({
+      getEntitlement: vi.fn()
+        .mockResolvedValueOnce(entitlement(3))
+        .mockResolvedValueOnce(entitlement(2))
+        .mockResolvedValueOnce(entitlement(3)),
+      getGeneration: vi.fn().mockResolvedValue(generation('failed')),
+    })
+    render(<CommerceStudioPage repository={repository} />)
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+      for (let index = 0; index < 10; index += 1) await Promise.resolve()
+    })
+    expect(screen.getByText('2 次')).toBeInTheDocument()
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(screen.getByRole('alert')).toHaveTextContent('模型暂时不可用')
+    await act(async () => { for (let index = 0; index < 5; index += 1) await Promise.resolve() })
+    expect(screen.getByText('3 次')).toBeInTheDocument()
+    expect(repository.getEntitlement).toHaveBeenCalledTimes(3)
+  })
+
   it('polls every two seconds, stops at a terminal status and clears the timer on unmount', async () => {
     vi.useFakeTimers()
     authMock.useAuth.mockReturnValue(signedInAuth())
@@ -275,6 +420,27 @@ describe('AI commerce submission workflow', () => {
     view.unmount()
     expect(clearIntervalSpy).toHaveBeenCalled()
   })
+
+  it('clears an active queued poll timer when unmounted', async () => {
+    vi.useFakeTimers()
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const repository = makeRepository({ getGeneration: vi.fn().mockResolvedValue(generation('processing')) })
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    const view = render(<CommerceStudioPage repository={repository} />)
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+      for (let index = 0; index < 10; index += 1) await Promise.resolve()
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(repository.getGeneration).toHaveBeenCalledTimes(1)
+    view.unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+    expect(repository.getGeneration).toHaveBeenCalledTimes(1)
+    expect(clearIntervalSpy).toHaveBeenCalled()
+  })
 })
 
 describe('AI commerce route and navigation', () => {
@@ -298,5 +464,6 @@ describe('AI commerce route and navigation', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'AI 电商视觉工作台' })).toBeInTheDocument()
     expect(screen.queryByText('HOME')).not.toBeInTheDocument()
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'commerce')
   })
 })

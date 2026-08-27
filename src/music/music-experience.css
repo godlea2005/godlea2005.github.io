@@ -490,9 +490,11 @@
 
 @media (max-width: 520px) {
   .music-dock { right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); }
+  .music-dock.is-commerce { bottom: calc(max(12px,env(safe-area-inset-bottom)) + 70px); }
   .music-launcher { width: 48px; height: 48px; border-radius: 15px; }
   .music-note { font-size: 24px; }
   .music-popover { position: fixed; left: 10px; right: 10px; bottom: calc(max(12px,env(safe-area-inset-bottom)) + 58px); width: auto; padding: 14px; border-radius: 20px; transform-origin: bottom center; }
+  .music-dock.is-commerce .music-popover { top: max(70px,env(safe-area-inset-top)); bottom: auto; transform-origin: top center; }
   .music-popover-controls { grid-template-columns: 32px 46px 32px 1px 32px minmax(36px,1fr) 32px; gap: 3px; }
   .music-popover-controls button { width: 32px; }.music-popover-controls .music-popover-play { width: 46px; height: 46px; }
 }

@@ -5,7 +5,7 @@ import { CloseIcon, ListIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, Previous
 import { PlaylistOverlay } from './PlaylistOverlay'
 import { formatTime } from './TransportControls'
 
-export function GlobalMusicDock() {
+export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boolean }) {
   const music = useMusic()
   const dockRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -29,7 +29,7 @@ export function GlobalMusicDock() {
   }, [open, playlistOpen])
 
   return <>
-    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
+    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
       <aside className="music-popover" id="global-music-player" aria-label="全站音乐播放器" aria-hidden={!open} inert={open ? undefined : true}>
         <header className="music-popover-header">
           <div className="music-popover-cover" aria-hidden="true"><i /></div>

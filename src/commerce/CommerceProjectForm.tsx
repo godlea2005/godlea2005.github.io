@@ -78,6 +78,7 @@ const statusCopy: Record<CommerceFormStatus, string> = {
 }
 
 const uniqueId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+const fileFingerprint = (file: File) => `${file.name}\u0000${file.size}\u0000${file.type}\u0000${file.lastModified}`
 
 export function CommerceProjectForm({
   onSubmitted,
@@ -107,6 +108,11 @@ export function CommerceProjectForm({
   }), [previews, values])
   const validation = useMemo(() => validateProjectInput(input), [input])
   const canSubmit = validation.ok && consented && !busy
+  const missingRequirements = [
+    values.name.replace(/\s/g, '') ? '' : '产品名称',
+    previews.length > 0 ? '' : '至少 1 张产品图',
+    consented ? '' : '素材权利与 AI 处理确认',
+  ].filter(Boolean)
   const selectedPlatform = platforms.find((platform) => platform.value === values.platform) ?? platforms[0]
 
   const updateValue = (key: keyof TextValues, value: string) => {
@@ -124,16 +130,32 @@ export function CommerceProjectForm({
     event.target.value = ''
     setFileError('')
     if (incoming.length === 0) return
-    if (previews.length + incoming.length > 6) {
+    const knownFingerprints = new Set(previews.map((preview) => fileFingerprint(preview.file)))
+    const uniqueIncoming: File[] = []
+    const duplicateNames: string[] = []
+    incoming.forEach((file) => {
+      const fingerprint = fileFingerprint(file)
+      if (knownFingerprints.has(fingerprint)) {
+        duplicateNames.push(file.name)
+        return
+      }
+      knownFingerprints.add(fingerprint)
+      uniqueIncoming.push(file)
+    })
+    if (previews.length + uniqueIncoming.length > 6) {
       setFileError('最多上传 6 张产品图，请移除后再添加。')
       return
     }
-    const errors = incoming.flatMap((file) => validateProductFile(file).errors.map((message) => `${file.name}：${message}`))
+    const errors = uniqueIncoming.flatMap((file) => validateProductFile(file).errors.map((message) => `${file.name}：${message}`))
     if (errors.length > 0) {
       setFileError(errors.join('；'))
       return
     }
-    const additions = incoming.map((file) => {
+    if (uniqueIncoming.length === 0) {
+      setFileError(`已跳过重复图片：${duplicateNames.join('、')}`)
+      return
+    }
+    const additions = uniqueIncoming.map((file) => {
       const id = uniqueId()
       const url = URL.createObjectURL(file)
       livePreviews.current.set(id, url)
@@ -141,6 +163,7 @@ export function CommerceProjectForm({
     })
     onMaterialChange?.()
     setPreviews((current) => [...current, ...additions])
+    if (duplicateNames.length > 0) setFileError(`已跳过重复图片：${duplicateNames.join('、')}`)
   }
 
   const removeFile = (id: string) => {
@@ -189,12 +212,11 @@ export function CommerceProjectForm({
   return (
     <form className="commerce-workspace" data-current-step={currentStep} onSubmit={submit} noValidate>
       <div className="commerce-form-column">
-        <div className="commerce-mode-tabs" role="tablist" aria-label="分析模式">
+        <div className="commerce-mode-tabs" role="group" aria-label="分析模式">
           {(['quick', 'professional'] as const).map((mode) => (
             <button
               type="button"
-              role="tab"
-              aria-selected={values.mode === mode}
+              aria-pressed={values.mode === mode}
               aria-label={mode === 'quick' ? '快速模式' : '专业模式'}
               disabled={busy}
               className={values.mode === mode ? 'is-active' : ''}
@@ -218,7 +240,8 @@ export function CommerceProjectForm({
           <header><span>01 / PRODUCT</span><h2 id="commerce-product-heading">先看产品本身</h2></header>
           <label className="commerce-field">
             <span>产品名称</span>
-            <input disabled={busy} value={values.name} onChange={(event) => updateValue('name', event.target.value)} maxLength={80} placeholder="例如：真空不锈钢保温杯" required />
+            <input disabled={busy} value={values.name} onChange={(event) => updateValue('name', event.target.value)} aria-label="产品名称" aria-describedby="commerce-name-requirement" maxLength={80} placeholder="例如：真空不锈钢保温杯" required />
+            <small id="commerce-name-requirement">必填，去除空格后不超过 80 字。</small>
           </label>
           <div className="commerce-upload-field">
             <div><span>产品图片</span><small>JPEG / PNG / WebP，单张不超过 8 MB，最多 6 张</small></div>
@@ -253,9 +276,10 @@ export function CommerceProjectForm({
         <section className="commerce-form-section commerce-confirm-section" data-step="3" data-active={currentStep === 3} data-testid="confirm-step" aria-labelledby="commerce-confirm-heading">
           <header><span>03 / CONFIRM</span><h2 id="commerce-confirm-heading">确认素材处理</h2></header>
           <label className="commerce-consent">
-            <input disabled={busy} type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} />
+            <input disabled={busy} type="checkbox" checked={consented} aria-describedby="commerce-consent-requirement" onChange={(event) => setConsented(event.target.checked)} required />
             <span><strong>我确认拥有这些素材的使用权，并同意本次 AI 处理。</strong>图片会通过短期签名地址发送给当前 AI 服务商进行分析；原图默认保留 7 天，之后自动清理。</span>
           </label>
+          <small id="commerce-consent-requirement" className="commerce-required-note">此项为提交分析前的必要确认。</small>
         </section>
 
         <div className="commerce-step-actions" aria-label="步骤操作">
@@ -278,7 +302,10 @@ export function CommerceProjectForm({
         </p>}
         {error && <div className="commerce-submit-error" role="alert"><strong>这一步没有完成</strong><p>{error}</p>{onRetry && <button type="button" onClick={onRetry}>重试本次生成</button>}</div>}
         {status === 'completed' && <p className="commerce-complete-note" role="status">结果已安全写入，可进入方案页查看。</p>}
-        <button className="commerce-submit" type="submit" disabled={!canSubmit} aria-describedby="commerce-submit-hint">
+        <p className="commerce-requirements" id="commerce-submit-requirements" role="status">
+          {missingRequirements.length > 0 ? `提交前还需要：${missingRequirements.join('、')}。` : '资料与授权已齐，可以提交分析。'}
+        </p>
+        <button className="commerce-submit" type="submit" disabled={!canSubmit} aria-describedby="commerce-submit-requirements commerce-submit-hint">
           <span>{busy ? statusCopy[status] : '生成视觉方案'}</span><i aria-hidden="true">↗</i>
         </button>
         <small id="commerce-submit-hint">每次成功提交消耗 1 次；服务失败会自动退款。</small>

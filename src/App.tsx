@@ -66,7 +66,7 @@ function App() {
         <div className="footer-contact"><p>可以在这里找到我</p><a href={`mailto:${site.contacts.email}`}>{site.contacts.email}<span>↗</span></a></div>
         <div className="footer-bottom"><span>© 2026 WENHAO</span><span>A SMALL DIGITAL STUDIO</span><span>MADE WITH CARE</span></div>
       </footer>}
-      {!musicPage && <GlobalMusicDock />}
+      {!musicPage && <GlobalMusicDock commerceMode={commercePage} />}
     </div>
   )
 }
