@@ -12,6 +12,7 @@ type QueryBuilder = {
   select: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   eq: ReturnType<typeof vi.fn>
+  in: ReturnType<typeof vi.fn>
   order: ReturnType<typeof vi.fn>
   single: ReturnType<typeof vi.fn>
   maybeSingle: ReturnType<typeof vi.fn>
@@ -24,6 +25,7 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
     select: vi.fn(),
     update: vi.fn(),
     eq: vi.fn(),
+    in: vi.fn(),
     order: vi.fn(),
     single: vi.fn(),
     maybeSingle: vi.fn(),
@@ -35,6 +37,7 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
   builder.select.mockReturnValue(builder)
   builder.update.mockReturnValue(builder)
   builder.eq.mockReturnValue(builder)
+  builder.in.mockReturnValue(builder)
   builder.order.mockReturnValue(builder)
   builder.single.mockResolvedValue(response)
   builder.maybeSingle.mockResolvedValue(response)
@@ -232,6 +235,19 @@ describe('commerce repository', () => {
 
     await expect(repository.deleteProject('project-1')).rejects.toThrow('网络或服务暂时不可用')
 
+    expect(mock.client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('refuses active project deletion before removing Storage objects', async () => {
+    const mock = makeClient({ generationResponse: { data: [{ status: 'processing' }], error: null } })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.deleteProject('project-1')).rejects.toThrow('生成中')
+
+    expect(mock.generationQuery.eq).toHaveBeenCalledWith('project_id', 'project-1')
+    expect(mock.generationQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(mock.generationQuery.in).toHaveBeenCalledWith('status', ['queued', 'processing'])
+    expect(mock.storage.remove).not.toHaveBeenCalled()
     expect(mock.client.rpc).not.toHaveBeenCalled()
   })
 

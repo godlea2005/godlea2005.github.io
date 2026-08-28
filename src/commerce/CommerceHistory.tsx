@@ -105,12 +105,15 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
     }
   }
 
+  const isActive = (generation?: CommerceGeneration) => generation?.status === 'queued' || generation?.status === 'processing'
   const requestDelete = (id: string) => {
+    if (isActive(latestByProject.get(id))) return
     clearCardError(id)
     setConfirmingDelete((current) => new Set(current).add(id))
   }
   const cancelDelete = (id: string) => setConfirmingDelete((current) => { const next = new Set(current); next.delete(id); return next })
   const confirmDelete = async (id: string) => {
+    if (isActive(latestByProject.get(id))) return
     if (deletingRef.current.has(id)) return
     deletingRef.current.add(id)
     setDeleting((current) => new Set(current).add(id))
@@ -148,6 +151,7 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
       const earliestExpiry = readyAssets.map((asset) => asset.expiresAt).filter(Boolean).sort()[0]
       const isDeleting = deleting.has(project.id)
       const isLocking = locking.has(project.id)
+      const activeGeneration = isActive(generation)
       return <li key={project.id}>
         <article className="commerce-history-card" aria-label={`${project.name} 历史项目`}>
           <div className="commerce-history-index"><span>{String(index + 1).padStart(2, '0')}</span><i data-status={generation?.status ?? 'none'} /></div>
@@ -162,7 +166,7 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
           </div>
           <div className="commerce-history-actions">
             {generation?.status === 'completed' ? <button type="button" onClick={() => selectResult(project, generation)} disabled={isDeleting} aria-label={`查看 ${project.name} 方案`}>查看方案</button> : null}
-            {!confirmingDelete.has(project.id) ? <button type="button" onClick={() => requestDelete(project.id)} disabled={isDeleting} aria-label={`删除 ${project.name}`}>删除</button> : <div className="commerce-delete-confirm" role="group" aria-label={`确认删除 ${project.name}`}>
+            {!confirmingDelete.has(project.id) ? <button type="button" onClick={() => requestDelete(project.id)} disabled={isDeleting || activeGeneration} title={activeGeneration ? '任务生成中，完成或终止后才能删除' : undefined} aria-label={`删除 ${project.name}`}>删除</button> : <div className="commerce-delete-confirm" role="group" aria-label={`确认删除 ${project.name}`}>
               <span>确认删除项目？</span><button type="button" onClick={() => void confirmDelete(project.id)} disabled={isDeleting} aria-label={`确认删除 ${project.name}`}>{isDeleting ? '删除中…' : '确认删除'}</button><button type="button" onClick={() => cancelDelete(project.id)} disabled={isDeleting} aria-label={`取消删除 ${project.name}`}>取消</button>
             </div>}
           </div>

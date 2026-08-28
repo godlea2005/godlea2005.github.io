@@ -20,7 +20,7 @@ const confidenceLabels: Record<Confidence, string> = {
 const lines = (values: string[], empty = '无') => values.length > 0 ? values.map((value) => `- ${value}`).join('\n') : `- ${empty}`
 
 const hiddenResource = '[已隐藏可能包含内部资源地址的内容]'
-const sensitiveResourcePattern = /(?:https?:\/\/[^\s]*(?:supabase|storage\/v1\/object\/sign|[?&](?:token|signature|expires)=)|(?:^|[\s/])commerce-assets(?:[/\\]|$)|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][^\s/\\]+\.(?:png|jpe?g|webp)\b)/i
+const sensitiveResourcePattern = /(?:https?:\/\/[^\s/]+\/storage\/v1\/object\/(?:sign|authenticated)\/[^\s]+|https?:\/\/[^\s]+[?&](?:token|signature|x-amz-signature|secret|apikey)=[^\s&]+|(?:^|[\s/])commerce-assets(?:[/\\]|$)|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][^\s/\\]+\.(?:png|jpe?g|webp)\b)/i
 const publicText = (value: string) => sensitiveResourcePattern.test(value) ? hiddenResource : value
 const publicStrings = (values: string[]) => values.map(publicText)
 
@@ -195,8 +195,8 @@ export function CommerceResult({ result, onRerunDirection, rerunDisabled = false
             <div><dt>文案位置</dt><dd>{direction.copyPlacement}</dd></div><div><dt>色彩</dt><dd>{direction.palette.join(' / ')}</dd></div>
             <div><dt>道具</dt><dd>{direction.props.join(' / ') || '无'}</dd></div>
           </dl>
-          <div className="commerce-prompt-block"><span>IMAGE PROMPT</span><p>{direction.imagePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(promptKey, direction.imagePrompt)}>复制提示词</button>{feedback(promptKey)}</div></div>
-          <div className="commerce-prompt-block"><span>NEGATIVE PROMPT</span><p>{direction.negativePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(negativeKey, direction.negativePrompt)}>复制负面提示词</button>{feedback(negativeKey)}</div></div>
+          <div className="commerce-prompt-block"><span>IMAGE PROMPT</span><p>{direction.imagePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(promptKey, publicText(direction.imagePrompt))}>复制提示词</button>{feedback(promptKey)}</div></div>
+          <div className="commerce-prompt-block"><span>NEGATIVE PROMPT</span><p>{direction.negativePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(negativeKey, publicText(direction.negativePrompt))}>复制负面提示词</button>{feedback(negativeKey)}</div></div>
           {onRerunDirection ? <button className="commerce-rerun commerce-print-hidden" type="button" disabled={rerunDisabled} title={rerunDisabled ? rerunDisabledReason : undefined} onClick={() => onRerunDirection(direction, index)}>基于此方向重做 <i aria-hidden="true">↗</i></button> : null}
         </article>
       })}</div>

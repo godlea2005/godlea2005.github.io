@@ -555,6 +555,16 @@ class SupabaseCommerceRepository implements CommerceRepository {
 
   async deleteProject(id: string): Promise<void> {
     const userId = await this.requireAuthenticatedUser()
+    const { data: activeGenerations, error: activeError } = await this.client
+      .from('commerce_generations')
+      .select('status')
+      .eq('project_id', id)
+      .eq('user_id', userId)
+      .in('status', ['queued', 'processing'])
+    if (activeError) throw mapCommerceError(activeError)
+    if (asArray(activeGenerations).length > 0) {
+      throw new CommerceRepositoryError('VALIDATION', '项目仍在生成中，请等待任务完成或终止后再删除。')
+    }
     const { data, error } = await this.client
       .from('commerce_project_assets')
       .select('storage_path')

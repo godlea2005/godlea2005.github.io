@@ -158,6 +158,25 @@ describe('commerce result presentation', () => {
     expect(copied).toContain('俄罗斯城市通勤者')
   })
 
+  it('uses the same precise sanitizer for prompt copies while preserving public Supabase links', async () => {
+    const promptResult: CommerceResultData = {
+      ...result,
+      heroDirections: result.heroDirections.map((direction, index) => index === 0 ? {
+        ...direction,
+        imagePrompt: '参考公开文档 https://supabase.com/docs 保持正常',
+        negativePrompt: '勿使用 https://x.supabase.co/storage/v1/object/sign/commerce-assets/a.png?token=secret',
+      } : direction) as CommerceResultData['heroDirections'],
+    }
+    render(<CommerceResult result={promptResult} />)
+    const copy = vi.mocked(navigator.clipboard.writeText)
+    await userEvent.click(screen.getAllByRole('button', { name: '复制提示词' })[0])
+    expect(copy).toHaveBeenLastCalledWith('参考公开文档 https://supabase.com/docs 保持正常')
+    await userEvent.click(screen.getAllByRole('button', { name: '复制负面提示词' })[0])
+    expect(copy).toHaveBeenLastCalledWith('[已隐藏可能包含内部资源地址的内容]')
+    await userEvent.click(screen.getByRole('button', { name: '复制整套方案' }))
+    expect(copy.mock.calls.at(-1)?.[0]).toContain('https://supabase.com/docs')
+  })
+
   it('delegates rerun direction without starting generation and exposes print semantics', async () => {
     const onRerunDirection = vi.fn()
     const onPrint = vi.fn()
@@ -246,6 +265,16 @@ describe('commerce history', () => {
     await userEvent.click(screen.getByRole('button', { name: '确认删除 保温杯' }))
     expect(await screen.findByText('保温杯')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('删除失败，请重试')
+  })
+
+  it('does not offer deletion for queued or processing projects', async () => {
+    const repository = makeRepository({ listGenerations: vi.fn().mockResolvedValue([generation({ status: 'processing', resultData: null })]) })
+    render(<CommerceHistory repository={repository} onSelectResult={vi.fn()} />)
+    const remove = await screen.findByRole('button', { name: '删除 保温杯' })
+    expect(remove).toBeDisabled()
+    expect(remove).toHaveAttribute('title', expect.stringContaining('生成中'))
+    fireEvent.click(remove)
+    expect(repository.deleteProject).not.toHaveBeenCalled()
   })
 
   it('validates result_data before selecting a completed project', async () => {
@@ -356,6 +385,39 @@ describe('completed generation integration', () => {
     await userEvent.click(await screen.findByRole('button', { name: '查看 旧商品 方案' }))
     expect(screen.getAllByRole('button', { name: '基于此方向重做' })[0]).toBeDisabled()
     expect(repository.startGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('binds rerun to the newly completed live product after viewing old history during processing', async () => {
+    const pending = deferred<CommerceGeneration>()
+    const oldProject = project({ id: 'old-project', name: '旧商品', inputData: { desiredStyle: '旧风格' } })
+    const repository = makeRepository({
+      createProject: vi.fn().mockResolvedValue(project({ id: 'new-project', name: '新商品' })),
+      getGeneration: vi.fn(() => pending.promise),
+      listProjects: vi.fn().mockResolvedValue([oldProject]),
+      listGenerations: vi.fn().mockResolvedValue([generation({ id: 'old-generation', projectId: 'old-project' })]),
+    })
+    render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), '新商品')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'new.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await userEvent.click(await screen.findByRole('button', { name: '查看 旧商品 方案' }))
+    await act(async () => pending.resolve(generation({ id: 'generation-1', projectId: 'new-project', resultData: { ...result, productSummary: '新方案' } })))
+    await userEvent.click((await screen.findAllByRole('button', { name: '基于此方向重做' }))[0])
+    expect(await screen.findByDisplayValue('新商品')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('旧商品')).not.toBeInTheDocument()
+  })
+
+  it('never passes account A rerun draft or note into account B first render', async () => {
+    const repository = makeRepository()
+    const view = render(<CommerceStudioPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('button', { name: '查看 保温杯 方案' }))
+    await userEvent.click(screen.getAllByRole('button', { name: '基于此方向重做' })[0])
+    expect(screen.getByDisplayValue('保温杯')).toBeInTheDocument()
+    authMock.useAuth.mockReturnValue(auth('user-b'))
+    view.rerender(<CommerceStudioPage repository={repository} />)
+    expect(screen.getByLabelText('产品名称')).toHaveValue('')
+    expect(screen.queryByText(/已选择“主图方向 1”/)).not.toBeInTheDocument()
   })
 
   it('seeds a manual rerun draft with direction details and never starts automatically', async () => {

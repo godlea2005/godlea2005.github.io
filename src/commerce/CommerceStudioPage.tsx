@@ -19,7 +19,8 @@ type Attempt = {
 }
 
 type GenerationGuard = { scope: number; userId: string; generationId: string; sequence: number }
-type DraftSeed = { key: number; input: Partial<CommerceProjectInput> }
+type DraftSeed = { key: number; ownerId: string; input: Partial<CommerceProjectInput> }
+type RerunBase = { sourceId: string; input: Partial<CommerceProjectInput> }
 
 export type CommerceStudioPageProps = {
   repository?: CommerceRepository
@@ -51,9 +52,10 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
   const [liveGenerationOwnerId, setLiveGenerationOwnerId] = useState<string | null>(null)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
   const [draftSeed, setDraftSeed] = useState<DraftSeed | null>(null)
+  const [presentationOwnerId, setPresentationOwnerId] = useState<string | null>(null)
   const attemptRef = useRef<Attempt | null>(null)
   const lastSuccessfulInputRef = useRef<CommerceProjectInput | null>(null)
-  const rerunBaseRef = useRef<Partial<CommerceProjectInput> | null>(null)
+  const rerunBaseRef = useRef<RerunBase | null>(null)
   const mountedRef = useRef(true)
   const entitlementRequestRef = useRef(0)
   const generationIdRef = useRef<string | null>(null)
@@ -104,6 +106,7 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
     setLiveGeneration(null)
     setLiveGenerationOwnerId(null)
     setDraftSeed(null)
+    setPresentationOwnerId(null)
     setHistoryRefreshKey((current) => current + 1)
   }, [authenticatedUserId])
 
@@ -149,11 +152,15 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
         setResultOwnerId(authenticatedUserIdRef.current)
         setResultNotice('方案生成完成')
         setResultUnavailable('')
-        if (attemptRef.current?.input) lastSuccessfulInputRef.current = attemptRef.current.input
+        if (attemptRef.current?.input) {
+          lastSuccessfulInputRef.current = attemptRef.current.input
+          rerunBaseRef.current = { sourceId: generation.id ?? generation.projectId ?? 'current-generation', input: attemptRef.current.input }
+        }
       } else {
         setResult(null)
         setResultNotice('方案生成完成')
         setResultUnavailable('返回的方案数据不可用。请保留项目并稍后重试。')
+        setPresentationOwnerId(authenticatedUserIdRef.current)
       }
     }
     if ('id' in generation && generation.id) {
@@ -246,6 +253,7 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
         const started = await repository.startGeneration(attempt.projectId, attempt.idempotencyKey)
         if (!scopeIsCurrent()) return
         attempt.generationId = started.generationId
+        rerunBaseRef.current = null
         const sequence = ++generationSequenceRef.current
         setActiveGenerationId(started.generationId)
         const guard = { scope, userId, generationId: started.generationId, sequence }
@@ -260,6 +268,7 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
             setStatus('completed')
             setResultNotice('方案生成完成')
             setResultUnavailable(`${messageForError(completedError)} 暂时无法读取方案，请从历史记录重试。`)
+            setPresentationOwnerId(userId)
           }
         } else {
           handleGenerationState({ status: started.status, errorMessage: null }, guard)
@@ -293,10 +302,10 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
     setStatus('idle')
   }, [busy, setActiveGenerationId])
 
-  const selectHistoryResult = useCallback((nextResult: CommerceResultData, project: CommerceProject, _generation: CommerceGeneration) => {
+  const selectHistoryResult = useCallback((nextResult: CommerceResultData, project: CommerceProject, generation: CommerceGeneration) => {
     setResult(nextResult)
     setResultOwnerId(authenticatedUserIdRef.current)
-    rerunBaseRef.current = { mode: project.mode, name: project.name, platform: project.platform, ...project.inputData, files: [] }
+    rerunBaseRef.current = { sourceId: generation.id, input: { mode: project.mode, name: project.name, platform: project.platform, ...project.inputData, files: [] } }
     setResultNotice('已打开历史方案')
     setResultUnavailable('')
     setError('')
@@ -307,11 +316,12 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
       setDirectionNote('当前方案仍在生成，请等待任务完成后再基于方向重做。')
       return
     }
-    const base = rerunBaseRef.current ?? lastSuccessfulInputRef.current
-    if (!base) {
+    const source = rerunBaseRef.current
+    if (!source) {
       setDirectionNote('暂时无法恢复原产品资料，请从历史项目重新打开方案。')
       return
     }
+    const base = source.input
     const directionSeed = `重做方向：${direction.title}\n构图：${direction.composition}`
     const promptSeed = `图片提示词：${direction.imagePrompt}\n负面提示词：${direction.negativePrompt}`
     const input: Partial<CommerceProjectInput> = {
@@ -321,7 +331,10 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
       notes: [base.notes, promptSeed].filter(Boolean).join('\n\n'),
       files: base.files ?? [],
     }
-    setDraftSeed((current) => ({ key: (current?.key ?? 0) + 1, input }))
+    const ownerId = authenticatedUserIdRef.current
+    if (!ownerId) return
+    setDraftSeed((current) => ({ key: (current?.key ?? 0) + 1, ownerId, input }))
+    setPresentationOwnerId(ownerId)
     setResult(null)
     setResultOwnerId(null)
     setResultUnavailable('')
@@ -334,6 +347,9 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
 
   const visibleResult = resultOwnerId === authenticatedUserId ? result : null
   const visibleLiveGeneration = liveGenerationOwnerId === authenticatedUserId ? liveGeneration : null
+  const visibleDraftSeed = draftSeed?.ownerId === authenticatedUserId ? draftSeed : null
+  const visibleDirectionNote = presentationOwnerId === authenticatedUserId ? directionNote : ''
+  const visibleResultUnavailable = presentationOwnerId === authenticatedUserId ? resultUnavailable : ''
 
   return (
     <main className="commerce-page" id="ai-commerce">
@@ -353,10 +369,10 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
             <div className="commerce-result-status commerce-print-hidden" role="status"><span>{resultNotice}</span><button type="button" onClick={() => { setResult(null); setResultNotice(''); setResultUnavailable('') }}>返回工作台</button></div>
             <CommerceResult result={visibleResult} onRerunDirection={rerunDirection} rerunDisabled={busy} rerunDisabledReason="当前方案仍在生成，请等待任务完成" />
           </> : <>
-            {resultUnavailable ? <div className="commerce-result-unavailable" role="alert"><strong>{resultNotice}</strong><span>{resultUnavailable}</span></div> : null}
-            {directionNote ? <div className="commerce-direction-note" role="status">{directionNote}</div> : null}
+            {visibleResultUnavailable ? <div className="commerce-result-unavailable" role="alert"><strong>{resultNotice}</strong><span>{visibleResultUnavailable}</span></div> : null}
+            {visibleDirectionNote ? <div className="commerce-direction-note" role="status">{visibleDirectionNote}</div> : null}
             <CommerceProjectForm
-              key={`commerce-form-${authenticatedUserId}-${draftSeed?.key ?? 0}`}
+              key={`commerce-form-${authenticatedUserId}-${visibleDraftSeed?.key ?? 0}`}
               onSubmitted={runAttempt}
               busy={busy}
               status={status}
@@ -365,8 +381,8 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
               creditsLabel={creditsLabel}
               onRetry={error && attemptRef.current && !attemptRef.current.retryBlocked ? retry : undefined}
               onMaterialChange={resetAttemptForMaterialChange}
-              initialDraft={draftSeed?.input}
-              draftKey={draftSeed?.key ?? 0}
+              initialDraft={visibleDraftSeed?.input}
+              draftKey={visibleDraftSeed?.key ?? 0}
             />
           </>}
         </div>
