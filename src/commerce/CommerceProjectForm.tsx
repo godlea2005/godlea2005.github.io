@@ -19,6 +19,8 @@ export type CommerceProjectFormProps = {
   creditsLabel?: string
   onRetry?: () => void
   onMaterialChange?: () => void
+  initialDraft?: Partial<CommerceProjectInput>
+  draftKey?: string | number
 }
 
 type TextValues = Omit<CommerceProjectInput, 'files'>
@@ -89,6 +91,8 @@ export function CommerceProjectForm({
   creditsLabel = '登录后查看',
   onRetry,
   onMaterialChange,
+  initialDraft,
+  draftKey = 0,
 }: CommerceProjectFormProps) {
   const [values, setValues] = useState<TextValues>(initialValues)
   const [previews, setPreviews] = useState<PreviewFile[]>([])
@@ -97,11 +101,32 @@ export function CommerceProjectForm({
   const [fileNotice, setFileNotice] = useState('')
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
   const livePreviews = useRef(new Map<string, string>())
+  const draftRef = useRef(initialDraft)
+  draftRef.current = initialDraft
 
   useEffect(() => () => {
     livePreviews.current.forEach((url) => URL.revokeObjectURL(url))
     livePreviews.current.clear()
   }, [])
+
+  useEffect(() => {
+    const draft = draftRef.current
+    livePreviews.current.forEach((url) => URL.revokeObjectURL(url))
+    livePreviews.current.clear()
+    const { files = [], ...draftValues } = draft ?? {}
+    setValues({ ...initialValues, ...draftValues })
+    const nextPreviews = files.map((file) => {
+      const id = uniqueId()
+      const url = URL.createObjectURL(file)
+      livePreviews.current.set(id, url)
+      return { id, file, url }
+    })
+    setPreviews(nextPreviews)
+    setConsented(false)
+    setFileError('')
+    setFileNotice('')
+    setCurrentStep(1)
+  }, [draftKey])
 
   const input = useMemo<CommerceProjectInput>(() => ({
     ...values,

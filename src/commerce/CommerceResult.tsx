@@ -6,6 +6,8 @@ type CopyState = { key: string; kind: 'success' | 'error'; message: string } | n
 export type CommerceResultProps = {
   result: CommerceResultData
   onRerunDirection?: (direction: HeroDirection, index: number) => void
+  rerunDisabled?: boolean
+  rerunDisabledReason?: string
   onPrint?: () => void
 }
 
@@ -17,8 +19,40 @@ const confidenceLabels: Record<Confidence, string> = {
 
 const lines = (values: string[], empty = '无') => values.length > 0 ? values.map((value) => `- ${value}`).join('\n') : `- ${empty}`
 
+const hiddenResource = '[已隐藏可能包含内部资源地址的内容]'
+const sensitiveResourcePattern = /(?:https?:\/\/[^\s]*(?:supabase|storage\/v1\/object\/sign|[?&](?:token|signature|expires)=)|(?:^|[\s/])commerce-assets(?:[/\\]|$)|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[/\\][^\s/\\]+\.(?:png|jpe?g|webp)\b)/i
+const publicText = (value: string) => sensitiveResourcePattern.test(value) ? hiddenResource : value
+const publicStrings = (values: string[]) => values.map(publicText)
+
+const sanitizeResultForCopy = (result: CommerceResultData): CommerceResultData => ({
+  productSummary: publicText(result.productSummary),
+  facts: result.facts.map((fact) => ({ ...fact, label: publicText(fact.label), value: publicText(fact.value) })),
+  audiences: result.audiences.map((audience) => ({ segment: publicText(audience.segment), motivation: publicText(audience.motivation) })),
+  sellingPoints: result.sellingPoints.map((item) => ({ ...item, point: publicText(item.point), reason: publicText(item.reason) })),
+  platformStrategy: {
+    overview: publicText(result.platformStrategy.overview), contentDensity: publicText(result.platformStrategy.contentDensity),
+    tone: publicText(result.platformStrategy.tone), complianceNotes: publicStrings(result.platformStrategy.complianceNotes),
+  },
+  heroDirections: result.heroDirections.map((direction) => ({
+    ...direction, title: publicText(direction.title), rationale: publicText(direction.rationale), composition: publicText(direction.composition),
+    background: publicText(direction.background), palette: publicStrings(direction.palette), lighting: publicText(direction.lighting),
+    props: publicStrings(direction.props), copyPlacement: publicText(direction.copyPlacement), visualFocus: publicText(direction.visualFocus),
+    imagePrompt: publicText(direction.imagePrompt), negativePrompt: publicText(direction.negativePrompt),
+  })) as CommerceResultData['heroDirections'],
+  detailFrames: result.detailFrames.map((frame) => ({
+    ...frame, purpose: publicText(frame.purpose), visual: publicText(frame.visual), copy: publicText(frame.copy),
+    copyTranslation: frame.copyTranslation === null ? null : publicText(frame.copyTranslation), transition: publicText(frame.transition),
+  })),
+  recommendedCanvas: result.recommendedCanvas.map((canvas) => ({
+    usage: publicText(canvas.usage), ratio: publicText(canvas.ratio), pixels: publicText(canvas.pixels), safeZone: publicText(canvas.safeZone),
+  })),
+  fidelityRules: publicStrings(result.fidelityRules),
+  pendingConfirmations: publicStrings(result.pendingConfirmations),
+})
+
 /** Serializes only the public result contract. Unknown object keys can never leak into clipboard output. */
-export const commerceResultToMarkdown = (result: CommerceResultData): string => {
+export const commerceResultToMarkdown = (source: CommerceResultData): string => {
+  const result = sanitizeResultForCopy(source)
   const sections = [
     '# AI 电商视觉方案',
     '',
@@ -75,21 +109,31 @@ export const commerceResultToMarkdown = (result: CommerceResultData): string => 
   return sections.join('\n').trim()
 }
 
-export function CommerceResult({ result, onRerunDirection, onPrint }: CommerceResultProps) {
+export function CommerceResult({ result, onRerunDirection, rerunDisabled = false, rerunDisabledReason = '', onPrint }: CommerceResultProps) {
   const [copyState, setCopyState] = useState<CopyState>(null)
   const feedbackTimer = useRef<number | null>(null)
+  const copyRequest = useRef(0)
+  const mounted = useRef(true)
 
-  useEffect(() => () => {
-    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      copyRequest.current += 1
+      if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current)
+    }
   }, [])
 
   const copy = async (key: string, value: string) => {
+    const request = ++copyRequest.current
     if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current)
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(value)
+      if (!mounted.current || request !== copyRequest.current) return
       setCopyState({ key, kind: 'success', message: '已复制' })
     } catch {
+      if (!mounted.current || request !== copyRequest.current) return
       setCopyState({ key, kind: 'error', message: '复制失败，请手动选择并复制内容。' })
     }
     feedbackTimer.current = window.setTimeout(() => setCopyState((current) => current?.key === key ? null : current), 2200)
@@ -112,7 +156,7 @@ export function CommerceResult({ result, onRerunDirection, onPrint }: CommerceRe
     <section className="commerce-result-section" data-result-section="confidence" aria-labelledby="result-confidence">
       <header><span>01 / FACT SIGNAL</span><h3 id="result-confidence">信息可信度</h3></header>
       <dl className="commerce-facts">{result.facts.map((fact, index) => <div key={`${fact.label}-${index}`}>
-        <dt>{fact.label}</dt><dd>{fact.value}</dd><span data-confidence={fact.confidence}>{confidenceLabels[fact.confidence]}</span>
+        <dt>{fact.label}</dt><dd><span>{fact.value}</span><span data-confidence={fact.confidence}>{confidenceLabels[fact.confidence]}</span></dd>
       </div>)}</dl>
     </section>
 
@@ -153,7 +197,7 @@ export function CommerceResult({ result, onRerunDirection, onPrint }: CommerceRe
           </dl>
           <div className="commerce-prompt-block"><span>IMAGE PROMPT</span><p>{direction.imagePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(promptKey, direction.imagePrompt)}>复制提示词</button>{feedback(promptKey)}</div></div>
           <div className="commerce-prompt-block"><span>NEGATIVE PROMPT</span><p>{direction.negativePrompt}</p><div className="commerce-copy-row commerce-print-hidden"><button type="button" onClick={() => void copy(negativeKey, direction.negativePrompt)}>复制负面提示词</button>{feedback(negativeKey)}</div></div>
-          {onRerunDirection ? <button className="commerce-rerun commerce-print-hidden" type="button" onClick={() => onRerunDirection(direction, index)}>基于此方向重做 <i aria-hidden="true">↗</i></button> : null}
+          {onRerunDirection ? <button className="commerce-rerun commerce-print-hidden" type="button" disabled={rerunDisabled} title={rerunDisabled ? rerunDisabledReason : undefined} onClick={() => onRerunDirection(direction, index)}>基于此方向重做 <i aria-hidden="true">↗</i></button> : null}
         </article>
       })}</div>
     </section>

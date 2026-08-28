@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
 import type { CommerceRepository } from '../src/commerce/commerceRepository'
 import { CommerceHistory } from '../src/commerce/CommerceHistory'
+import { CommerceProjectForm } from '../src/commerce/CommerceProjectForm'
 import { CommerceResult } from '../src/commerce/CommerceResult'
 import { CommerceStudioPage } from '../src/commerce/CommerceStudioPage'
 import type { CommerceGeneration, CommerceProject, CommerceResult as CommerceResultData } from '../src/commerce/types'
@@ -68,10 +69,17 @@ const makeRepository = (overrides: Partial<CommerceRepository> = {}): CommerceRe
   ...overrides,
 })
 
-const auth = (): AuthContextValue => ({
-  configured: true, ready: true, user: { id: 'user-1' } as AuthContextValue['user'], isAnonymous: false, isAdmin: false,
+const auth = (userId = 'user-1'): AuthContextValue => ({
+  configured: true, ready: true, user: { id: userId } as AuthContextValue['user'], isAnonymous: false, isAdmin: false,
   provider: 'github', providers: { github: true, google: true }, error: '', signIn: vi.fn(), signOut: vi.fn(), requireLogin: vi.fn(() => true),
 })
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => { resolve = resolvePromise; reject = rejectPromise })
+  return { promise, resolve, reject }
+}
 
 describe('commerce result presentation', () => {
   beforeEach(() => {
@@ -118,6 +126,36 @@ describe('commerce result presentation', () => {
     expect(within(buttons[1].parentElement!).queryByText('复制失败')).not.toBeInTheDocument()
     await userEvent.click(buttons[1])
     expect(within(buttons[1].parentElement!).getByRole('status')).toHaveTextContent('已复制')
+  })
+
+  it('ignores stale clipboard settlements when copy requests finish in reverse order', async () => {
+    const first = deferred<void>()
+    const second = deferred<void>()
+    vi.mocked(navigator.clipboard.writeText).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    render(<CommerceResult result={result} />)
+    const buttons = screen.getAllByRole('button', { name: '复制提示词' })
+    fireEvent.click(buttons[0])
+    fireEvent.click(buttons[1])
+    await act(async () => second.resolve())
+    expect(within(buttons[1].parentElement!).getByRole('status')).toHaveTextContent('已复制')
+    await act(async () => first.reject(new Error('late denial')))
+    expect(within(buttons[1].parentElement!).getByRole('status')).toHaveTextContent('已复制')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('redacts signed urls and internal storage paths embedded in valid public fields', async () => {
+    const secretResult: CommerceResultData = {
+      ...result,
+      productSummary: 'https://ujwww.supabase.co/storage/v1/object/sign/commerce-assets/a?token=secret',
+      heroDirections: result.heroDirections.map((direction, index) => index === 0 ? { ...direction, imagePrompt: '11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/private.png' } : direction) as CommerceResultData['heroDirections'],
+      detailFrames: result.detailFrames.map((frame, index) => index === 0 ? { ...frame, visual: 'commerce-assets/private/file.webp' } : frame),
+    }
+    render(<CommerceResult result={secretResult} />)
+    await userEvent.click(screen.getByRole('button', { name: '复制整套方案' }))
+    const copied = String(vi.mocked(navigator.clipboard.writeText).mock.calls.at(-1)?.[0])
+    expect(copied).toContain('[已隐藏可能包含内部资源地址的内容]')
+    expect(copied).not.toMatch(/supabase|storage\/v1|commerce-assets|11111111|private\.png|secret/)
+    expect(copied).toContain('俄罗斯城市通勤者')
   })
 
   it('delegates rerun direction without starting generation and exposes print semantics', async () => {
@@ -261,5 +299,86 @@ describe('completed generation integration', () => {
     expect(view.container.querySelector('.commerce-result-actions')).toHaveClass('commerce-print-hidden')
     const history = render(<CommerceHistory repository={makeRepository()} onSelectResult={vi.fn()} />)
     expect(history.container.querySelector('.commerce-history')).toHaveClass('commerce-print-hidden')
+  })
+
+  it('does not reveal an old direct-completed read after account A logs out and account B signs in', async () => {
+    const pending = deferred<CommerceGeneration>()
+    const repository = makeRepository({
+      startGeneration: vi.fn().mockResolvedValue({ generationId: 'generation-a', status: 'completed' }),
+      getGeneration: vi.fn(() => pending.promise), listProjects: vi.fn().mockResolvedValue([]), listGenerations: vi.fn().mockResolvedValue([]),
+    })
+    const view = render(<CommerceStudioPage repository={repository} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), 'A 的商品')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'a.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    authMock.useAuth.mockReturnValue({ ...auth('anonymous'), user: null, isAnonymous: true })
+    view.rerender(<CommerceStudioPage repository={repository} />)
+    expect(screen.getByRole('heading', { name: '请先登录，再选择产品素材' })).toBeInTheDocument()
+    authMock.useAuth.mockReturnValue(auth('user-b'))
+    view.rerender(<CommerceStudioPage repository={repository} />)
+    await act(async () => pending.resolve(generation({ id: 'generation-a', resultData: { ...result, productSummary: 'A 的秘密方案' } })))
+    expect(screen.queryByText('A 的秘密方案')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('产品名称')).toHaveValue('')
+  })
+
+  it('invalidates an in-flight poll when the authenticated identity changes', async () => {
+    const pending = deferred<CommerceGeneration>()
+    const repository = makeRepository({
+      getGeneration: vi.fn(() => pending.promise), listProjects: vi.fn().mockResolvedValue([]), listGenerations: vi.fn().mockResolvedValue([]),
+    })
+    const view = render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), 'A 的轮询商品')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'a.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await waitFor(() => expect(repository.getGeneration).toHaveBeenCalledTimes(1))
+    authMock.useAuth.mockReturnValue(auth('user-b'))
+    view.rerender(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await act(async () => pending.resolve(generation({ resultData: { ...result, productSummary: 'A 的旧轮询结果' } })))
+    expect(screen.queryByText('A 的旧轮询结果')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('产品名称')).toHaveValue('')
+  })
+
+  it('keeps rerun disabled while another accepted generation is active', async () => {
+    const oldProject = project({ id: 'old-project', name: '旧商品' })
+    const oldGeneration = generation({ id: 'old-generation', projectId: 'old-project' })
+    const repository = makeRepository({
+      createProject: vi.fn().mockResolvedValue(project({ id: 'active-project' })),
+      getGeneration: vi.fn().mockResolvedValue(generation({ id: 'active-generation', projectId: 'active-project', status: 'processing', resultData: null })),
+      listProjects: vi.fn().mockResolvedValue([oldProject]), listGenerations: vi.fn().mockResolvedValue([oldGeneration]),
+    })
+    render(<CommerceStudioPage repository={repository} pollIntervalMs={1000} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), '新商品')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'new.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await userEvent.click(await screen.findByRole('button', { name: '查看 旧商品 方案' }))
+    expect(screen.getAllByRole('button', { name: '基于此方向重做' })[0]).toBeDisabled()
+    expect(repository.startGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('seeds a manual rerun draft with direction details and never starts automatically', async () => {
+    const repository = makeRepository()
+    render(<CommerceStudioPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('button', { name: '查看 保温杯 方案' }))
+    await userEvent.click(screen.getAllByRole('button', { name: '基于此方向重做' })[0])
+    expect(await screen.findByDisplayValue(/主图方向 1/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue(/image prompt 1/)).toBeInTheDocument()
+    expect(repository.startGeneration).not.toHaveBeenCalled()
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'rerun.png', { type: 'image/png' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await waitFor(() => expect(repository.createProject).toHaveBeenCalledTimes(1))
+    expect(repository.createProject).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'professional', name: '保温杯', desiredStyle: expect.stringContaining('主图方向 1'), notes: expect.stringContaining('image prompt 1'),
+    }))
+  })
+
+  it('applies an explicit draft seed to the controlled project form', async () => {
+    render(<CommerceProjectForm onSubmitted={vi.fn()} draftKey="seed-1" initialDraft={{ mode: 'professional', name: 'Seed 商品', platform: 'wildberries', desiredStyle: 'Seed 方向', notes: 'Seed prompt', files: [] }} />)
+    expect(await screen.findByDisplayValue('Seed 商品')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Seed 方向')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Seed prompt')).toBeInTheDocument()
   })
 })

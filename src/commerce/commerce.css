@@ -1,6 +1,7 @@
 .commerce-page {
   --commerce-panel: color-mix(in srgb, var(--panel) 82%, transparent);
   --commerce-rule: color-mix(in srgb, var(--line) 88%, transparent);
+  --commerce-error: #ffaaa3;
   position: relative;
   isolation: isolate;
   min-height: calc(100svh - 84px);
@@ -8,6 +9,7 @@
   margin-inline: auto;
   padding: 54px 0 96px;
 }
+:root[data-theme="light"] .commerce-page { --commerce-error: #8d1f29; }
 
 .commerce-page-grid {
   position: fixed;
@@ -228,7 +230,7 @@
 .commerce-result-status span::before,
 .commerce-direction-note::before { content: "◆"; margin-right: 9px; color: var(--accent); font-size: 7px; }
 .commerce-result-status button { padding: 7px 0; border: 0; border-bottom: 1px solid var(--commerce-rule); color: var(--ink); background: transparent; cursor: pointer; }
-.commerce-result-unavailable { color: #ffaaa3; }
+.commerce-result-unavailable { color: var(--commerce-error); }
 .commerce-result-unavailable strong,
 .commerce-result-unavailable span { display: block; }
 .commerce-result-unavailable span { margin-top: 4px; color: var(--muted); }
@@ -253,17 +255,17 @@
 .commerce-history button:focus-visible,
 .commerce-history input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .commerce-copy-feedback { flex-basis: 100%; color: var(--accent); font-size: 9px; line-height: 1.45; text-align: right; }
-.commerce-copy-feedback[role="alert"] { color: #ffaaa3; }
+.commerce-copy-feedback[role="alert"] { color: var(--commerce-error); }
 
 .commerce-result-section { padding: clamp(38px, 5vw, 68px) 0; border-bottom: 1px solid var(--commerce-rule); }
 .commerce-result-section > header { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: baseline; margin-bottom: 28px; }
 .commerce-result-section > header h3 { margin: 0; font-size: clamp(23px, 2.5vw, 34px); line-height: 1.1; letter-spacing: -.05em; }
 
 .commerce-facts { margin: 0; }
-.commerce-facts > div { min-height: 54px; display: grid; grid-template-columns: minmax(110px, .35fr) minmax(0, 1fr) auto; gap: 18px; align-items: center; border-top: 1px solid var(--commerce-rule); }
+.commerce-facts > div { min-height: 54px; display: grid; grid-template-columns: minmax(110px, .35fr) minmax(0, 1fr); gap: 18px; align-items: center; border-top: 1px solid var(--commerce-rule); }
 .commerce-facts > div:last-child { border-bottom: 1px solid var(--commerce-rule); }
 .commerce-facts dt { color: var(--muted); font-size: 10px; }
-.commerce-facts dd { margin: 0; color: var(--ink); font-size: 13px; }
+.commerce-facts dd { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; color: var(--ink); font-size: 13px; }
 [data-confidence] { font-style: normal; white-space: nowrap; }
 .commerce-facts [data-confidence],
 .commerce-selling-points [data-confidence] { padding: 4px 7px; border: 1px solid var(--commerce-rule); color: var(--muted); font: 8px/1.2 "SFMono-Regular", Consolas, monospace; }
@@ -356,11 +358,11 @@
 .commerce-history-lock { margin-top: 13px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; cursor: pointer; }
 .commerce-history-lock input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
 .commerce-history-copy > small { display: block; margin-top: 6px; color: var(--quiet); font-size: 8px; line-height: 1.45; }
-.commerce-history-card-error { margin: 10px 0 0; color: #ffaaa3; font-size: 9px; line-height: 1.55; }
+.commerce-history-card-error { margin: 10px 0 0; color: var(--commerce-error); font-size: 9px; line-height: 1.55; }
 .commerce-history-actions { grid-column: 2; margin-top: 3px; display: flex; flex-wrap: wrap; gap: 6px; }
 .commerce-history-actions > button { min-height: 32px; padding-inline: 9px; }
 .commerce-delete-confirm { flex: 1 0 100%; padding: 9px; display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; border: 1px solid color-mix(in srgb, #ff8f86 42%, var(--commerce-rule)); }
-.commerce-delete-confirm span { color: #ffaaa3; font-size: 8px; }
+.commerce-delete-confirm span { color: var(--commerce-error); font-size: 8px; }
 .commerce-delete-confirm button { min-height: 30px; padding-inline: 7px; font-size: 8px; }
 
 @keyframes commerce-pulse { 50% { opacity: .35; } }
@@ -443,7 +445,8 @@
   .commerce-result-section > header { grid-template-columns: 78px minmax(0, 1fr); gap: 8px; margin-bottom: 23px; }
   .commerce-result-section > header h3 { font-size: 23px; }
   .commerce-facts > div { grid-template-columns: 82px minmax(0, 1fr); gap: 9px; padding: 10px 0; }
-  .commerce-facts > div > span { grid-column: 2; justify-self: start; }
+  .commerce-facts dd { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .commerce-facts dd [data-confidence] { justify-self: start; }
   .commerce-audiences { grid-template-columns: 1fr; }
   .commerce-selling-points li { grid-template-columns: 30px minmax(0, 1fr); padding: 12px 0; }
   .commerce-selling-points li em { grid-column: 2; justify-self: start; }
@@ -461,6 +464,12 @@
   .commerce-history-list { grid-template-columns: minmax(0, 1fr); }
   .commerce-delete-confirm { grid-template-columns: 1fr 1fr; }
   .commerce-delete-confirm span { grid-column: 1 / -1; }
+  .commerce-result-actions button,
+  .commerce-copy-row button,
+  .commerce-rerun,
+  .commerce-history button,
+  .commerce-history-actions > button,
+  .commerce-delete-confirm button { min-height: 44px; }
 }
 
 @media print {
