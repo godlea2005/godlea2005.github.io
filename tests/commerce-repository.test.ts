@@ -498,6 +498,24 @@ describe('commerce repository', () => {
     await expect(repository.getGeneration('generation-1')).resolves.toMatchObject({ projectId: null, status: 'completed' })
   })
 
+  it('lists the authenticated user generation history newest first', async () => {
+    const rows = [{
+      id: 'generation-2', project_id: 'project-1', user_id: 'user-1', idempotency_key: 'request-2', status: 'completed',
+      result_data: { productSummary: '方案' }, provider: 'openai', model: 'gpt', usage: null, error_code: null,
+      error_message: null, credit_charged: true, refunded_at: null, created_at: '2026-08-27T00:00:00.000Z',
+      started_at: '2026-08-27T00:00:01.000Z', completed_at: '2026-08-27T00:00:02.000Z',
+    }]
+    const mock = makeClient({ generationResponse: { data: rows, error: null } })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.listGenerations()).resolves.toEqual([
+      expect.objectContaining({ id: 'generation-2', projectId: 'project-1', status: 'completed' }),
+    ])
+    expect(mock.client.auth.getUser).toHaveBeenCalledTimes(1)
+    expect(mock.generationQuery.select).toHaveBeenCalledWith(expect.stringContaining('result_data'))
+    expect(mock.generationQuery.order).toHaveBeenCalledWith('created_at', { ascending: false })
+  })
+
   it('uses only the administrator RPC contract, including exact mutation parameters', async () => {
     const mock = makeClient({
       rpcResponses: {

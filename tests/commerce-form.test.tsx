@@ -378,12 +378,12 @@ describe('AI commerce submission workflow', () => {
     await completeQuickForm()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     if (terminalStatus === 'completed') {
-      expect(await screen.findByText(expectedCopy)).toBeInTheDocument()
+      expect((await screen.findAllByText(expectedCopy)).length).toBeGreaterThan(0)
     } else {
       expect(await screen.findByRole('alert')).toHaveTextContent(expectedCopy)
     }
     await new Promise((resolve) => window.setTimeout(resolve, 20))
-    expect(repository.getGeneration).not.toHaveBeenCalled()
+    expect(repository.getGeneration).toHaveBeenCalledTimes(terminalStatus === 'completed' ? 1 : 0)
     if (terminalStatus === 'completed') {
       expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
     } else {
@@ -483,7 +483,7 @@ describe('AI commerce submission workflow', () => {
     expect(repository.getGeneration).toHaveBeenCalledTimes(1)
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     expect(repository.getGeneration).toHaveBeenCalledTimes(2)
-    expect(screen.getByText('方案生成完成')).toBeInTheDocument()
+    expect(screen.getAllByText('方案生成完成').length).toBeGreaterThan(0)
     await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
     expect(repository.getGeneration).toHaveBeenCalledTimes(2)
     view.unmount()

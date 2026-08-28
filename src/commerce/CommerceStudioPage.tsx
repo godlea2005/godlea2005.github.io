@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { commerceRepository, type CommerceRepository } from './commerceRepository'
+import { CommerceHistory } from './CommerceHistory'
 import { CommerceProjectForm, type CommerceFormStatus } from './CommerceProjectForm'
-import type { AssetUploadProgress, CommerceGeneration, CommerceGenerationStatus, CommerceProjectInput } from './types'
+import { CommerceResult } from './CommerceResult'
+import type { AssetUploadProgress, CommerceGeneration, CommerceGenerationStatus, CommerceProject, CommerceProjectInput, CommerceResult as CommerceResultData, HeroDirection } from './types'
+import { isCommerceResult } from './validation'
 import './commerce.css'
 
 type Attempt = {
@@ -36,6 +39,12 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
   const [progress, setProgress] = useState<AssetUploadProgress | null>(null)
   const [error, setError] = useState('')
   const [generationId, setGenerationId] = useState<string | null>(null)
+  const [result, setResult] = useState<CommerceResultData | null>(null)
+  const [resultNotice, setResultNotice] = useState('')
+  const [resultUnavailable, setResultUnavailable] = useState('')
+  const [directionNote, setDirectionNote] = useState('')
+  const [liveGeneration, setLiveGeneration] = useState<CommerceGeneration | null>(null)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
   const attemptRef = useRef<Attempt | null>(null)
   const mountedRef = useRef(true)
   const entitlementRequestRef = useRef(0)
@@ -68,7 +77,7 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
 
   useEffect(() => { void refreshEntitlement() }, [refreshEntitlement])
 
-  const handleGenerationState = useCallback((generation: Pick<CommerceGeneration, 'status' | 'errorMessage'>) => {
+  const handleGenerationState = useCallback((generation: Pick<CommerceGeneration, 'status' | 'errorMessage'> & Partial<Pick<CommerceGeneration, 'resultData' | 'projectId' | 'id'>>) => {
     if (!mountedRef.current) return
     setStatus(generation.status)
     if (!terminalStatuses.has(generation.status)) return
@@ -85,6 +94,19 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
     }
 
     setError('')
+    if ('resultData' in generation) {
+      if (isCommerceResult(generation.resultData)) {
+        setResult(generation.resultData)
+        setResultNotice('方案生成完成')
+        setResultUnavailable('')
+      } else {
+        setResult(null)
+        setResultNotice('方案生成完成')
+        setResultUnavailable('返回的方案数据不可用。请保留项目并稍后重试。')
+      }
+    }
+    if ('id' in generation && generation.id) setLiveGeneration(generation as CommerceGeneration)
+    setHistoryRefreshKey((current) => current + 1)
     attemptRef.current = null
   }, [createIdempotencyKey, refreshEntitlement])
 
@@ -127,6 +149,7 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
         setStatus('creating')
         const project = await repository.createProject(attempt.input)
         attempt.projectId = project.id
+        setHistoryRefreshKey((current) => current + 1)
       }
       if (!attempt.uploaded) {
         setStatus('uploading')
@@ -157,7 +180,17 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
         const started = await repository.startGeneration(attempt.projectId, attempt.idempotencyKey)
         attempt.generationId = started.generationId
         setGenerationId(started.generationId)
-        handleGenerationState({ status: started.status, errorMessage: null })
+        if (started.status === 'completed') {
+          setStatus('completed')
+          try {
+            handleGenerationState(await repository.getGeneration(started.generationId))
+          } catch (completedError) {
+            setResultNotice('方案生成完成')
+            setResultUnavailable(`${messageForError(completedError)} 暂时无法读取方案，请从历史记录重试。`)
+          }
+        } else {
+          handleGenerationState({ status: started.status, errorMessage: null })
+        }
         if (!terminalStatuses.has(started.status) || started.status === 'completed') void refreshEntitlement()
       }
     } catch (attemptError) {
@@ -178,8 +211,29 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
     setGenerationId(null)
     setProgress(null)
     setError('')
+    setResult(null)
+    setResultNotice('')
+    setResultUnavailable('')
+    setDirectionNote('')
     setStatus('idle')
   }, [busy])
+
+  const selectHistoryResult = useCallback((nextResult: CommerceResultData, _project: CommerceProject, generation: CommerceGeneration) => {
+    setResult(nextResult)
+    setLiveGeneration(generation)
+    setResultNotice('已打开历史方案')
+    setResultUnavailable('')
+    setError('')
+  }, [])
+
+  const rerunDirection = useCallback((direction: HeroDirection, index: number) => {
+    setResult(null)
+    setResultUnavailable('')
+    setDirectionNote(`已选择“${direction.title}”作为第 ${index + 1} 个重做方向。请核对产品资料后手动提交；此操作尚未生成，也不会扣除次数。`)
+    setStatus('idle')
+    setGenerationId(null)
+    attemptRef.current = null
+  }, [])
 
   return (
     <main className="commerce-page" id="ai-commerce">
@@ -193,16 +247,28 @@ export function CommerceStudioPage({ repository = commerceRepository, pollInterv
       </section> : !authenticated ? <section className="commerce-auth-gate" aria-labelledby="commerce-login-title">
         <span>LOGIN REQUIRED</span><h2 id="commerce-login-title">请先登录，再选择产品素材</h2><p>OAuth 登录会离开当前页面。先完成登录可以避免已经填写的资料和本地图片在跳转时丢失；图片不会被写入本地存储。</p>
         <button type="button" onClick={() => auth.requireLogin('#ai-commerce')}>登录并进入工作台 <i aria-hidden="true">↗</i></button>
-      </section> : <CommerceProjectForm
-        onSubmitted={runAttempt}
-        busy={busy}
-        status={status}
-        progress={progress}
-        error={error}
-        creditsLabel={creditsLabel}
-        onRetry={error && attemptRef.current && !attemptRef.current.retryBlocked ? retry : undefined}
-        onMaterialChange={resetAttemptForMaterialChange}
-      />}
+      </section> : <div className="commerce-studio-stage">
+        <div className="commerce-studio-primary">
+          {result ? <>
+            <div className="commerce-result-status commerce-print-hidden" role="status"><span>{resultNotice}</span><button type="button" onClick={() => { setResult(null); setResultNotice(''); setResultUnavailable('') }}>返回工作台</button></div>
+            <CommerceResult result={result} onRerunDirection={rerunDirection} />
+          </> : <>
+            {resultUnavailable ? <div className="commerce-result-unavailable" role="alert"><strong>{resultNotice}</strong><span>{resultUnavailable}</span></div> : null}
+            {directionNote ? <div className="commerce-direction-note" role="status">{directionNote}</div> : null}
+            <CommerceProjectForm
+              onSubmitted={runAttempt}
+              busy={busy}
+              status={status}
+              progress={progress}
+              error={error}
+              creditsLabel={creditsLabel}
+              onRetry={error && attemptRef.current && !attemptRef.current.retryBlocked ? retry : undefined}
+              onMaterialChange={resetAttemptForMaterialChange}
+            />
+          </>}
+        </div>
+        <CommerceHistory repository={repository} onSelectResult={selectHistoryResult} refreshKey={historyRefreshKey} liveGeneration={liveGeneration} />
+      </div>}
     </main>
   )
 }

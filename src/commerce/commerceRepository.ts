@@ -349,6 +349,7 @@ export interface CommerceRepository {
   uploadAssets(projectId: string, files: File[], onProgress: (progress: AssetUploadProgress) => void): Promise<CommerceAsset[]>
   startGeneration(projectId: string, idempotencyKey: string): Promise<GenerationStartResult>
   getGeneration(id: string): Promise<CommerceGeneration>
+  listGenerations(): Promise<CommerceGeneration[]>
   listProjects(): Promise<CommerceProject[]>
   deleteProject(id: string): Promise<void>
   setProjectLocked(id: string, locked: boolean): Promise<void>
@@ -530,6 +531,16 @@ class SupabaseCommerceRepository implements CommerceRepository {
     if (error) throw mapCommerceError(error)
     if (!data) throw mapCommerceError(new Error('generation not found'))
     return rowToGeneration(data)
+  }
+
+  async listGenerations(): Promise<CommerceGeneration[]> {
+    await this.requireAuthenticatedUser()
+    const { data, error } = await this.client
+      .from('commerce_generations')
+      .select('id,project_id,user_id,idempotency_key,status,result_data,provider,model,usage,error_code,error_message,credit_charged,refunded_at,created_at,started_at,completed_at')
+      .order('created_at', { ascending: false })
+    if (error) throw mapCommerceError(error)
+    return asArray(data).map(rowToGeneration)
   }
 
   async listProjects(): Promise<CommerceProject[]> {
