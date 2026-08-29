@@ -166,6 +166,7 @@ export type SetUserEntitlementInput = {
   credits: number
   unlimited: boolean
   disabled: boolean
+  dailyLimit: number
   reason: string
 }
 

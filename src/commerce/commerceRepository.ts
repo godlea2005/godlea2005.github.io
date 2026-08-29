@@ -353,9 +353,16 @@ export interface CommerceRepository {
   listProjects(): Promise<CommerceProject[]>
   deleteProject(id: string): Promise<void>
   setProjectLocked(id: string, locked: boolean): Promise<void>
-  getAdminDashboard(): Promise<CommerceAdminDashboard>
+  getAdminDashboard(query?: CommerceAdminDashboardQuery): Promise<CommerceAdminDashboard>
   setUserEntitlement(input: SetUserEntitlementInput): Promise<void>
   updateAdminSettings(settings: CommerceAdminSettings, reason: string): Promise<void>
+}
+
+export type CommerceAdminDashboardQuery = {
+  userSearch?: string
+  generationSearch?: string
+  userOffset?: number
+  generationOffset?: number
 }
 
 class SupabaseCommerceRepository implements CommerceRepository {
@@ -590,12 +597,16 @@ class SupabaseCommerceRepository implements CommerceRepository {
     if (error) throw mapCommerceError(error)
   }
 
-  async getAdminDashboard(): Promise<CommerceAdminDashboard> {
+  async getAdminDashboard(query: CommerceAdminDashboardQuery = {}): Promise<CommerceAdminDashboard> {
     await this.requireAuthenticatedUser()
+    const userSearch = query.userSearch?.trim() ?? ''
+    const generationSearch = query.generationSearch?.trim() ?? ''
+    const userOffset = Math.max(0, Math.trunc(query.userOffset ?? 0))
+    const generationOffset = Math.max(0, Math.trunc(query.generationOffset ?? 0))
     const [overview, users, generations, settings] = await Promise.all([
       this.client.rpc('admin_commerce_overview'),
-      this.client.rpc('admin_list_users', { p_search: '', p_limit: adminPageSize, p_offset: 0 }),
-      this.client.rpc('admin_list_generations', { p_search: '', p_limit: adminPageSize, p_offset: 0 }),
+      this.client.rpc('admin_list_users', { p_search: userSearch, p_limit: adminPageSize, p_offset: userOffset }),
+      this.client.rpc('admin_list_generations', { p_search: generationSearch, p_limit: adminPageSize, p_offset: generationOffset }),
       this.client.rpc('admin_get_settings'),
     ])
     if (overview.error) throw mapCommerceError(overview.error)
@@ -617,6 +628,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
       p_credits: input.credits,
       p_unlimited: input.unlimited,
       p_disabled: input.disabled,
+      p_daily_limit: input.dailyLimit,
       p_reason: input.reason,
     })
     if (error) throw mapCommerceError(error)

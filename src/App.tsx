@@ -10,6 +10,7 @@ import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 const MusicPage = lazy(() => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
 const GuestbookPage = lazy(() => import('./components/GuestbookPage').then((module) => ({ default: module.GuestbookPage })))
 const CommerceStudioPage = lazy(() => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
+const CommerceAdminPage = lazy(() => import('./commerce/CommerceAdminPage').then((module) => ({ default: module.CommerceAdminPage })))
 
 const resolvePageHash = () => {
   const isGuestbookAuthReturn = new URLSearchParams(window.location.search).get('auth') === 'guestbook'
@@ -22,7 +23,8 @@ function App() {
   const musicPage = pageHash === '#music'
   const guestbookPage = pageHash === '#guestbook'
   const commercePage = pageHash === '#ai-commerce'
-  const subpage = musicPage || guestbookPage || commercePage
+  const commerceAdminPage = pageHash === '#commerce-admin'
+  const subpage = musicPage || guestbookPage || commercePage || commerceAdminPage
 
   useEffect(() => {
     const initial = getInitialTheme()
@@ -49,7 +51,7 @@ function App() {
     <div className={`site-shell${!subpage ? ' is-home' : ''}`}>
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
 
-      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : <main id="top">
+      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : <main id="top">
         <StatusScene />
         <section className="notice-bar" aria-label="站点动态"><div className="notice-flow">{[...notices, ...notices].map((notice, index) => <p key={`${notice}-${index}`}><i>✦</i>{notice}</p>)}</div></section>
         <StudioMap />
@@ -66,7 +68,7 @@ function App() {
         <div className="footer-contact"><p>可以在这里找到我</p><a href={`mailto:${site.contacts.email}`}>{site.contacts.email}<span>↗</span></a></div>
         <div className="footer-bottom"><span>© 2026 WENHAO</span><span>A SMALL DIGITAL STUDIO</span><span>MADE WITH CARE</span></div>
       </footer>}
-      {!musicPage && <GlobalMusicDock commerceMode={commercePage} />}
+      {!musicPage && <GlobalMusicDock commerceMode={commercePage || commerceAdminPage} />}
     </div>
   )
 }

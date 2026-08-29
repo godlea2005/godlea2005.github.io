@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '../auth/AuthProvider'
 import { site } from '../content/site'
 import type { Theme } from '../lib/theme'
 import './floating-header.css'
@@ -9,18 +10,22 @@ type FloatingHeaderProps = {
   onToggleTheme: () => void
 }
 
-const menuGroups = [
+const baseMenuGroups = [
   { label: '文章', items: [['归档', '#archive'], ['标签图谱', '#notes'], ['文章列表', '#notes']] },
   { label: '联系我', items: [['友链', '#about'], ['留言', '#guestbook'], ['社群', '#about']] },
   { label: '我的', items: [['日历', '#notes'], ['相册', '#archive'], ['赞助', '#about'], ['音乐', '#music'], ['关于', '#about']] },
 ]
 
 export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeaderProps) {
+  const { isAdmin } = useAuth()
   const rootRef = useRef<HTMLElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
-  const homeActive = pageHash !== '#music' && pageHash !== '#guestbook' && pageHash !== '#ai-commerce'
+  const homeActive = pageHash !== '#music' && pageHash !== '#guestbook' && pageHash !== '#ai-commerce' && pageHash !== '#commerce-admin'
+  const menuGroups = baseMenuGroups.map((group) => group.label === '我的' && isAdmin
+    ? { ...group, items: [...group.items, ['管理后台', '#commerce-admin']] }
+    : group)
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -46,7 +51,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
   useEffect(() => {
     setActiveMenu(null)
     setMobileOpen(false)
-  }, [pageHash])
+  }, [isAdmin, pageHash])
 
   const closeNavigation = () => {
     setActiveMenu(null)

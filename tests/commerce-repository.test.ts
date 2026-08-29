@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   createCommerceRepository,
   mapCommerceError,
@@ -482,7 +483,7 @@ describe('commerce repository', () => {
       (repo: CommerceRepository) => repo.setProjectLocked('project-1', true),
       (repo: CommerceRepository) => repo.getAdminDashboard(),
       (repo: CommerceRepository) => repo.setUserEntitlement({
-        userId: 'user-2', credits: 999, unlimited: false, disabled: false, reason: 'friend',
+        userId: 'user-2', credits: 999, unlimited: false, disabled: false, dailyLimit: 10, reason: 'friend',
       }),
       (repo: CommerceRepository) => repo.updateAdminSettings(settings, 'capacity review'),
     ]
@@ -544,7 +545,7 @@ describe('commerce repository', () => {
     repository = createCommerceRepository(mock.client as never)
 
     await repository.getAdminDashboard()
-    await repository.setUserEntitlement({ userId: 'user-2', credits: 9, unlimited: true, disabled: false, reason: 'campaign' })
+    await repository.setUserEntitlement({ userId: 'user-2', credits: 9, unlimited: true, disabled: false, dailyLimit: 25, reason: 'campaign' })
     await repository.updateAdminSettings({
       newUserCredits: 3, defaultDailyLimit: 10, maxProjectImages: 6,
       storageSoftLimitBytes: 800000000, storageTargetBytes: 650000000,
@@ -553,7 +554,7 @@ describe('commerce repository', () => {
     expect(mock.client.rpc).toHaveBeenCalledWith('admin_list_users', { p_search: '', p_limit: 50, p_offset: 0 })
     expect(mock.client.rpc).toHaveBeenCalledWith('admin_list_generations', { p_search: '', p_limit: 50, p_offset: 0 })
     expect(mock.client.rpc).toHaveBeenCalledWith('admin_set_entitlement', {
-      p_user_id: 'user-2', p_credits: 9, p_unlimited: true, p_disabled: false, p_reason: 'campaign',
+      p_user_id: 'user-2', p_credits: 9, p_unlimited: true, p_disabled: false, p_daily_limit: 25, p_reason: 'campaign',
     })
     expect(mock.client.rpc).toHaveBeenCalledWith('admin_update_settings', {
       p_settings: {
@@ -562,5 +563,34 @@ describe('commerce repository', () => {
       },
       p_reason: 'capacity review',
     })
+  })
+
+  it('passes independent administrator search and paging state to the RPCs', async () => {
+    const mock = makeClient({
+      rpcResponses: {
+        admin_commerce_overview: { data: {}, error: null },
+        admin_list_users: { data: [], error: null },
+        admin_list_generations: { data: [], error: null },
+        admin_get_settings: { data: {}, error: null },
+      },
+    })
+    repository = createCommerceRepository(mock.client as never)
+
+    await repository.getAdminDashboard({
+      userSearch: ' friend@example.com ', generationSearch: 'failed', userOffset: 50, generationOffset: 100,
+    })
+
+    expect(mock.client.rpc).toHaveBeenCalledWith('admin_list_users', { p_search: 'friend@example.com', p_limit: 50, p_offset: 50 })
+    expect(mock.client.rpc).toHaveBeenCalledWith('admin_list_generations', { p_search: 'failed', p_limit: 50, p_offset: 100 })
+  })
+
+  it('keeps daily-limit entitlement changes inside the secured administrator RPC contract', () => {
+    const migration = readFileSync('supabase/migrations/202608210001_ai_commerce.sql', 'utf8')
+    expect(migration).toMatch(/admin_set_entitlement\([\s\S]*p_daily_limit integer[\s\S]*security definer[\s\S]*set search_path = ''/)
+    expect(migration).toContain("p_daily_limit not between 1 and 1000")
+    expect(migration).toMatch(/set credits = p_credits,[\s\S]*daily_limit = p_daily_limit/)
+    expect(migration).toContain("'daily_limit', old_entitlement.daily_limit")
+    expect(migration).toContain("'daily_limit', p_daily_limit")
+    expect(migration).toContain('grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) to authenticated;')
   })
 })

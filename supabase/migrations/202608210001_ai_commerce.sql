@@ -948,6 +948,7 @@ create or replace function public.admin_set_entitlement(
   p_credits integer,
   p_unlimited boolean,
   p_disabled boolean,
+  p_daily_limit integer,
   p_reason text
 )
 returns void
@@ -968,6 +969,9 @@ begin
   end if;
   if p_unlimited is null or p_disabled is null then
     raise exception 'unlimited and disabled are required' using errcode = '22023';
+  end if;
+  if p_daily_limit is null or p_daily_limit not between 1 and 1000 then
+    raise exception 'daily limit must be between 1 and 1000' using errcode = '22023';
   end if;
   if p_reason is null or pg_catalog.char_length(pg_catalog.btrim(p_reason)) not between 1 and 500 then
     raise exception 'reason must be between 1 and 500 characters' using errcode = '22023';
@@ -991,6 +995,7 @@ begin
   set credits = p_credits,
       unlimited = p_unlimited,
       disabled = p_disabled,
+      daily_limit = p_daily_limit,
       updated_at = pg_catalog.now()
   where user_id = p_user_id;
 
@@ -1022,12 +1027,14 @@ begin
       'before', pg_catalog.jsonb_build_object(
         'credits', old_entitlement.credits,
         'unlimited', old_entitlement.unlimited,
-        'disabled', old_entitlement.disabled
+        'disabled', old_entitlement.disabled,
+        'daily_limit', old_entitlement.daily_limit
       ),
       'after', pg_catalog.jsonb_build_object(
         'credits', p_credits,
         'unlimited', p_unlimited,
-        'disabled', p_disabled
+        'disabled', p_disabled,
+        'daily_limit', p_daily_limit
       )
     )
   );
@@ -1362,7 +1369,7 @@ revoke all on function public.admin_commerce_overview() from public, anon, authe
 revoke all on function public.admin_list_users(text, integer, integer) from public, anon, authenticated, service_role;
 revoke all on function public.admin_list_generations(text, integer, integer) from public, anon, authenticated, service_role;
 revoke all on function public.admin_get_settings() from public, anon, authenticated, service_role;
-revoke all on function public.admin_set_entitlement(uuid, integer, boolean, boolean, text) from public, anon, authenticated, service_role;
+revoke all on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) from public, anon, authenticated, service_role;
 revoke all on function public.admin_update_settings(jsonb, text) from public, anon, authenticated, service_role;
 
 grant execute on function public.site_is_admin() to authenticated;
@@ -1373,7 +1380,7 @@ grant execute on function public.admin_commerce_overview() to authenticated;
 grant execute on function public.admin_list_users(text, integer, integer) to authenticated;
 grant execute on function public.admin_list_generations(text, integer, integer) to authenticated;
 grant execute on function public.admin_get_settings() to authenticated;
-grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, text) to authenticated;
+grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) to authenticated;
 grant execute on function public.admin_update_settings(jsonb, text) to authenticated;
 
 grant execute on function public.complete_commerce_generation(uuid, jsonb, text, text, jsonb) to service_role;
