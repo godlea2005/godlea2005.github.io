@@ -401,7 +401,7 @@
 .commerce-admin-overview > header { margin-bottom: 24px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
 .commerce-admin-section-header span,
 .commerce-admin-overview > header span,
-.commerce-admin-cleanup > span { color: var(--accent); font: 8px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; }
+.commerce-admin-cleanup > span { color: var(--accent); font: 10px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; }
 .commerce-admin-section-header h2,
 .commerce-admin-overview > header h2 { margin: 8px 0 0; font-size: 25px; letter-spacing: -.05em; }
 .commerce-admin-section-header p { margin: 0; color: var(--commerce-admin-meta); font-size: 10px; }
@@ -457,7 +457,7 @@
 .commerce-admin-dialog textarea { min-height: 86px; resize: vertical; }
 .commerce-admin-settings > label { margin-top: 18px; padding: 0; background: transparent; }
 .commerce-admin-settings > button { margin-top: 18px; border-color: var(--accent); color: #11140e; background: var(--accent); }
-.commerce-admin-validation { margin: 13px 0 0; padding: 0; list-style: none; color: var(--commerce-error); font-size: 9px; line-height: 1.7; }
+.commerce-admin-validation { margin: 13px 0 0; padding: 0; list-style: none; color: var(--commerce-error); font-size: 10px; line-height: 1.7; }
 
 .commerce-admin-dialog-backdrop { position: fixed; z-index: 80; inset: 0; padding: 80px 20px 20px; display: grid; place-items: start center; overflow: auto; background: color-mix(in srgb, #000 72%, transparent); }
 .commerce-admin-dialog { position: relative; width: min(560px, 100%); padding: 27px; border: 1px solid var(--commerce-rule); color: var(--ink); background: var(--bg); box-shadow: 0 30px 100px rgba(0,0,0,.42); }
@@ -471,7 +471,7 @@
 .commerce-admin-confirm { min-height: 48px; padding: 10px 12px; display: flex; align-items: center; gap: 9px; color: var(--ink); background: var(--bg); font-size: 10px; cursor: pointer; }
 .commerce-admin-checks input,
 .commerce-admin-confirm input { width: 17px; height: 17px; accent-color: var(--accent); }
-.commerce-admin-dialog > small { display: block; margin-top: 10px; color: var(--commerce-caution); font-size: 9px; line-height: 1.55; }
+.commerce-admin-dialog > small { display: block; margin-top: 10px; color: var(--commerce-caution); font-size: 10px; line-height: 1.55; }
 .commerce-admin-confirm { margin-top: 13px; border: 1px solid color-mix(in srgb, var(--commerce-caution) 55%, var(--commerce-rule)); }
 .commerce-admin-dialog-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
 .commerce-admin-dialog-actions button:last-child { border-color: var(--accent); color: #11140e; background: var(--accent); }

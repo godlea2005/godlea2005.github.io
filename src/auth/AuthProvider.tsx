@@ -316,10 +316,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return
     const epoch = enterResolvingState()
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    const session = await ensureAnonymousSession()
-    await applySession(session, epoch)
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      const session = await ensureAnonymousSession()
+      await applySession(session, epoch)
+    } catch (error) {
+      if (sessionEpochRef.current === epoch) {
+        try {
+          const { data, error: sessionError } = await supabase.auth.getSession()
+          if (sessionError) throw sessionError
+          await applySession(data.session, epoch)
+        } catch {
+          if (sessionEpochRef.current === epoch) {
+            setState((value) => ({
+              ...value,
+              ready: true,
+              user: null,
+              isAnonymous: true,
+              isAdmin: false,
+              provider: null,
+            }))
+          }
+        }
+        if (sessionEpochRef.current === epoch) {
+          const message = error instanceof Error ? error.message : '退出登录失败，请稍后重试'
+          setState((value) => ({ ...value, ready: true, error: message }))
+        }
+      }
+      throw error
+    }
   }, [applySession, enterResolvingState])
 
   const requireLogin = useCallback((returnHash = '#ai-commerce') => {

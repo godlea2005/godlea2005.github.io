@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 
@@ -43,7 +43,10 @@ function ProtectedProbe() {
 
 function AdminProbe() {
   const auth = useAuth()
-  return <p>{`${auth.ready ? '就绪' : '解析中'}:${auth.user?.id ?? '无用户'}:${auth.isAdmin ? '站长' : '普通用户'}`}</p>
+  return <>
+    <p>{`${auth.ready ? '就绪' : '解析中'}:${auth.user?.id ?? '无用户'}:${auth.isAdmin ? '站长' : '普通用户'}:${auth.error || '无错误'}`}</p>
+    <button type="button" onClick={() => { void auth.signOut().catch(() => undefined) }}>退出登录</button>
+  </>
 }
 
 function OAuthProbe() {
@@ -108,7 +111,7 @@ describe('site authentication provider', () => {
 
     render(<AuthProvider><AdminProbe /></AuthProvider>)
 
-    expect(await screen.findByText('就绪:member-user:普通用户')).toBeInTheDocument()
+    expect(await screen.findByText('就绪:member-user:普通用户:无错误')).toBeInTheDocument()
     expect(mocks.rpc).toHaveBeenCalledWith('site_is_admin')
   })
 
@@ -116,7 +119,7 @@ describe('site authentication provider', () => {
     mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession } })
     mocks.rpc.mockResolvedValueOnce({ data: true, error: null })
     render(<AuthProvider><AdminProbe /></AuthProvider>)
-    expect(await screen.findByText('就绪:member-user:站长')).toBeInTheDocument()
+    expect(await screen.findByText('就绪:member-user:站长:无错误')).toBeInTheDocument()
 
     let resolveOldAdmin!: (value: { data: boolean; error: null }) => void
     const oldAdmin = new Promise<{ data: boolean; error: null }>((resolve) => { resolveOldAdmin = resolve })
@@ -127,19 +130,63 @@ describe('site authentication provider', () => {
     const normalSession = { user: { id: 'member-2', is_anonymous: false, app_metadata: { provider: 'google' } } }
 
     await act(async () => { mocks.authEvents.callback?.('SIGNED_IN', nextAdminSession as typeof signedInSession) })
-    expect(screen.getByText('解析中:无用户:普通用户')).toBeInTheDocument()
+    expect(screen.getByText('解析中:无用户:普通用户:无错误')).toBeInTheDocument()
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)) })
     expect(mocks.rpc).toHaveBeenCalledTimes(2)
 
     await act(async () => { mocks.authEvents.callback?.('SIGNED_IN', normalSession as typeof signedInSession) })
-    expect(screen.getByText('解析中:无用户:普通用户')).toBeInTheDocument()
+    expect(screen.getByText('解析中:无用户:普通用户:无错误')).toBeInTheDocument()
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)) })
     await act(async () => { resolveNewAdmin({ data: false, error: null }) })
-    expect(await screen.findByText('就绪:member-2:普通用户')).toBeInTheDocument()
+    expect(await screen.findByText('就绪:member-2:普通用户:无错误')).toBeInTheDocument()
 
     await act(async () => { resolveOldAdmin({ data: true, error: null }) })
-    expect(screen.getByText('就绪:member-2:普通用户')).toBeInTheDocument()
+    expect(screen.getByText('就绪:member-2:普通用户:无错误')).toBeInTheDocument()
     expect(screen.queryByText(/admin-2:站长/)).not.toBeInTheDocument()
+  })
+
+  it('settles ready from the authoritative session when sign-out resolves with an error', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession }, error: null })
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: false, error: null })
+    mocks.auth.signOut.mockResolvedValue({ error: new Error('logout unavailable') })
+    render(<AuthProvider><AdminProbe /></AuthProvider>)
+    expect(await screen.findByText('就绪:member-user:站长:无错误')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    expect(screen.getByText('解析中:无用户:普通用户:无错误')).toBeInTheDocument()
+    expect(await screen.findByText('就绪:member-user:普通用户:logout unavailable')).toBeInTheDocument()
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it('settles ready without stale privilege when sign-out rejects', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession }, error: null })
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: false, error: null })
+    mocks.auth.signOut.mockRejectedValue(new Error('logout network failure'))
+    render(<AuthProvider><AdminProbe /></AuthProvider>)
+    expect(await screen.findByText('就绪:member-user:站长:无错误')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    expect(await screen.findByText('就绪:member-user:普通用户:logout network failure')).toBeInTheDocument()
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let a failed sign-out recovery overwrite a concurrent auth event', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession }, error: null })
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: false, error: null })
+    let rejectSignOut!: (reason?: unknown) => void
+    mocks.auth.signOut.mockReturnValue(new Promise((_resolve, reject) => { rejectSignOut = reject }))
+    render(<AuthProvider><AdminProbe /></AuthProvider>)
+    expect(await screen.findByText('就绪:member-user:站长:无错误')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    const nextSession = { user: { id: 'member-after-event', is_anonymous: false, app_metadata: { provider: 'google' } } }
+    await act(async () => { mocks.authEvents.callback?.('SIGNED_IN', nextSession as typeof signedInSession) })
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)) })
+    await act(async () => { rejectSignOut(new Error('late logout failure')) })
+
+    expect(await screen.findByText('就绪:member-after-event:普通用户:无错误')).toBeInTheDocument()
+    expect(screen.queryByText(/member-user:站长/)).not.toBeInTheDocument()
+    expect(mocks.auth.getSession).toHaveBeenCalledTimes(1)
   })
 
   it('links an anonymous identity and retains the guestbook return hash', async () => {
