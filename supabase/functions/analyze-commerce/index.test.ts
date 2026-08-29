@@ -366,7 +366,7 @@ const createBackgroundHarness = (overrides: Partial<BackgroundStore> = {}, gener
       preset: ozonPreset,
     }),
     createSignedUrls: async (_paths, expiresIn) => { events.push(`signed:${expiresIn}`); return ['https://signed.invalid/a.jpg'] },
-    markAssetsState: async (_ids, state) => { events.push(`assets:${state}`) },
+    markAssetsState: async (_generationId, _ids, state) => { events.push(`assets:${state}`) },
     completeGeneration: async () => { events.push('complete') },
     failGeneration: async () => { events.push('fail') },
     ...overrides,
@@ -540,13 +540,17 @@ test('Supabase background adapter matches production query, Storage, state, and 
   const context = await store.loadContext(GENERATION_ID)
   assertEquals(context.generation, { id: GENERATION_ID, projectId: UUID, userId: USER_ID, status: 'queued' })
   assertEquals(await store.createSignedUrls([`${USER_ID}/${UUID}/a.jpg`], 600), ['https://signed.invalid/a.jpg'])
-  await store.markAssetsState(['asset-1'], 'processing')
+  await store.markAssetsState(GENERATION_ID, ['asset-1'], 'processing')
   const completedResult = sampleResult()
   await store.completeGeneration({ generationId: GENERATION_ID, result: completedResult, provider: 'openai', model: 'gpt-5.4-mini', usage: { total_tokens: 12 } })
   await store.failGeneration({ generationId: GENERATION_ID, code: 'PROVIDER_ERROR', message: 'safe message' })
 
   assert(calls.some((call) => call.operation === 'storage.commerce-assets' && (call.value as { seconds: number }).seconds === 600))
-  assert(calls.some((call) => call.operation === 'commerce_project_assets.in.id'))
+  assertEquals(calls.find((call) => call.operation === 'rpc.set_commerce_generation_assets_state')?.value, {
+    p_generation_id: GENERATION_ID,
+    p_asset_ids: ['asset-1'],
+    p_state: 'processing',
+  })
   assert(calls.some((call) => call.operation === 'commerce_generations.eq.id' && call.value === GENERATION_ID))
   assert(calls.some((call) => call.operation === 'commerce_projects.eq.id' && call.value === UUID))
   assert(calls.some((call) => call.operation === 'commerce_projects.eq.user_id' && call.value === USER_ID))

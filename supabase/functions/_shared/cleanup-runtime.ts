@@ -1,4 +1,4 @@
-export type CleanupAssetState = 'uploading' | 'ready' | 'processing' | 'deleted' | 'failed'
+export type CleanupAssetState = 'uploading' | 'ready' | 'processing' | 'deleting' | 'deleted' | 'failed'
 
 export type CleanupAsset = {
   id: string
@@ -55,8 +55,10 @@ export type CleanupStore = {
   restoreGenerationAssets(generationId: string): Promise<void>
   getSettings(): Promise<{ softLimit: bigint; target: bigint }>
   listActiveAssets(): Promise<CleanupAsset[]>
+  claimAsset(runId: string, leaseToken: string, candidate: CleanupCandidate): Promise<boolean>
   deleteStorageObject(storagePath: string): Promise<void>
-  markAssetDeleted(assetId: string, deletedAt: string): Promise<void>
+  releaseAssetClaim(runId: string, assetId: string): Promise<void>
+  finalizeAssetDeletion(runId: string, assetId: string, deletedAt: string): Promise<void>
   finishRun(record: CleanupRunRecord): Promise<void>
 }
 
@@ -73,7 +75,7 @@ type SupabaseClientFactory = (
   options: Record<string, unknown>,
 ) => CleanupSupabaseClient
 
-const ACTIVE_STATES = new Set<CleanupAssetState>(['uploading', 'ready', 'processing', 'failed'])
+const ACTIVE_STATES = new Set<CleanupAssetState>(['uploading', 'ready', 'processing', 'deleting', 'failed'])
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER)
 const MAX_ERRORS = 25
 
@@ -165,6 +167,8 @@ const errorCode = (stage: CleanupError['stage']) => ({
 const deleteCandidates = async (
   store: CleanupStore,
   candidates: CleanupCandidate[],
+  runId: string,
+  leaseToken: string,
   deletedAt: string,
   errors: CleanupError[],
   attempted: Set<string>,
@@ -176,14 +180,27 @@ const deleteCandidates = async (
   for (const candidate of candidates) {
     if (attempted.has(candidate.id)) continue
     attempted.add(candidate.id)
+    let claimed = false
+    try {
+      claimed = await store.claimAsset(runId, leaseToken, candidate)
+    } catch {
+      addError(errors, { stage: 'row_reconcile', code: 'ASSET_CLAIM_FAILED', itemId: candidate.id })
+      continue
+    }
+    if (!claimed) continue
     try {
       await store.deleteStorageObject(candidate.storagePath)
     } catch {
       addError(errors, { stage: 'storage_delete', code: errorCode('storage_delete'), itemId: candidate.id })
+      try {
+        await store.releaseAssetClaim(runId, candidate.id)
+      } catch {
+        addError(errors, { stage: 'row_reconcile', code: 'ASSET_CLAIM_RELEASE_FAILED', itemId: candidate.id })
+      }
       continue
     }
     try {
-      await store.markAssetDeleted(candidate.id, deletedAt)
+      await store.finalizeAssetDeletion(runId, candidate.id, deletedAt)
     } catch {
       addError(errors, { stage: 'row_reconcile', code: errorCode('row_reconcile'), itemId: candidate.id })
       continue
@@ -247,7 +264,7 @@ export const executeCommerceCleanup = async (
       softLimit: beforeBytes,
       target: beforeBytes,
     }).filter((item) => item.reason === 'expired')
-    const expiredResult = await deleteCandidates(store, expired, options.now, errors, attempted)
+    const expiredResult = await deleteCandidates(store, expired, runId, leaseToken, options.now, errors, attempted)
     deletedAssets += expiredResult.deletedAssets
     deletedBytes += expiredResult.deletedBytes
     reasonCounts.expired += expiredResult.reasonCounts.expired
@@ -265,7 +282,7 @@ export const executeCommerceCleanup = async (
         softCandidates.push({ ...item, reason: 'soft_limit' })
         projected -= item.sizeBytes
       }
-      const softResult = await deleteCandidates(store, softCandidates, options.now, errors, attempted)
+      const softResult = await deleteCandidates(store, softCandidates, runId, leaseToken, options.now, errors, attempted)
       deletedAssets += softResult.deletedAssets
       deletedBytes += softResult.deletedBytes
       reasonCounts.softLimit += softResult.reasonCounts.softLimit
@@ -317,11 +334,16 @@ const jsonResponse = (body: Record<string, unknown>, status: number) => new Resp
   headers: { 'content-type': 'application/json; charset=utf-8' },
 })
 
-const safeSecretEqual = (left: string, right: string) => {
-  if (left.length !== right.length) return false
+const secretDigest = async (value: string) => new Uint8Array(await crypto.subtle.digest(
+  'SHA-256',
+  new TextEncoder().encode(value),
+))
+
+const safeSecretEqual = async (left: string, right: string) => {
+  const [leftDigest, rightDigest] = await Promise.all([secretDigest(left), secretDigest(right)])
   let difference = 0
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  for (let index = 0; index < leftDigest.length; index += 1) {
+    difference |= leftDigest[index] ^ rightDigest[index]
   }
   return difference === 0
 }
@@ -339,13 +361,16 @@ export const createCleanupCommerceHandler = (dependencies: {
     return jsonResponse({ code: 'SERVICE_UNAVAILABLE', message: '清理服务未配置。' }, 503)
   }
   const requestSecret = request.headers.get('x-cleanup-secret') ?? ''
-  if (!safeSecretEqual(requestSecret, serverSecret)) {
+  if (!await safeSecretEqual(requestSecret, serverSecret)) {
     return jsonResponse({ code: 'UNAUTHORIZED', message: '无权执行清理任务。' }, 401)
   }
 
   let lease: LeaseResult
   try {
-    lease = await dependencies.store.acquireLease('scheduled')
+    const triggerReason: CleanupTriggerReason = request.headers.get('x-cleanup-trigger') === 'manual'
+      ? 'manual'
+      : 'scheduled'
+    lease = await dependencies.store.acquireLease(triggerReason)
   } catch {
     return jsonResponse({ code: 'SERVICE_ERROR', message: '清理服务暂时不可用。' }, 500)
   }
@@ -356,7 +381,7 @@ export const createCleanupCommerceHandler = (dependencies: {
   try {
     const result = await executeCommerceCleanup(dependencies.store, {
       now: dependencies.now(),
-      triggerReason: 'scheduled',
+      triggerReason: request.headers.get('x-cleanup-trigger') === 'manual' ? 'manual' : 'scheduled',
       leaseToken: lease.token,
       runId: lease.runId,
     })
@@ -401,6 +426,21 @@ const parseAsset = (row: Record<string, unknown>, lockedProjects: Set<string>): 
     state,
     createdAt: String(row.created_at ?? ''),
     locked: lockedProjects.has(projectId),
+  }
+}
+
+const PAGE_SIZE = 1000
+
+const collectPages = async (
+  createQuery: () => { range(start: number, end: number): Promise<{ data: unknown; error: unknown }> },
+): Promise<unknown[]> => {
+  const rows: unknown[] = []
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const response = await createQuery().range(start, start + PAGE_SIZE - 1)
+    if (response.error) throw new Error('Cleanup page query failed')
+    const page: unknown[] = Array.isArray(response.data) ? response.data : []
+    rows.push(...page)
+    if (page.length < PAGE_SIZE) return rows
   }
 }
 
@@ -461,26 +501,40 @@ export const createSupabaseCleanupStore = (client: CleanupSupabaseClient): Clean
   },
 
   async listActiveAssets() {
-    const [assetsResponse, projectsResponse] = await Promise.all([
-      client.from('commerce_project_assets')
+    const [assetRows, projectRows] = await Promise.all([
+      collectPages(() => client.from('commerce_project_assets')
         .select('id,project_id,storage_path,size_bytes,expires_at,state,created_at')
         .neq('state', 'deleted')
         .is('deleted_at', null)
-        .order('created_at', { ascending: true }),
-      client.from('commerce_projects').select('id,locked').eq('locked', true),
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })),
+      collectPages(() => client.from('commerce_projects')
+        .select('id,locked')
+        .eq('locked', true)
+        .order('id', { ascending: true })),
     ])
-    if (assetsResponse.error || projectsResponse.error) throw new Error('Asset snapshot failed')
-    const projectRows: unknown[] = Array.isArray(projectsResponse.data) ? projectsResponse.data : []
     const lockedProjects = new Set<string>(
       projectRows
         .filter(isRecord)
         .map((row) => String(row.id ?? ''))
         .filter(Boolean),
     )
-    const assetRows: unknown[] = Array.isArray(assetsResponse.data) ? assetsResponse.data : []
     return assetRows
       .filter(isRecord)
       .map((row) => parseAsset(row, lockedProjects))
+  },
+
+  async claimAsset(runId, leaseToken, candidate) {
+    const response = await client.rpc('claim_commerce_asset_for_cleanup', {
+      p_run_id: runId,
+      p_lease_token: leaseToken,
+      p_asset_id: candidate.id,
+      p_reason: candidate.reason,
+    })
+    if (response.error) throw new Error('Asset cleanup claim failed')
+    return response.data === true
+      || (Array.isArray(response.data) && response.data[0] === true)
+      || (isRecord(response.data) && response.data.claimed === true)
   },
 
   async deleteStorageObject(storagePath) {
@@ -489,15 +543,21 @@ export const createSupabaseCleanupStore = (client: CleanupSupabaseClient): Clean
     if (response?.error) throw new Error('Storage removal failed')
   },
 
-  async markAssetDeleted(assetId, deletedAt) {
-    const response = await client.from('commerce_project_assets')
-      .update({ state: 'deleted', deleted_at: deletedAt })
-      .eq('id', assetId)
-      .neq('state', 'deleted')
-      .select('id')
-    if (response.error || !Array.isArray(response.data) || response.data.length !== 1) {
-      throw new Error('Asset row reconciliation failed')
-    }
+  async releaseAssetClaim(runId, assetId) {
+    const response = await client.rpc('release_commerce_asset_cleanup_claim', {
+      p_run_id: runId,
+      p_asset_id: assetId,
+    })
+    if (response.error || response.data !== true) throw new Error('Asset cleanup claim release failed')
+  },
+
+  async finalizeAssetDeletion(runId, assetId, deletedAt) {
+    const response = await client.rpc('finalize_commerce_asset_cleanup', {
+      p_run_id: runId,
+      p_asset_id: assetId,
+      p_deleted_at: deletedAt,
+    })
+    if (response.error || response.data !== true) throw new Error('Asset row reconciliation failed')
   },
 
   async finishRun(record) {

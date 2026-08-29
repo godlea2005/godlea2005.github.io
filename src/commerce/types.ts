@@ -35,7 +35,7 @@ export type CommerceProjectDetails = Pick<
   | 'notes'
 >
 
-export type CommerceAssetState = 'uploading' | 'ready' | 'processing' | 'deleted' | 'failed'
+export type CommerceAssetState = 'uploading' | 'ready' | 'processing' | 'deleting' | 'deleted' | 'failed'
 
 export type CommerceGenerationStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
 

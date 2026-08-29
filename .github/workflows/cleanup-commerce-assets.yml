@@ -17,6 +17,8 @@ jobs:
           curl --fail-with-body --silent --show-error --retry 2
           -X POST "$SUPABASE_CLEANUP_URL"
           -H "x-cleanup-secret: $SUPABASE_CLEANUP_SECRET"
+          -H "x-cleanup-trigger: $CLEANUP_TRIGGER_REASON"
         env:
           SUPABASE_CLEANUP_URL: ${{ secrets.SUPABASE_CLEANUP_URL }}
           SUPABASE_CLEANUP_SECRET: ${{ secrets.SUPABASE_CLEANUP_SECRET }}
+          CLEANUP_TRIGGER_REASON: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'scheduled' }}

@@ -101,12 +101,17 @@ const createStore = (overrides: Partial<CleanupStore> = {}) => {
     restoreGenerationAssets: async (id) => { events.push(`restore:${id}`) },
     getSettings: async () => ({ softLimit: 700n, target: 600n }),
     listActiveAssets: async () => activeAssets,
+    claimAsset: async (_runId, _leaseToken, candidate) => {
+      events.push(`claim:${candidate.id}:${candidate.reason}`)
+      return true
+    },
     deleteStorageObject: async (path) => {
       const id = path.replace('.png', '')
       events.push(`storage:${id}`)
       if (id === 'expired-storage-fail') throw new Error('private bucket response')
     },
-    markAssetDeleted: async (id) => {
+    releaseAssetClaim: async (_runId, id) => { events.push(`release:${id}`) },
+    finalizeAssetDeletion: async (_runId, id) => {
       events.push(`row:${id}`)
       if (id === 'expired-row-fail') throw new Error('raw update body')
       activeAssets = activeAssets.filter((item) => item.id !== id)
@@ -123,8 +128,10 @@ test('cleanup fails and refunds stale jobs independently, restores safe assets, 
   assertEquals(fixture.events.slice(0, 3), ['fail:stale-1', 'restore:stale-1', 'fail:stale-2'])
   const storageIndex = fixture.events.indexOf('storage:expired-ok')
   const rowIndex = fixture.events.indexOf('row:expired-ok')
-  assert(storageIndex >= 0 && rowIndex > storageIndex)
+  const claimIndex = fixture.events.indexOf('claim:expired-ok:expired')
+  assert(claimIndex >= 0 && storageIndex > claimIndex && rowIndex > storageIndex)
   assert(!fixture.events.includes('row:expired-storage-fail'))
+  assert(fixture.events.includes('release:expired-storage-fail'))
   assert(fixture.getAssets().some((item) => item.id === 'expired-row-fail'))
   assertEquals(result.summary, {
     deletedAssets: 2,
@@ -149,6 +156,16 @@ test('row reconciliation errors remain active and affect the soft-limit recalcul
   assertEquals(result.summary.afterBytes, 450)
   assertEquals(result.summary.deletedBytes, 500)
   assertEquals(fixture.runRecords[0]?.status, 'partial')
+})
+
+test('a candidate rejected by the database claim is never sent to Storage', async () => {
+  const fixture = createStore({
+    listStaleGenerations: async () => [],
+    claimAsset: async () => false,
+  })
+  const result = await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
+  assertEquals(result.summary.deletedAssets, 0)
+  assert(!fixture.events.some((event) => event.startsWith('storage:')))
 })
 
 test('handler fails closed for method, missing server secret, and invalid secret', async () => {
@@ -181,6 +198,27 @@ test('overlapping runs return a safe conflict without starting cleanup work', as
   assertEquals(response.status, 409)
   assertEquals(await response.json(), { code: 'CLEANUP_ALREADY_RUNNING', message: '清理任务正在运行。' })
   assert(!listed)
+})
+
+test('manual trigger is bounded and only accepted after cleanup-secret authentication', async () => {
+  const triggerReasons: string[] = []
+  const fixture = createStore({
+    acquireLease: async (reason) => {
+      triggerReasons.push(reason)
+      return { acquired: false }
+    },
+  })
+  const handler = createCleanupCommerceHandler({ getSecret: () => 'server', store: fixture.store, now: () => NOW })
+  await handler(new Request('https://cleanup.invalid', {
+    method: 'POST', headers: { 'x-cleanup-secret': 'wrong', 'x-cleanup-trigger': 'manual' },
+  }))
+  await handler(new Request('https://cleanup.invalid', {
+    method: 'POST', headers: { 'x-cleanup-secret': 'server', 'x-cleanup-trigger': 'manual' },
+  }))
+  await handler(new Request('https://cleanup.invalid', {
+    method: 'POST', headers: { 'x-cleanup-secret': 'server', 'x-cleanup-trigger': 'attacker-value' },
+  }))
+  assertEquals(triggerReasons, ['manual', 'scheduled'])
 })
 
 test('authorized handler returns only the safe public summary', async () => {
@@ -221,6 +259,10 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
       }
       if (name === 'get_commerce_cleanup_settings') {
         return { data: [{ storage_soft_limit_bytes: '9007199254740993', storage_target_bytes: '800000000' }], error: null }
+      }
+      if (name === 'claim_commerce_asset_for_cleanup') return { data: true, error: null }
+      if (name === 'release_commerce_asset_cleanup_claim' || name === 'finalize_commerce_asset_cleanup') {
+        return { data: true, error: null }
       }
       return { data: null, error: null }
     },
@@ -263,8 +305,10 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
   await store.failGeneration('generation-1')
   await store.restoreGenerationAssets('generation-1')
   assertEquals(await store.getSettings(), { softLimit: 9_007_199_254_740_993n, target: 800_000_000n })
+  assert(await store.claimAsset('run', 'lease', asset({ id: 'asset-1' }), 'expired'))
   await store.deleteStorageObject('owner/project/image.png')
-  await store.markAssetDeleted('asset-1', NOW)
+  await store.releaseAssetClaim('run', 'asset-1')
+  await store.finalizeAssetDeletion('run', 'asset-1', NOW)
   await store.finishRun({
     runId: 'run', leaseToken: 'lease', status: 'completed', assetsExamined: 1,
     deletedAssets: 1, beforeBytes: '100', deletedBytes: '100', afterBytes: '0',
@@ -275,12 +319,48 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
     'fail_commerce_generation',
     'restore_commerce_assets_after_stale_generation',
     'get_commerce_cleanup_settings',
+    'claim_commerce_asset_for_cleanup',
+    'release_commerce_asset_cleanup_claim',
+    'finalize_commerce_asset_cleanup',
     'finish_commerce_cleanup',
   ])
   assertEquals(storageCalls, [['owner/project/image.png']])
-  assert(tableCalls.some((call) => call.table === 'commerce_project_assets'
-    && call.operation === 'update'
-    && JSON.stringify(call.payload) === JSON.stringify({ state: 'deleted', deleted_at: NOW })))
+  assertEquals(tableCalls.filter((call) => call.operation === 'update').length, 0)
+})
+
+test('Supabase cleanup snapshots paginate assets and later locked projects deterministically', async () => {
+  const assetRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: `asset-${String(index).padStart(4, '0')}`,
+    project_id: `project-${String(index).padStart(4, '0')}`,
+    storage_path: `owner/${index}.png`,
+    size_bytes: '1',
+    expires_at: '2026-09-01T00:00:00.000Z',
+    state: 'ready',
+    created_at: '2026-08-01T00:00:00.000Z',
+  }))
+  const projectRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: `project-${String(index).padStart(4, '0')}`,
+    locked: true,
+  }))
+  const client = {
+    rpc: async () => ({ data: null, error: null }),
+    storage: { from: () => ({ remove: async () => ({ data: [], error: null }) }) },
+    from: (table: string) => {
+      const builder: Record<string, unknown> = {}
+      for (const method of ['select', 'neq', 'is', 'eq', 'order']) {
+        builder[method] = () => builder
+      }
+      builder.range = async (start: number, end: number) => ({
+        data: (table === 'commerce_project_assets' ? assetRows : projectRows).slice(start, end + 1),
+        error: null,
+      })
+      return builder
+    },
+  }
+  const rows = await createSupabaseCleanupStore(client as never).listActiveAssets()
+  assertEquals(rows.length, 1001)
+  assertEquals(rows.at(-1)?.id, 'asset-1000')
+  assertEquals(rows.at(-1)?.locked, true)
 })
 
 test('production bootstrap is lazy, requires runtime configuration, and constructs the privileged store first', () => {

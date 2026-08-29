@@ -54,6 +54,11 @@ Secret/service role key 只用于函数启动时构造后台数据客户端。�
 只避免软上限提前清理，不能延长 7 天到期时间。Storage 对象删除成功后才会更新资源行；
 单个对象失败不会中断同批其他对象，执行结果写入 `cleanup_runs`。
 
+每个候选在删除 Storage 前都由数据库原子认领为 `deleting`。认领与生成排队、任务切换到
+`processing`、项目锁定共用项目行锁；数据库会重新检查当前资源状态、锁定状态与活动任务，
+因此旧快照不能越过新的生成任务或用户锁定。Storage 失败会释放认领，成功后也只能由同一
+清理运行把对应行变为 `deleted`。
+
 函数使用数据库租约阻止定时与手工任务重叠。`verify_jwt = false` 是因为 GitHub Actions
 不持有用户 JWT；真正的认证边界是仅保存在 Supabase 与 GitHub Secrets 中的
 `CLEANUP_SECRET`。部署前在本机 PowerShell 进程设置同名环境变量，然后执行：

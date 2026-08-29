@@ -35,7 +35,7 @@ type GenerationContext = {
 export type BackgroundStore = {
   loadContext(generationId: string): Promise<GenerationContext>
   createSignedUrls(paths: string[], expiresInSeconds: number): Promise<string[]>
-  markAssetsState(assetIds: string[], state: 'processing' | 'ready'): Promise<void>
+  markAssetsState(generationId: string, assetIds: string[], state: 'processing' | 'ready'): Promise<void>
   completeGeneration(input: {
     generationId: string
     result: unknown
@@ -251,7 +251,7 @@ export const createProcessGeneration = (dependencies: {
     }
 
     processingAssetIds = context.assets.map((asset) => asset.id)
-    await dependencies.store.markAssetsState(processingAssetIds, 'processing')
+    await dependencies.store.markAssetsState(generationId, processingAssetIds, 'processing')
 
     const prompt = buildCommercePrompt({
       platform: context.project.platform,
@@ -290,7 +290,7 @@ export const createProcessGeneration = (dependencies: {
   } finally {
     if (processingAssetIds.length > 0) {
       try {
-        await dependencies.store.markAssetsState(processingAssetIds, 'ready')
+        await dependencies.store.markAssetsState(generationId, processingAssetIds, 'ready')
       } catch {
         console.error('commerce asset state restoration failed')
       }
@@ -406,9 +406,13 @@ export const createSupabaseBackgroundStore = (client: SupabaseLike): BackgroundS
     }))
   },
 
-  async markAssetsState(assetIds, state) {
+  async markAssetsState(generationId, assetIds, state) {
     if (assetIds.length === 0) return
-    const { error } = await client.from('commerce_project_assets').update({ state }).in('id', assetIds)
+    const { error } = await client.rpc('set_commerce_generation_assets_state', {
+      p_generation_id: generationId,
+      p_asset_ids: assetIds,
+      p_state: state,
+    })
     if (error) throw new BackgroundError('ASSET_STATE_FAILED', '产品图片状态更新失败。')
   },
 
