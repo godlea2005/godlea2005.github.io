@@ -1,0 +1,22 @@
+name: Cleanup private commerce assets
+
+on:
+  schedule:
+    - cron: '20 19 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger cleanup
+        run: >-
+          curl --fail-with-body --silent --show-error --retry 2
+          -X POST "$SUPABASE_CLEANUP_URL"
+          -H "x-cleanup-secret: $SUPABASE_CLEANUP_SECRET"
+        env:
+          SUPABASE_CLEANUP_URL: ${{ secrets.SUPABASE_CLEANUP_URL }}
+          SUPABASE_CLEANUP_SECRET: ${{ secrets.SUPABASE_CLEANUP_SECRET }}

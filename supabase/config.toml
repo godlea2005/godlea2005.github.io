@@ -3,3 +3,6 @@ policy = "per_worker"
 
 [functions.analyze-commerce]
 verify_jwt = false
+
+[functions.cleanup-commerce-assets]
+verify_jwt = false

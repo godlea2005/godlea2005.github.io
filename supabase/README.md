@@ -9,8 +9,8 @@ npx.cmd supabase link --project-ref ujwwwqlpwdplulzslgpi
 npx.cmd supabase db push
 ```
 
-`db push` 会应用 `migrations/202608120001_guestbook.sql` 和
-`migrations/202608210001_ai_commerce.sql`。执行前应在目标项目确认备份与
+`db push` 会按顺序应用 `migrations/` 中的留言板、AI 电商、后台兼容与清理租约迁移。
+其中清理能力由 `202608300001_commerce_cleanup_lease.sql` 提供。执行前应在目标项目确认备份与
 project ref；本仓库不保存数据库密码、service role key 或 OAuth Secret。
 
 AI 电商迁移会自动完成以下工作：
@@ -44,6 +44,33 @@ npx.cmd supabase functions deploy analyze-commerce
 Secret/service role key 只用于函数启动时构造后台数据客户端。如果该客户端无法构造，
 函数不会开始接收请求，避免先扣额度再发现后台未就绪。建议在控制台切换到新式 key map，
 并在上线验证后再停用 legacy keys。本次仓库更改不会自动设置 Secrets、link 项目或部署函数。
+
+## 私有产品图自动清理
+
+`cleanup-commerce-assets` 每天清理超过 7 天的私有产品图；清理前会把超过 15 分钟仍处于
+`queued` / `processing` 的任务标记失败、幂等退款，并在没有其他活动任务时恢复图片状态。
+过期图片总是优先处理。过期处理后若有效资源仍超过 `storage_soft_limit_bytes`，函数才会按
+上传时间从早到晚删除未锁定的 `ready` 图片，直到预计回落到 `storage_target_bytes`。项目锁定
+只避免软上限提前清理，不能延长 7 天到期时间。Storage 对象删除成功后才会更新资源行；
+单个对象失败不会中断同批其他对象，执行结果写入 `cleanup_runs`。
+
+函数使用数据库租约阻止定时与手工任务重叠。`verify_jwt = false` 是因为 GitHub Actions
+不持有用户 JWT；真正的认证边界是仅保存在 Supabase 与 GitHub Secrets 中的
+`CLEANUP_SECRET`。部署前在本机 PowerShell 进程设置同名环境变量，然后执行：
+
+```powershell
+npx.cmd supabase secrets set "CLEANUP_SECRET=$env:CLEANUP_SECRET"
+npx.cmd supabase functions deploy cleanup-commerce-assets --no-verify-jwt
+```
+
+GitHub 仓库需要配置两个 Actions Secret：
+
+- `SUPABASE_CLEANUP_URL`：部署后的 `cleanup-commerce-assets` 函数 URL。
+- `SUPABASE_CLEANUP_SECRET`：与 Supabase `CLEANUP_SECRET` 完全相同的高强度随机值。
+
+`.github/workflows/cleanup-commerce-assets.yml` 在每天 `19:20 UTC` 运行，即上海时间次日
+`03:20`，也支持 `workflow_dispatch` 手工触发。工作流对非 2xx 响应直接失败，不输出 Secret。
+本次仓库更改不会设置 Secret、部署函数、触发工作流或修改生产数据。
 
 如需单独核对或修复站长迁移，可在 SQL Editor 运行同一条幂等 SQL：
 
