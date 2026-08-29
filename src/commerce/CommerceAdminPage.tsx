@@ -77,6 +77,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
   const [savingUser, setSavingUser] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState(settingsFromDashboard(null))
   const [settingsReason, setSettingsReason] = useState('')
+  const [settingsDirty, setSettingsDirty] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const scopeRef = useRef(0)
   const fetchRef = useRef(0)
@@ -86,32 +87,42 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
   const editorDialogRef = useRef<HTMLFormElement | null>(null)
   const editorReturnFocusRef = useRef<HTMLElement | null>(null)
   const savingUserRef = useRef(false)
+  const settingsDirtyRef = useRef(false)
+  const settingsRevisionRef = useRef(0)
 
   const userId = auth.user?.id ?? ''
   const authorized = auth.ready && Boolean(userId) && !auth.isAnonymous && auth.isAdmin
   const editorOpen = Boolean(editor)
   queryRef.current = query
   savingUserRef.current = savingUser
+  settingsDirtyRef.current = settingsDirty
 
-  const applyDashboard = useCallback((next: CommerceAdminDashboard) => {
+  const applyDashboard = useCallback((next: CommerceAdminDashboard, hydrateSettings: boolean) => {
     setDashboard(next)
-    setSettingsDraft(settingsFromDashboard(next))
+    if (hydrateSettings) setSettingsDraft(settingsFromDashboard(next))
   }, [])
 
   const fetchDashboard = useCallback(async (
     nextQuery: Required<CommerceAdminDashboardQuery>,
-    options: { announce?: boolean; scope?: number; owner?: string } = {},
+    options: { announce?: boolean; scope?: number; owner?: string; forceSettingsHydration?: boolean } = {},
   ) => {
     const request = ++fetchRef.current
     const scope = options.scope ?? scopeRef.current
     const owner = options.owner ?? userId
+    const settingsRevision = settingsRevisionRef.current
     setLoading(true)
     setError('')
     if (!options.announce) setSuccess('')
     try {
       const next = await repository.getAdminDashboard(nextQuery)
       if (scopeRef.current !== scope || fetchRef.current !== request || owner !== auth.user?.id) return false
-      applyDashboard(next)
+      const hydrateSettings = options.forceSettingsHydration === true
+        || (!settingsDirtyRef.current && settingsRevisionRef.current === settingsRevision)
+      applyDashboard(next, hydrateSettings)
+      if (options.forceSettingsHydration) {
+        settingsDirtyRef.current = false
+        setSettingsDirty(false)
+      }
       if (options.announce) setSuccess('保存成功，已从服务器刷新最新数据。')
       return true
     } catch (fetchError) {
@@ -140,6 +151,9 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
     setSavingUser(false)
     setSettingsDraft(settingsFromDashboard(null))
     setSettingsReason('')
+    settingsRevisionRef.current += 1
+    settingsDirtyRef.current = false
+    setSettingsDirty(false)
     setSavingSettings(false)
     if (authorized) void fetchDashboard(emptyQuery, { scope, owner: userId })
     return () => {
@@ -316,7 +330,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
     try {
       await repository.updateAdminSettings(parsedSettings, reason)
       if (scopeRef.current !== scope || auth.user?.id !== owner) return
-      const refreshed = await fetchDashboard(queryRef.current, { announce: true, scope, owner })
+      const refreshed = await fetchDashboard(queryRef.current, { announce: true, scope, owner, forceSettingsHydration: true })
       if (refreshed) setSettingsReason('')
     } catch (mutationError) {
       if (scopeRef.current === scope && auth.user?.id === owner) setError(messageForError(mutationError))
@@ -326,6 +340,13 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
         setSavingSettings(false)
       }
     }
+  }
+
+  const changeSetting = (key: keyof CommerceAdminSettings, value: string) => {
+    settingsRevisionRef.current += 1
+    settingsDirtyRef.current = true
+    setSettingsDirty(true)
+    setSettingsDraft((current) => ({ ...current, [key]: value }))
   }
 
   if (!auth.ready) return <main className="commerce-page commerce-admin-page"><p className="commerce-admin-gate" role="status">正在确认管理员身份…</p></main>
@@ -348,6 +369,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
         aria-selected={activeTab === tab.id}
         aria-controls={`commerce-admin-panel-${tab.id}`}
         tabIndex={activeTab === tab.id ? 0 : -1}
+        disabled={savingUser || savingSettings}
         onClick={() => selectTab(tab.id)}
         onKeyDown={(event) => handleTabKey(event, index)}
       >{tab.label}</button>)}
@@ -388,7 +410,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
         reason={settingsReason}
         errors={settingsErrors}
         saving={savingSettings}
-        onChange={(key, value) => setSettingsDraft((current) => ({ ...current, [key]: value }))}
+        onChange={changeSetting}
         onReason={setSettingsReason}
         onSubmit={saveSettings}
       /> : null}
@@ -396,20 +418,20 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
 
     {editor ? <div className="commerce-admin-dialog-backdrop">
       <form ref={editorDialogRef} className="commerce-admin-dialog" role="dialog" aria-modal="true" aria-labelledby="commerce-user-editor-title" onSubmit={saveUser}>
-        <button className="commerce-admin-dialog-close" type="button" aria-label="关闭用户设置" onClick={() => setEditor(null)}>×</button>
+        <button className="commerce-admin-dialog-close" type="button" aria-label="关闭用户设置" disabled={savingUser} onClick={() => setEditor(null)}>×</button>
         <span>ENTITLEMENT / {editor.source.userId.slice(0, 8)}</span>
         <h2 id="commerce-user-editor-title">设置额度</h2>
         <p>{editor.source.email ?? editor.source.userId}</p>
-        <label><span>剩余次数</span><input type="number" min="0" max="1000000" step="1" value={editor.credits} onChange={(event) => setEditor({ ...editor, credits: event.target.value })} /></label>
-        <label><span>每日上限</span><input type="number" min="1" max="1000" step="1" value={editor.dailyLimit} onChange={(event) => setEditor({ ...editor, dailyLimit: event.target.value })} /></label>
+        <label><span>剩余次数</span><input disabled={savingUser} type="number" min="0" max="1000000" step="1" value={editor.credits} onChange={(event) => setEditor({ ...editor, credits: event.target.value })} /></label>
+        <label><span>每日上限</span><input disabled={savingUser} type="number" min="1" max="1000" step="1" value={editor.dailyLimit} onChange={(event) => setEditor({ ...editor, dailyLimit: event.target.value })} /></label>
         <div className="commerce-admin-checks">
-          <label><input type="checkbox" checked={editor.unlimited} onChange={(event) => setEditor({ ...editor, unlimited: event.target.checked, confirmed: false })} />无限次数</label>
-          <label><input type="checkbox" checked={editor.disabled} onChange={(event) => setEditor({ ...editor, disabled: event.target.checked, confirmed: false })} />禁用账户</label>
+          <label><input disabled={savingUser} type="checkbox" checked={editor.unlimited} onChange={(event) => setEditor({ ...editor, unlimited: event.target.checked, confirmed: false })} />无限次数</label>
+          <label><input disabled={savingUser} type="checkbox" checked={editor.disabled} onChange={(event) => setEditor({ ...editor, disabled: event.target.checked, confirmed: false })} />禁用账户</label>
         </div>
         <small>999 次仍会扣减；无限次数不会扣减。禁用账户将阻止新的生成任务。</small>
-        <label><span>调整原因</span><textarea maxLength={500} value={editor.reason} onChange={(event) => setEditor({ ...editor, reason: event.target.value })} /></label>
-        {highImpactChange ? <label className="commerce-admin-confirm"><input type="checkbox" checked={editor.confirmed} onChange={(event) => setEditor({ ...editor, confirmed: event.target.checked })} />确认无限次数与禁用账户变更</label> : null}
-        <div className="commerce-admin-dialog-actions"><button type="button" onClick={() => setEditor(null)}>取消</button><button type="submit" disabled={savingUser || (highImpactChange && !editor.confirmed)}>{savingUser ? '保存中…' : '确认保存'}</button></div>
+        <label><span>调整原因</span><textarea disabled={savingUser} maxLength={500} value={editor.reason} onChange={(event) => setEditor({ ...editor, reason: event.target.value })} /></label>
+        {highImpactChange ? <label className="commerce-admin-confirm"><input disabled={savingUser} type="checkbox" checked={editor.confirmed} onChange={(event) => setEditor({ ...editor, confirmed: event.target.checked })} />确认无限次数与禁用账户变更</label> : null}
+        <div className="commerce-admin-dialog-actions"><button type="button" disabled={savingUser} onClick={() => setEditor(null)}>取消</button><button type="submit" disabled={savingUser || (highImpactChange && !editor.confirmed)}>{savingUser ? '保存中…' : '确认保存'}</button></div>
       </form>
     </div> : null}
   </main>
@@ -439,7 +461,7 @@ function UsersSection(props: {
     <SectionHeader eyebrow="ACCOUNT CONTROL" title="用户与额度" count={props.users.length} />
     <form className="commerce-admin-search" role="search" onSubmit={props.onSearch}><label htmlFor="commerce-admin-user-search">搜索用户</label><input id="commerce-admin-user-search" value={props.search} onChange={(event) => props.onSearchChange(event.target.value)} placeholder="邮箱或 UUID" /><button type="submit">搜索用户</button></form>
     <div className="commerce-admin-table" role="table" aria-label="用户列表">
-      <div className="commerce-admin-table-head" role="row"><span>账户</span><span>额度</span><span>每日上限</span><span>任务 / 消耗</span><span>状态</span><span>操作</span></div>
+      <div className="commerce-admin-table-head" role="row"><span role="columnheader">账户</span><span role="columnheader">额度</span><span role="columnheader">每日上限</span><span role="columnheader">任务 / 消耗</span><span role="columnheader">状态</span><span role="columnheader">操作</span></div>
       {props.users.map((user) => <div className="commerce-admin-table-row" role="row" data-mobile-row="user" data-testid={`admin-user-row-${user.userId}`} key={user.userId}>
         <div role="cell" data-label="账户"><span className="commerce-admin-cell-label">账户</span><strong>{user.email ?? '无邮箱'}</strong><small>{user.userId}<br />{user.provider}</small></div>
         <div role="cell" data-label="额度"><span className="commerce-admin-cell-label">额度</span><strong>{user.unlimited ? '无限' : user.credits}</strong></div>
@@ -462,7 +484,7 @@ function GenerationsSection(props: {
     <SectionHeader eyebrow="GENERATION TRACE" title="生成任务" count={props.generations.length} />
     <form className="commerce-admin-search" role="search" onSubmit={props.onSearch}><label htmlFor="commerce-admin-task-search">搜索任务</label><input id="commerce-admin-task-search" value={props.search} onChange={(event) => props.onSearchChange(event.target.value)} placeholder="邮箱、任务、项目、平台或状态" /><button type="submit">搜索任务</button></form>
     <div className="commerce-admin-table is-generations" role="table" aria-label="任务列表">
-      <div className="commerce-admin-table-head" role="row"><span>任务 / 用户</span><span>状态 / 平台</span><span>耗时</span><span>模型</span><span>错误</span><span>退款</span></div>
+      <div className="commerce-admin-table-head" role="row"><span role="columnheader">任务 / 用户</span><span role="columnheader">状态 / 平台</span><span role="columnheader">耗时</span><span role="columnheader">模型</span><span role="columnheader">错误</span><span role="columnheader">退款</span></div>
       {props.generations.map((generation) => <div className="commerce-admin-table-row" role="row" data-mobile-row="generation" key={generation.generationId}>
         <div role="cell" data-label="任务 / 用户"><span className="commerce-admin-cell-label">任务 / 用户</span><strong>{generation.projectName}</strong><small>{generation.userEmail ?? generation.userId}<br />{generation.generationId}</small></div>
         <div role="cell" data-label="状态 / 平台"><span className="commerce-admin-cell-label">状态 / 平台</span><strong>{generation.status}</strong><small>{generation.platform ?? '已删除项目'}</small></div>
@@ -491,8 +513,8 @@ function SettingsSection(props: {
   return <div className="commerce-admin-section">
     <SectionHeader eyebrow="SYSTEM POLICY" title="系统设置" />
     <form className="commerce-admin-settings" onSubmit={props.onSubmit} noValidate>
-      <div>{fields.map((field) => <label key={field.key}><span>{field.label}</span><input type="number" step="1" min={field.min} max={field.max} value={props.draft[field.key]} onChange={(event) => props.onChange(field.key, event.target.value)} /></label>)}</div>
-      <label><span>设置调整原因</span><textarea maxLength={500} value={props.reason} onChange={(event) => props.onReason(event.target.value)} /></label>
+      <div>{fields.map((field) => <label key={field.key}><span>{field.label}</span><input disabled={props.saving} type="number" step="1" min={field.min} max={field.max} value={props.draft[field.key]} onChange={(event) => props.onChange(field.key, event.target.value)} /></label>)}</div>
+      <label><span>设置调整原因</span><textarea disabled={props.saving} maxLength={500} value={props.reason} onChange={(event) => props.onReason(event.target.value)} /></label>
       {props.errors.length > 0 ? <ul className="commerce-admin-validation" aria-label="设置约束">{props.errors.map((item) => <li key={item}>{item}</li>)}</ul> : null}
       <button type="submit" disabled={props.saving}>{props.saving ? '保存中…' : '保存系统设置'}</button>
     </form>

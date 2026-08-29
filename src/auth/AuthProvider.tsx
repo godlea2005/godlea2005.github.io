@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Provider, Session, User } from '@supabase/supabase-js'
 import { getSocialProviderStatus, supabase, supabaseConfigured, type SocialProviderStatus } from '../lib/supabase'
 import { AuthDialog, type SocialProvider } from './AuthDialog'
@@ -188,10 +188,26 @@ function getOAuthCallbackInitialization() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const sessionEpochRef = useRef(0)
 
-  const applySession = useCallback(async (initialSession: Session | null) => {
+  const enterResolvingState = useCallback(() => {
+    const epoch = ++sessionEpochRef.current
+    setState((value) => ({
+      ...value,
+      ready: false,
+      user: null,
+      isAnonymous: true,
+      isAdmin: false,
+      provider: null,
+      error: '',
+    }))
+    return epoch
+  }, [])
+
+  const applySession = useCallback(async (initialSession: Session | null, epoch: number) => {
+    const current = () => sessionEpochRef.current === epoch
     if (!supabase || !initialSession?.user) {
-      setState((value) => ({ ...value, ready: true, user: null, isAnonymous: true, isAdmin: false, provider: null }))
+      if (current()) setState((value) => ({ ...value, ready: true, user: null, isAnonymous: true, isAdmin: false, provider: null }))
       return
     }
 
@@ -200,9 +216,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await new Promise((resolve) => window.setTimeout(resolve, 120))
       const { data, error } = await supabase.auth.getSession()
       if (error) throw error
+      if (!current()) return
       session = data.session ?? session
       if (session.user.is_anonymous) {
-        setState((value) => ({
+        if (current()) setState((value) => ({
           ...value,
           configured: true,
           ready: true,
@@ -216,13 +233,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    if (!current()) return
     let adminResult = await supabase.rpc('site_is_admin')
+    if (!current()) return
     if (adminResult.error?.message.includes('JWT')) {
       const { data } = await supabase.auth.refreshSession()
+      if (!current()) return
       session = data.session ?? session
       adminResult = await supabase.rpc('site_is_admin')
+      if (!current()) return
     }
-    setState((value) => ({
+    if (current()) setState((value) => ({
       ...value,
       configured: true,
       ready: true,
@@ -247,30 +268,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active || callback.navigating) return
       const session = callback.handled ? callback.session : await ensureAnonymousSession()
       if (!active) return
-      await applySession(session)
-      if (callback.error) setState((value) => ({ ...value, error: callback.error }))
+      const epoch = enterResolvingState()
+      await applySession(session, epoch)
+      if (callback.error && sessionEpochRef.current === epoch) setState((value) => ({ ...value, error: callback.error }))
     })()
       .catch(async (error: unknown) => {
         const params = new URLSearchParams(window.location.search)
         if (params.has('code') || params.get('auth') === 'site') normalizeAuthUrl()
         const session = await ensureAnonymousSession().catch(() => null)
         if (!active) return
-        await applySession(session)
+        const epoch = enterResolvingState()
+        await applySession(session, epoch)
+        if (sessionEpochRef.current !== epoch) return
         const message = error instanceof Error ? error.message : '身份连接失败'
         setState((value) => ({ ...value, ready: true, error: message }))
       })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const epoch = enterResolvingState()
       window.setTimeout(() => {
-        if (!active) return
+        if (!active || sessionEpochRef.current !== epoch) return
         void (async () => {
           const resolvedSession = session ?? await ensureAnonymousSession()
-          if (active) await applySession(resolvedSession)
+          if (active && sessionEpochRef.current === epoch) await applySession(resolvedSession, epoch)
         })()
       }, 0)
     })
-    return () => { active = false; listener.subscription.unsubscribe() }
-  }, [applySession])
+    return () => { active = false; sessionEpochRef.current += 1; listener.subscription.unsubscribe() }
+  }, [applySession, enterResolvingState])
 
   const signIn = useCallback(async (provider: SocialProvider, returnHash?: string) => {
     if (!supabase) throw new Error('Supabase 尚未配置')
@@ -290,11 +315,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return
+    const epoch = enterResolvingState()
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     const session = await ensureAnonymousSession()
-    await applySession(session)
-  }, [applySession])
+    await applySession(session, epoch)
+  }, [applySession, enterResolvingState])
 
   const requireLogin = useCallback((returnHash = '#ai-commerce') => {
     if (state.user && !state.isAnonymous) return true

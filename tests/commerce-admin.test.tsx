@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
 import type { CommerceRepository } from '../src/commerce/commerceRepository'
@@ -193,6 +194,23 @@ describe('commerce administrator console operations', () => {
     expect(repository.getAdminDashboard).toHaveBeenLastCalledWith(expect.objectContaining({ userSearch: 'second@example.com' }))
   })
 
+  it('does not let a pending cross-tab read overwrite a dirty settings draft', async () => {
+    const pending = deferred<CommerceAdminDashboard>()
+    const repository = makeRepository({
+      getAdminDashboard: vi.fn().mockResolvedValueOnce(dashboard()).mockReturnValueOnce(pending.promise),
+    })
+    render(<CommerceAdminPage repository={repository} />)
+    await openUsers()
+    await userEvent.type(screen.getByLabelText('搜索用户'), 'friend')
+    await userEvent.click(screen.getByRole('button', { name: '搜索用户' }))
+    await userEvent.click(screen.getByRole('tab', { name: '设置' }))
+    const credits = screen.getByLabelText('新用户次数')
+    await userEvent.clear(credits)
+    await userEvent.type(credits, '77')
+    await act(async () => pending.resolve(dashboard({ settings: { ...dashboard().settings, newUserCredits: 99 } })))
+    expect(screen.getByLabelText('新用户次数')).toHaveValue(77)
+  })
+
   it('sets 999 credits and a daily limit with an audit reason, then refreshes authoritative data', async () => {
     const repository = makeRepository()
     render(<CommerceAdminPage repository={repository} />)
@@ -238,6 +256,12 @@ describe('commerce administrator console operations', () => {
     fireEvent.click(submit)
     fireEvent.click(submit)
     expect(repository.setUserEntitlement).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText('剩余次数')).toBeDisabled()
+    expect(screen.getByLabelText('每日上限')).toBeDisabled()
+    expect(screen.getByLabelText('调整原因')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '关闭用户设置' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled()
+    expect(screen.getAllByRole('tab').every((tab) => tab.hasAttribute('disabled'))).toBe(true)
     await act(async () => pending.reject(new Error('额度保存失败，请稍后重试')))
     expect(await screen.findByRole('alert')).toHaveTextContent('额度保存失败，请稍后重试')
     expect(screen.getByLabelText('剩余次数')).toHaveValue(999)
@@ -280,6 +304,20 @@ describe('commerce administrator console operations', () => {
     await waitFor(() => expect(repository.getAdminDashboard).toHaveBeenCalledTimes(2))
   })
 
+  it('locks settings and navigation until a delayed settings mutation settles', async () => {
+    const pending = deferred<void>()
+    const repository = makeRepository({ updateAdminSettings: vi.fn().mockReturnValue(pending.promise) })
+    render(<CommerceAdminPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('tab', { name: '设置' }))
+    await userEvent.type(screen.getByLabelText('设置调整原因'), '等待服务器确认')
+    await userEvent.click(screen.getByRole('button', { name: '保存系统设置' }))
+    expect(screen.getByLabelText('新用户次数')).toBeDisabled()
+    expect(screen.getByLabelText('设置调整原因')).toBeDisabled()
+    expect(screen.getAllByRole('tab').every((tab) => tab.hasAttribute('disabled'))).toBe(true)
+    await act(async () => pending.resolve())
+    await waitFor(() => expect(repository.getAdminDashboard).toHaveBeenCalledTimes(2))
+  })
+
   it('renders task duration, model, error and refund without NaN or negative values', async () => {
     const data = dashboard({ generations: [
       dashboard().generations[0],
@@ -303,5 +341,15 @@ describe('commerce administrator console operations', () => {
     expect(row).toHaveAttribute('data-mobile-row', 'user')
     expect(within(row).getByText('额度')).toHaveClass('commerce-admin-cell-label')
     expect(within(row).getByText('每日上限')).toHaveClass('commerce-admin-cell-label')
+    expect(screen.getAllByRole('columnheader')).toHaveLength(6)
+  })
+
+  it('uses readable administrator metadata tokens and preserves a visible tabpanel focus ring', () => {
+    const css = readFileSync('src/commerce/commerce.css', 'utf8')
+    expect(css).toContain('.commerce-admin-page { --commerce-admin-meta: #b9bcc7; }')
+    expect(css).toContain(':root[data-theme="light"] .commerce-admin-page { --commerce-admin-meta: #52515a; }')
+    expect(css).toMatch(/\.commerce-admin-table-head \{[^}]*color: var\(--commerce-admin-meta\);[^}]*font: 10px/)
+    expect(css).toMatch(/\.commerce-admin-settings label > span,[\s\S]*font: 10px/)
+    expect(css).toMatch(/\.commerce-admin-panel:focus-visible \{[^}]*outline: 2px solid var\(--accent\)/)
   })
 })

@@ -593,4 +593,18 @@ describe('commerce repository', () => {
     expect(migration).toContain("'daily_limit', p_daily_limit")
     expect(migration).toContain('grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) to authenticated;')
   })
+
+  it('ships a rerunnable compatibility migration for the legacy five-argument entitlement RPC', () => {
+    const migration = readFileSync('supabase/migrations/202608290001_admin_entitlement_daily_limit.sql', 'utf8')
+    expect(migration).toContain("to_regprocedure('public.admin_set_entitlement(uuid,integer,boolean,boolean,text)')")
+    expect(migration).toContain('revoke all on function public.admin_set_entitlement(uuid, integer, boolean, boolean, text)')
+    expect(migration).toContain('drop function public.admin_set_entitlement(uuid, integer, boolean, boolean, text)')
+    expect(migration).toMatch(/create or replace function public\.admin_set_entitlement\([\s\S]*p_daily_limit integer[\s\S]*security definer[\s\S]*set search_path = ''/)
+    expect(migration).toContain('if not public.site_is_admin()')
+    expect(migration).toContain('p_daily_limit not between 1 and 1000')
+    expect(migration).toContain("'daily_limit', old_entitlement.daily_limit")
+    expect(migration).toContain("'daily_limit', p_daily_limit")
+    expect(migration).toContain('revoke all on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text)')
+    expect(migration).toContain('grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) to authenticated;')
+  })
 })

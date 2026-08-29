@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 
@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => {
     signOut: vi.fn(),
   }
   const rpc = vi.fn()
-  return { auth, rpc }
+  const authEvents = { callback: null as null | ((event: string, session: typeof signedInSession | typeof anonymousSession | null) => void) }
+  return { auth, rpc, authEvents }
 })
 
 vi.mock('../src/lib/supabase', () => ({
@@ -42,7 +43,7 @@ function ProtectedProbe() {
 
 function AdminProbe() {
   const auth = useAuth()
-  return <p>{auth.isAdmin ? '站长' : '普通用户'}</p>
+  return <p>{`${auth.ready ? '就绪' : '解析中'}:${auth.user?.id ?? '无用户'}:${auth.isAdmin ? '站长' : '普通用户'}`}</p>
 }
 
 function OAuthProbe() {
@@ -79,7 +80,11 @@ describe('site authentication provider', () => {
     mocks.auth.signInWithOAuth.mockReset()
     mocks.auth.signOut.mockReset()
     mocks.rpc.mockReset()
-    mocks.auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
+    mocks.authEvents.callback = null
+    mocks.auth.onAuthStateChange.mockImplementation((callback) => {
+      mocks.authEvents.callback = callback
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
     mocks.auth.getSession.mockResolvedValue({ data: { session: anonymousSession } })
     mocks.auth.linkIdentity.mockResolvedValue({ data: { url: '#oauth' }, error: null })
     mocks.auth.signInWithOAuth.mockResolvedValue({ data: { url: '#oauth' }, error: null })
@@ -103,8 +108,38 @@ describe('site authentication provider', () => {
 
     render(<AuthProvider><AdminProbe /></AuthProvider>)
 
-    expect(await screen.findByText('普通用户')).toBeInTheDocument()
+    expect(await screen.findByText('就绪:member-user:普通用户')).toBeInTheDocument()
     expect(mocks.rpc).toHaveBeenCalledWith('site_is_admin')
+  })
+
+  it('publishes a neutral state on every auth event and ignores an older administrator check', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession } })
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null })
+    render(<AuthProvider><AdminProbe /></AuthProvider>)
+    expect(await screen.findByText('就绪:member-user:站长')).toBeInTheDocument()
+
+    let resolveOldAdmin!: (value: { data: boolean; error: null }) => void
+    const oldAdmin = new Promise<{ data: boolean; error: null }>((resolve) => { resolveOldAdmin = resolve })
+    let resolveNewAdmin!: (value: { data: boolean; error: null }) => void
+    const newAdmin = new Promise<{ data: boolean; error: null }>((resolve) => { resolveNewAdmin = resolve })
+    mocks.rpc.mockReturnValueOnce(oldAdmin).mockReturnValueOnce(newAdmin)
+    const nextAdminSession = { user: { id: 'admin-2', is_anonymous: false, app_metadata: { provider: 'github' } } }
+    const normalSession = { user: { id: 'member-2', is_anonymous: false, app_metadata: { provider: 'google' } } }
+
+    await act(async () => { mocks.authEvents.callback?.('SIGNED_IN', nextAdminSession as typeof signedInSession) })
+    expect(screen.getByText('解析中:无用户:普通用户')).toBeInTheDocument()
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)) })
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+
+    await act(async () => { mocks.authEvents.callback?.('SIGNED_IN', normalSession as typeof signedInSession) })
+    expect(screen.getByText('解析中:无用户:普通用户')).toBeInTheDocument()
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)) })
+    await act(async () => { resolveNewAdmin({ data: false, error: null }) })
+    expect(await screen.findByText('就绪:member-2:普通用户')).toBeInTheDocument()
+
+    await act(async () => { resolveOldAdmin({ data: true, error: null }) })
+    expect(screen.getByText('就绪:member-2:普通用户')).toBeInTheDocument()
+    expect(screen.queryByText(/admin-2:站长/)).not.toBeInTheDocument()
   })
 
   it('links an anonymous identity and retains the guestbook return hash', async () => {
