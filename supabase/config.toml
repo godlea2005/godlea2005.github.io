@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.cleanup-commerce-assets]
 verify_jwt = false
+
+[functions.commerce-upload]
+verify_jwt = false

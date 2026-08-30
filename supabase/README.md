@@ -17,7 +17,7 @@ AI 电商迁移会自动完成以下工作：
 
 - 为现有 `auth.users` 回填额度，并为每个用户写至多一条 `signup_grant` 流水；以后新用户由 `auth.users` 触发器初始化。
 - 把现有 `guestbook_admins` 幂等迁移到通用 `site_admins`。
-- 创建私有 `commerce-assets` bucket，限制为 JPEG/PNG/WebP、单文件 8 MiB，并按当前用户 UUID 的第一层目录授权。
+- 创建私有 `commerce-assets` bucket，限制为 JPEG/PNG/WebP、单文件 8 MiB；登录用户只能按当前用户 UUID 的第一层目录读取/删除，创建对象必须使用上传函数签发的一次性 token。
 - 为项目、资源、任务、额度和管理员接口启用 RLS 与最小 RPC 权限；匿名身份仍可使用留言板，但不能进入 commerce 数据或生成流程。
 
 ## AI 分析函数
@@ -44,6 +44,25 @@ npx.cmd supabase functions deploy analyze-commerce
 Secret/service role key 只用于函数启动时构造后台数据客户端。如果该客户端无法构造，
 函数不会开始接收请求，避免先扣额度再发现后台未就绪。建议在控制台切换到新式 key map，
 并在上线验证后再停用 legacy keys。本次仓库更改不会自动设置 Secrets、link 项目或部署函数。
+
+## 私有产品图上传函数
+
+`commerce-upload` 是浏览器上传私有产品图的唯一入口。浏览器先调用 `reserve` 获取由服务端
+生成的对象路径和一次性 signed upload token，使用该 token 直传后，再调用 `finalize`。
+函数会以可信 Storage 客户端下载真实对象，核对实际字节数、8 MiB 上限、声明 MIME 与
+JPEG/PNG/WebP 文件头；不通过校验的对象会被删除，并把预留资源标记为 `failed`。
+
+该函数与 `analyze-commerce` 使用相同的 Supabase 新式/legacy key 优先级和
+`ALLOWED_ORIGINS`。`verify_jwt = false` 仅用于兼容当前 publishable key；函数内部仍使用
+Bearer token 调用 `auth.getUser()` 并拒绝匿名用户，service role key 不会返回浏览器。
+
+```powershell
+npx.cmd supabase functions deploy commerce-upload --no-verify-jwt
+```
+
+部署后必须在 disposable/staging Supabase 验证：普通用户直接上传对象被拒、第七张图片被拒、
+跨用户 finalize 被拒、伪造 MIME/大小被清理，以及 JPEG/PNG/WebP 正常完成。仓库操作不会
+设置 Secret、部署函数或修改远端数据。
 
 ## 私有产品图自动清理
 
@@ -85,7 +104,8 @@ select user_id from public.guestbook_admins
 on conflict (user_id) do nothing;
 ```
 
-产品图片必须由浏览器上传到 `commerce-assets/<当前用户 UUID>/<项目 UUID>/...`。
+产品图片必须先由浏览器调用 `commerce-upload` 预留，再用返回的一次性 token 上传到函数生成的
+`commerce-assets/<当前用户 UUID>/<项目 UUID>/...` 路径，并调用 finalize；普通用户令牌不能直接创建对象。
 删除项目时，客户端先依据 Storage RLS 删除该项目的全部对象；全部成功后再调用
 `delete_commerce_project(uuid)` 删除数据库行。若项目仍有 `queued` / `processing`
 任务，RPC 会拒绝删除；任务进入终态后可重试。项目删除后任务、结果、计费和幂等
