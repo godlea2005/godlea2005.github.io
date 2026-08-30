@@ -71,7 +71,7 @@ Repository Settings → Secrets and variables → Actions：
 - Variables（公开构建值）：`VITE_SUPABASE_URL`、`VITE_SUPABASE_PUBLISHABLE_KEY`
 - Secrets（清理工作流）：`SUPABASE_CLEANUP_URL`、`SUPABASE_CLEANUP_SECRET`
 
-`deploy-pages.yml` 必须按 `npm ci` → `npm test` → `npm run build` → 上传 artifact 的顺序执行；deploy job 只依赖成功的 build。`cleanup-commerce-assets.yml` 每日运行，也支持手动触发。
+`deploy-pages.yml` 会先拒绝空值和 `.env.example` 占位值，再按 `npm ci` → `npm test` → `npm run build` → 上传 artifact 的顺序执行；deploy job 只依赖成功的 build。`cleanup-commerce-assets.yml` 每日运行，也支持手动触发。
 
 ## 6. 额度与账号状态
 
@@ -118,9 +118,10 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 ## 9. 保留与清理策略
 
-- 默认资产保留 `7 天`；每用户存储软上限 `30 MB`。
-- 超限或过期时优先处理最旧、符合条件且未锁定的资产。
-- active、locked 或仍被项目/生成引用的资产受保护，不能删除。
+- 默认资产保留 `7 天`。当前设置是全站共享的 `storage_soft_limit_bytes = 800000000` 与 `storage_target_bytes = 650000000`，不是每用户配额。
+- 全站超过软上限时，从最旧的 ready、未过期、项目未 locked 的候选资产开始清理，直到回到 target；locked 仅阻止这条 soft_limit 提前清理路径。
+- 资产超过 7 天后属于 expired；即使项目 locked 仍可清理。不要把 locked 理解为永久保留。
+- 与 queued 或 processing 活动生成任务属于同一项目的资产受到数据库栅栏保护。普通“存在项目引用”本身不是永久保护条件。
 - 清理函数依次取得 lease、claim 对象、删除 Storage、finalize 数据库记录；异常时释放 claim，并由 recovery 处理过期 lease。不要绕过该顺序直接批量删除桶对象。
 
 ## 10. 回滚
