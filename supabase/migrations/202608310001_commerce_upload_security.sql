@@ -199,11 +199,11 @@ begin
     raise exception 'asset metadata mismatch' using errcode = '22023';
   end if;
 
-  update public.commerce_project_assets
+  update public.commerce_project_assets as asset
   set state = 'ready'
-  where id = p_asset_id
-    and user_id = p_user_id
-    and state = 'uploading';
+  where asset.id = p_asset_id
+    and asset.user_id = p_user_id
+    and asset.state = 'uploading';
 
   return query
   select asset.id, asset.project_id, asset.user_id, asset.storage_path,

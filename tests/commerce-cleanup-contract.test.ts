@@ -54,6 +54,43 @@ describe('commerce cleanup deployment contracts', () => {
     expect(migration).not.toMatch(/grant execute on function public\.(?:finalize|fail|reconcile|list_)commerce_[^;]+to authenticated/i)
   })
 
+  it('qualifies RETURNS TABLE output names in SQL predicates, including finalization updates', () => {
+    const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    const finalize = migration.slice(
+      migration.indexOf('create or replace function public.finalize_commerce_asset_upload'),
+      migration.indexOf('create or replace function public.fail_commerce_asset_upload'),
+    )
+    expect(finalize).toMatch(/update public\.commerce_project_assets as asset\s+set state = 'ready'\s+where asset\.id = p_asset_id\s+and asset\.user_id = p_user_id\s+and asset\.state = 'uploading'/)
+
+    const returnsTableFunctions = [
+      'reserve_commerce_asset',
+      'finalize_commerce_asset_upload',
+      'list_abandoned_commerce_uploads',
+      'list_orphan_commerce_storage_objects',
+    ]
+    for (const [index, functionName] of returnsTableFunctions.entries()) {
+      const start = migration.indexOf(`create or replace function public.${functionName}`)
+      const nextName = returnsTableFunctions[index + 1]
+      const next = nextName
+        ? migration.indexOf(`create or replace function public.${nextName}`, start + 1)
+        : migration.indexOf('revoke all on function', start + 1)
+      const functionSql = migration.slice(start, next)
+      const outputDeclaration = functionSql.match(/returns table \(([\s\S]*?)\)\s*language plpgsql/i)?.[1]
+      expect(outputDeclaration, `${functionName} RETURNS TABLE declaration`).toBeDefined()
+      const outputNames = [...outputDeclaration!.matchAll(/^\s*([a-z_][a-z0-9_]*)\s+[a-z]/gim)]
+        .map((match) => match[1])
+      const body = functionSql.match(/as \$\$([\s\S]*?)\$\$;/i)?.[1]
+      expect(body, `${functionName} body`).toBeDefined()
+      for (const outputName of outputNames) {
+        const unqualifiedSqlReference = new RegExp(
+          `\\b(?:select|where|and|or|on|order\\s+by|group\\s+by)\\s+${outputName}\\b`,
+          'i',
+        )
+        expect(body, `${functionName} must qualify OUT variable ${outputName} in SQL`).not.toMatch(unqualifiedSqlReference)
+      }
+    }
+  })
+
   it('atomically restores processing assets on terminal writes and historical reconciliation', () => {
     const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
     const complete = migration.slice(
