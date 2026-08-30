@@ -58,4 +58,28 @@ describe('commerce cleanup deployment contracts', () => {
     const stateRpc = migration.slice(migration.indexOf('create or replace function public.set_commerce_generation_assets_state'))
     expect(stateRpc).toMatch(/commerce_projects[\s\S]*for update[\s\S]*generation_row\.status not in \('queued', 'processing'\)[\s\S]*asset\.state = 'ready'[\s\S]*set state = 'processing'/)
   })
+
+  it('adopts interrupted claims and fences every destructive transition to the active lease', () => {
+    const migration = read('supabase/migrations/202608300003_commerce_cleanup_recovery.sql')
+    expect(migration).toContain('cleanup_previous_state')
+    expect(migration).toMatch(/begin_commerce_cleanup[\s\S]*pg_advisory_xact_lock\(20260830, 9\)[\s\S]*lease_until > transaction_now[\s\S]*set cleanup_run_id = next_run_id[\s\S]*where state = 'deleting'/)
+    expect(migration).toMatch(/list_commerce_cleanup_claims[\s\S]*lease_until > pg_catalog\.clock_timestamp\(\)[\s\S]*asset\.state = 'deleting'[\s\S]*asset\.cleanup_run_id = p_run_id/)
+
+    const claim = migration.slice(migration.indexOf('create or replace function public.claim_commerce_asset_for_cleanup'))
+    expect(claim).toMatch(/pg_advisory_xact_lock\(20260830, 9\)[\s\S]*commerce_cleanup_leases[\s\S]*for update[\s\S]*commerce_projects[\s\S]*for update[\s\S]*commerce_project_assets[\s\S]*for update[\s\S]*lease_until > pg_catalog\.clock_timestamp\(\)/)
+    expect(claim).toMatch(/p_reason = 'expired'[\s\S]*asset_row\.state not in \('ready', 'failed'\)/)
+    expect(claim).toMatch(/p_reason = 'soft_limit'[\s\S]*asset_row\.state <> 'ready'[\s\S]*project_locked/)
+    expect(claim).toMatch(/cleanup_previous_state = asset_row\.state/)
+
+    const release = migration.slice(migration.indexOf('create or replace function public.release_commerce_asset_cleanup_claim'))
+    expect(release).toMatch(/p_lease_token uuid[\s\S]*lease_until > pg_catalog\.clock_timestamp\(\)[\s\S]*set state = previous_state/)
+    const finalize = migration.slice(migration.indexOf('create or replace function public.finalize_commerce_asset_cleanup'))
+    expect(finalize).toMatch(/p_lease_token uuid[\s\S]*lease_until > pg_catalog\.clock_timestamp\(\)[\s\S]*set state = 'deleted'/)
+
+    const finish = migration.slice(migration.indexOf('create or replace function public.finish_commerce_cleanup'))
+    expect(finish).toMatch(/outstanding_claims > 0[\s\S]*final_status := 'partial'[\s\S]*cleanup_claims_require_replay[\s\S]*lease_until = pg_catalog\.clock_timestamp\(\) - interval '1 second'/)
+    expect(migration).toMatch(/drop function public\.release_commerce_asset_cleanup_claim\(uuid, uuid\)/)
+    expect(migration).toMatch(/drop function public\.finalize_commerce_asset_cleanup\(uuid, uuid, timestamptz\)/)
+    expect(migration).not.toMatch(/grant execute on function public\.(?:claim|release|finalize|list)_commerce_[^;]+to authenticated/i)
+  })
 })

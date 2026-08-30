@@ -55,10 +55,11 @@ export type CleanupStore = {
   restoreGenerationAssets(generationId: string): Promise<void>
   getSettings(): Promise<{ softLimit: bigint; target: bigint }>
   listActiveAssets(): Promise<CleanupAsset[]>
+  listClaimedAssets(runId: string, leaseToken: string): Promise<CleanupCandidate[]>
   claimAsset(runId: string, leaseToken: string, candidate: CleanupCandidate): Promise<boolean>
   deleteStorageObject(storagePath: string): Promise<void>
-  releaseAssetClaim(runId: string, assetId: string): Promise<void>
-  finalizeAssetDeletion(runId: string, assetId: string, deletedAt: string): Promise<void>
+  releaseAssetClaim(runId: string, leaseToken: string, assetId: string): Promise<void>
+  finalizeAssetDeletion(runId: string, leaseToken: string, assetId: string, deletedAt: string): Promise<void>
   finishRun(record: CleanupRunRecord): Promise<void>
 }
 
@@ -172,6 +173,7 @@ const deleteCandidates = async (
   deletedAt: string,
   errors: CleanupError[],
   attempted: Set<string>,
+  alreadyClaimed = false,
 ) => {
   let deletedAssets = 0
   let deletedBytes = 0n
@@ -180,12 +182,14 @@ const deleteCandidates = async (
   for (const candidate of candidates) {
     if (attempted.has(candidate.id)) continue
     attempted.add(candidate.id)
-    let claimed = false
-    try {
-      claimed = await store.claimAsset(runId, leaseToken, candidate)
-    } catch {
-      addError(errors, { stage: 'row_reconcile', code: 'ASSET_CLAIM_FAILED', itemId: candidate.id })
-      continue
+    let claimed = alreadyClaimed
+    if (!alreadyClaimed) {
+      try {
+        claimed = await store.claimAsset(runId, leaseToken, candidate)
+      } catch {
+        addError(errors, { stage: 'row_reconcile', code: 'ASSET_CLAIM_FAILED', itemId: candidate.id })
+        continue
+      }
     }
     if (!claimed) continue
     try {
@@ -193,14 +197,14 @@ const deleteCandidates = async (
     } catch {
       addError(errors, { stage: 'storage_delete', code: errorCode('storage_delete'), itemId: candidate.id })
       try {
-        await store.releaseAssetClaim(runId, candidate.id)
+        await store.releaseAssetClaim(runId, leaseToken, candidate.id)
       } catch {
         addError(errors, { stage: 'row_reconcile', code: 'ASSET_CLAIM_RELEASE_FAILED', itemId: candidate.id })
       }
       continue
     }
     try {
-      await store.finalizeAssetDeletion(runId, candidate.id, deletedAt)
+      await store.finalizeAssetDeletion(runId, leaseToken, candidate.id, deletedAt)
     } catch {
       addError(errors, { stage: 'row_reconcile', code: errorCode('row_reconcile'), itemId: candidate.id })
       continue
@@ -238,6 +242,16 @@ export const executeCommerceCleanup = async (
   let status: CleanupRunRecord['status'] = 'completed'
 
   try {
+    const settings = await store.getSettings()
+    const initial = activeAssets(await store.listActiveAssets())
+    assetsExamined = initial.length
+    beforeBytes = sumBytes(initial)
+
+    // begin_commerce_cleanup adopts abandoned deleting rows before returning.
+    // Replay those claims first: Storage removal is idempotent, while re-claiming
+    // would incorrectly reject the already-deleting row.
+    const adopted = await store.listClaimedAssets(runId, leaseToken)
+
     const cutoff = new Date(nowMs - 15 * 60 * 1000).toISOString()
     const stale = await store.listStaleGenerations(cutoff)
     for (const generation of stale) {
@@ -254,12 +268,17 @@ export const executeCommerceCleanup = async (
       }
     }
 
-    const settings = await store.getSettings()
-    const initial = activeAssets(await store.listActiveAssets())
-    assetsExamined = initial.length
-    beforeBytes = sumBytes(initial)
+    const adoptedResult = await deleteCandidates(
+      store, adopted, runId, leaseToken, options.now, errors, attempted, true,
+    )
+    deletedAssets += adoptedResult.deletedAssets
+    deletedBytes += adoptedResult.deletedBytes
+    reasonCounts.expired += adoptedResult.reasonCounts.expired
+    reasonCounts.softLimit += adoptedResult.reasonCounts.softLimit
 
-    const expired = selectCleanupCandidates(initial, {
+    const current = activeAssets(await store.listActiveAssets())
+
+    const expired = selectCleanupCandidates(current, {
       now: options.now,
       softLimit: beforeBytes,
       target: beforeBytes,
@@ -524,6 +543,22 @@ export const createSupabaseCleanupStore = (client: CleanupSupabaseClient): Clean
       .map((row) => parseAsset(row, lockedProjects))
   },
 
+  async listClaimedAssets(runId, leaseToken) {
+    const response = await client.rpc('list_commerce_cleanup_claims', {
+      p_run_id: runId,
+      p_lease_token: leaseToken,
+    })
+    if (response.error) throw new Error('Cleanup claims unavailable')
+    const rows: unknown[] = Array.isArray(response.data) ? response.data : []
+    return rows
+      .filter(isRecord)
+      .map((row) => ({
+        ...parseAsset(row, row.locked === true ? new Set([String(row.project_id ?? '')]) : new Set()),
+        reason: String(row.cleanup_reason ?? '') as CleanupReason,
+      }))
+      .filter((item) => item.reason === 'expired' || item.reason === 'soft_limit')
+  },
+
   async claimAsset(runId, leaseToken, candidate) {
     const response = await client.rpc('claim_commerce_asset_for_cleanup', {
       p_run_id: runId,
@@ -543,17 +578,19 @@ export const createSupabaseCleanupStore = (client: CleanupSupabaseClient): Clean
     if (response?.error) throw new Error('Storage removal failed')
   },
 
-  async releaseAssetClaim(runId, assetId) {
+  async releaseAssetClaim(runId, leaseToken, assetId) {
     const response = await client.rpc('release_commerce_asset_cleanup_claim', {
       p_run_id: runId,
+      p_lease_token: leaseToken,
       p_asset_id: assetId,
     })
     if (response.error || response.data !== true) throw new Error('Asset cleanup claim release failed')
   },
 
-  async finalizeAssetDeletion(runId, assetId, deletedAt) {
+  async finalizeAssetDeletion(runId, leaseToken, assetId, deletedAt) {
     const response = await client.rpc('finalize_commerce_asset_cleanup', {
       p_run_id: runId,
+      p_lease_token: leaseToken,
       p_asset_id: assetId,
       p_deleted_at: deletedAt,
     })

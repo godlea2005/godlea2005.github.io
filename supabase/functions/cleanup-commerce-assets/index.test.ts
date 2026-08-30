@@ -72,6 +72,16 @@ test('candidate ordering is deterministic, deduplicated, and excludes invalid ea
   assertEquals(candidates.map((item) => item.id), ['a-expired', 'z-expired'])
 })
 
+test('expired failed assets are retained from soft cleanup but selected for seven-day expiry', () => {
+  const candidates = selectCleanupCandidates([
+    asset({ id: 'failed-expired', state: 'failed', expiresAt: '2026-08-29T00:00:00.000Z' }),
+    asset({ id: 'failed-future', state: 'failed', expiresAt: '2026-09-02T00:00:00.000Z', sizeBytes: 900n }),
+  ], { now: NOW, softLimit: 100n, target: 50n })
+  assertEquals(candidates.map(({ id, reason }) => ({ id, reason })), [
+    { id: 'failed-expired', reason: 'expired' },
+  ])
+})
+
 test('soft-limit selection continues oldest-first until projected bytes reach target', () => {
   const candidates = selectCleanupCandidates([
     asset({ id: 'oldest', sizeBytes: 200n, createdAt: '2026-08-01T00:00:00.000Z' }),
@@ -101,6 +111,7 @@ const createStore = (overrides: Partial<CleanupStore> = {}) => {
     restoreGenerationAssets: async (id) => { events.push(`restore:${id}`) },
     getSettings: async () => ({ softLimit: 700n, target: 600n }),
     listActiveAssets: async () => activeAssets,
+    listClaimedAssets: async () => [],
     claimAsset: async (_runId, _leaseToken, candidate) => {
       events.push(`claim:${candidate.id}:${candidate.reason}`)
       return true
@@ -110,8 +121,8 @@ const createStore = (overrides: Partial<CleanupStore> = {}) => {
       events.push(`storage:${id}`)
       if (id === 'expired-storage-fail') throw new Error('private bucket response')
     },
-    releaseAssetClaim: async (_runId, id) => { events.push(`release:${id}`) },
-    finalizeAssetDeletion: async (_runId, id) => {
+    releaseAssetClaim: async (_runId, _leaseToken, id) => { events.push(`release:${id}`) },
+    finalizeAssetDeletion: async (_runId, _leaseToken, id) => {
       events.push(`row:${id}`)
       if (id === 'expired-row-fail') throw new Error('raw update body')
       activeAssets = activeAssets.filter((item) => item.id !== id)
@@ -166,6 +177,60 @@ test('a candidate rejected by the database claim is never sent to Storage', asyn
   const result = await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
   assertEquals(result.summary.deletedAssets, 0)
   assert(!fixture.events.some((event) => event.startsWith('storage:')))
+})
+
+test('adopted claims replay before ordinary candidates and finalize idempotent Storage removal', async () => {
+  let active = [
+    asset({ id: 'adopted', state: 'deleting', sizeBytes: 80n, expiresAt: '2026-08-29T00:00:00.000Z' }),
+    asset({ id: 'ordinary', sizeBytes: 40n, expiresAt: '2026-08-29T00:00:00.000Z' }),
+  ]
+  const fixture = createStore({
+    listStaleGenerations: async () => [],
+    getSettings: async () => ({ softLimit: 1000n, target: 900n }),
+    listActiveAssets: async () => active,
+    listClaimedAssets: async () => [{ ...active[0], reason: 'expired' }],
+    claimAsset: async (_runId, _leaseToken, candidate) => {
+      if (candidate.id === 'adopted') throw new Error('adopted claims must not be claimed twice')
+      fixture.events.push(`claim:${candidate.id}`)
+      return true
+    },
+    deleteStorageObject: async (path) => { fixture.events.push(`storage:${path}`) },
+    finalizeAssetDeletion: async (_runId, _leaseToken, id) => { active = active.filter((item) => item.id !== id) },
+  })
+  const result = await executeCommerceCleanup(fixture.store, {
+    now: NOW, triggerReason: 'scheduled', runId: 'new-run', leaseToken: 'new-lease',
+  })
+  assertEquals(fixture.events[0], 'storage:adopted.png')
+  assertEquals(fixture.events.slice(0, 3), ['storage:adopted.png', 'claim:ordinary', 'storage:ordinary.png'])
+  assertEquals(result.summary.deletedAssets, 2)
+  assertEquals(result.summary.beforeBytes, 120)
+  assertEquals(result.summary.afterBytes, 0)
+})
+
+test('release failure remains adoptable and the next run can finalize the orphan claim', async () => {
+  let phase: 'ready' | 'orphan' | 'deleted' = 'ready'
+  const ready = asset({ id: 'recover-me', sizeBytes: 70n, expiresAt: '2026-08-29T00:00:00.000Z' })
+  const runRecords: Array<Record<string, unknown>> = []
+  const store: CleanupStore = {
+    acquireLease: async () => ({ acquired: true, token: 'lease', runId: 'run' }),
+    listStaleGenerations: async () => [],
+    failGeneration: async () => {},
+    restoreGenerationAssets: async () => {},
+    getSettings: async () => ({ softLimit: 1000n, target: 900n }),
+    listActiveAssets: async () => phase === 'deleted' ? [] : [{ ...ready, state: phase === 'orphan' ? 'deleting' : 'ready' }],
+    listClaimedAssets: async () => phase === 'orphan' ? [{ ...ready, state: 'deleting', reason: 'expired' }] : [],
+    claimAsset: async () => { phase = 'orphan'; return true },
+    deleteStorageObject: async () => { if (runRecords.length === 0) throw new Error('transient') },
+    releaseAssetClaim: async () => { throw new Error('release failed') },
+    finalizeAssetDeletion: async () => { phase = 'deleted' },
+    finishRun: async (record) => { runRecords.push(record as unknown as Record<string, unknown>) },
+  }
+  const first = await executeCommerceCleanup(store, { now: NOW, triggerReason: 'scheduled', runId: 'old', leaseToken: 'old-token' })
+  assertEquals(first.status, 'partial')
+  assertEquals(phase, 'orphan')
+  const second = await executeCommerceCleanup(store, { now: NOW, triggerReason: 'scheduled', runId: 'new', leaseToken: 'new-token' })
+  assertEquals(second.summary.deletedAssets, 1)
+  assertEquals(phase, 'deleted')
 })
 
 test('handler fails closed for method, missing server secret, and invalid secret', async () => {
@@ -305,10 +370,11 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
   await store.failGeneration('generation-1')
   await store.restoreGenerationAssets('generation-1')
   assertEquals(await store.getSettings(), { softLimit: 9_007_199_254_740_993n, target: 800_000_000n })
-  assert(await store.claimAsset('run', 'lease', asset({ id: 'asset-1' }), 'expired'))
+  assertEquals(await store.listClaimedAssets('run', 'lease'), [])
+  assert(await store.claimAsset('run', 'lease', { ...asset({ id: 'asset-1' }), reason: 'expired' }))
   await store.deleteStorageObject('owner/project/image.png')
-  await store.releaseAssetClaim('run', 'asset-1')
-  await store.finalizeAssetDeletion('run', 'asset-1', NOW)
+  await store.releaseAssetClaim('run', 'lease', 'asset-1')
+  await store.finalizeAssetDeletion('run', 'lease', 'asset-1', NOW)
   await store.finishRun({
     runId: 'run', leaseToken: 'lease', status: 'completed', assetsExamined: 1,
     deletedAssets: 1, beforeBytes: '100', deletedBytes: '100', afterBytes: '0',
@@ -319,11 +385,21 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
     'fail_commerce_generation',
     'restore_commerce_assets_after_stale_generation',
     'get_commerce_cleanup_settings',
+    'list_commerce_cleanup_claims',
     'claim_commerce_asset_for_cleanup',
     'release_commerce_asset_cleanup_claim',
     'finalize_commerce_asset_cleanup',
     'finish_commerce_cleanup',
   ])
+  assertEquals(rpcCalls.find((call) => call.name === 'claim_commerce_asset_for_cleanup')?.parameters, {
+    p_run_id: 'run', p_lease_token: 'lease', p_asset_id: 'asset-1', p_reason: 'expired',
+  })
+  assertEquals(rpcCalls.find((call) => call.name === 'release_commerce_asset_cleanup_claim')?.parameters, {
+    p_run_id: 'run', p_lease_token: 'lease', p_asset_id: 'asset-1',
+  })
+  assertEquals(rpcCalls.find((call) => call.name === 'finalize_commerce_asset_cleanup')?.parameters, {
+    p_run_id: 'run', p_lease_token: 'lease', p_asset_id: 'asset-1', p_deleted_at: NOW,
+  })
   assertEquals(storageCalls, [['owner/project/image.png']])
   assertEquals(tableCalls.filter((call) => call.operation === 'update').length, 0)
 })
