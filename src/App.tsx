@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { experiments, notices, site } from './content/site'
+import { experiments, site } from './content/site'
+import { CommerceHomeSection } from './components/CommerceHomeSection'
 import { ProjectArchive } from './components/ProjectArchive'
 import { StatusScene } from './components/StatusScene'
 import { StudioMap } from './components/StudioMap'
@@ -53,12 +54,12 @@ function App() {
 
       {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : <main id="top">
         <StatusScene />
-        <section className="notice-bar" aria-label="站点动态"><div className="notice-flow">{[...notices, ...notices].map((notice, index) => <p key={`${notice}-${index}`}><i>✦</i>{notice}</p>)}</div></section>
+        <CommerceHomeSection />
         <StudioMap />
         <ProjectArchive />
         <section className="notes-section frame" id="notes" aria-labelledby="notes-title">
-          <div className="section-kicker"><span>03</span><p>WORKING NOTES</p><i /></div>
-          <div className="notes-title-row"><h2 id="notes-title">实验记录</h2><p>还在发生的学习、判断与小小的验证。</p></div>
+          <div className="section-kicker"><span>04</span><p>WORKING NOTES</p><i /></div>
+          <div className="notes-title-row"><h2 id="notes-title">实验记录</h2><p>更轻地记录仍在发生的学习、判断与验证。</p></div>
           <div className="notes-list">{experiments.map(([number, title, category]) => <a href="#notes" className="note-link" key={number}><span>{number}</span><strong>{title}</strong><em>{category}</em><i>↗</i></a>)}</div>
         </section>
       </main>}

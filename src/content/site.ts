@@ -7,9 +7,31 @@ export const site = {
 
 export const profile = {
   roles: ['AI 设计师', '电商运营专员', '前端开发设计师'],
-  statement: '把模糊的想法，做成用户愿意停留的体验。',
+  statement: '把市场判断、视觉策略和前端体验放在同一条工作流里。',
   statusTitle: '今天在做什么？',
   status: '整理一套用 AI 加速电商内容生产的轻量工作流，也在给这个小站补充新的故事。',
+}
+
+export const commerceHome = {
+  title: 'AI 电商视觉，先把策略想清楚。',
+  description: '面向 Ozon、Wildberries、抖音与淘宝/天猫，根据产品图生成主图创意、详情页分镜和可执行作图提示词。',
+  platforms: [
+    { name: 'Ozon', market: 'RU / CROSS-BORDER', focus: '搜索结果页识别与俄语卖点层级' },
+    { name: 'Wildberries', market: 'RU / MARKETPLACE', focus: '移动端首图节奏与连续详情叙事' },
+    { name: '抖音', market: 'CN / CONTENT', focus: '场景钩子、短链路转化与内容感' },
+    { name: '淘宝/天猫', market: 'CN / SHELF', focus: '货架差异化与完整详情页结构' },
+  ],
+  steps: [
+    { number: '01', title: '上传产品资料', detail: '产品图、核心参数和已有卖点，先建立可信的商品事实。' },
+    { number: '02', title: '选择市场平台', detail: '按俄罗斯跨境或国内平台的阅读习惯，确定表达重点。' },
+    { number: '03', title: '获得主图与详情页方案', detail: '输出创意方向、分镜结构和可直接用于作图的提示词。' },
+  ],
+  demo: {
+    product: '便携式蒸汽熨斗 / Ozon',
+    direction: '用「行李箱里的平整秩序」建立出差场景；主图以产品三分之四侧视为视觉锚点，冰灰背景控制跨境货架中的识别度。',
+    storyboard: ['出差衣物褶皱痛点', '20 秒快速出汽', '折叠收纳与双电压', '衬衫 / 西装 / 家居多场景', '参数与安全信息收束'],
+    prompt: 'Premium marketplace product photography, compact travel garment steamer in three-quarter view, cool graphite background, precise soft rim light, subtle steam trail, clean negative space for Russian headline, realistic materials, restrained commercial composition, no logo, no text.',
+  },
 }
 
 export const notices = [

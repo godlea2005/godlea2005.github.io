@@ -1,8 +1,19 @@
-import { profile, site } from '../content/site'
+import { useEffect, useState } from 'react'
+import { commerceHome, profile, site } from '../content/site'
 import GradientWaves from './GradientWaves/GradientWaves'
 import { ParticleText } from './ParticleText/ParticleText'
 
 export function StatusScene() {
+  const [reducedMotion, setReducedMotion] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const syncPreference = () => setReducedMotion(media.matches)
+    syncPreference()
+    media.addEventListener('change', syncPreference)
+    return () => media.removeEventListener('change', syncPreference)
+  }, [])
+
   return (
     <section className="status-scene" aria-labelledby="home-title">
       <div className="status-scene-background" aria-hidden="true">
@@ -10,7 +21,7 @@ export function StatusScene() {
           horizonColor="#7656f6"
           waveColor="#ee4be9"
           crestColor="#ffffff"
-          speed={0.55}
+          speed={reducedMotion ? 0 : 0.55}
           amplitude={2.05}
           waveScale={0.6}
           waveRatio={0.9}
@@ -23,7 +34,7 @@ export function StatusScene() {
           detail="medium"
           brightness={1.0}
           opacity={1.0}
-          mouseInteraction={true}
+          mouseInteraction={!reducedMotion}
           parallaxStrength={0.5}
           grain={true}
           grainIntensity={0.05}
@@ -32,23 +43,31 @@ export function StatusScene() {
       <div className="status-scene-scrim" aria-hidden="true" />
       <div className="status-scene-inner frame">
         <div className="scene-copy">
-          <p className="scene-index"><span>001</span> WENHAO'S DIGITAL SPACE <i>●</i></p>
-          <p className="scene-roles">{profile.roles.join(' / ')}</p>
-          <h1 id="home-title">
-            <span className="scene-greeting">你好，我是{site.name}。</span>
-            <ParticleText text={site.englishName} />
-          </h1>
-          <p className="scene-statement">{profile.statement}</p>
-          <a href="#archive" className="scene-link">进入作品档案 <span>↘</span></a>
+          <p className="scene-index"><span>001</span> AI COMMERCE DESIGN STUDIO <i>●</i></p>
+          <h1 id="home-title"><span>AI 电商视觉，</span><span>先把策略想清楚。</span></h1>
+          <p className="scene-statement">{commerceHome.description}</p>
+          <div className="scene-actions">
+            <a href="#ai-commerce" className="scene-primary">免费分析一个产品 <span aria-hidden="true">↘</span></a>
+            <a href="#commerce-examples" className="scene-secondary">查看示例方案 <span aria-hidden="true">↓</span></a>
+          </div>
+          <div className="scene-author">
+            <span>DESIGNED &amp; OPERATED BY</span>
+            <strong>{site.name}</strong>
+            <p>{profile.roles.join(' / ')}</p>
+          </div>
         </div>
-        <div className="scene-stage" aria-label="文昊的工作台抽象插画">
+        <div className="scene-stage" aria-label="AI 电商视觉策略工作台示意">
           <div className="stage-grid" />
-          <div className="moon" />
-          <div className="desk"><i /><i /><i /></div>
-          <div className="person"><div className="person-head" /><div className="person-body" /><div className="person-arm" /></div>
-          <div className="screen"><span>NOW<br />BUILDING</span><i /></div>
-          <div className="stage-status"><span>STUDIO MODE</span><b>ONLINE</b></div>
-          <div className="coordinates"><span>23° 08' N</span><span>113° 16' E</span></div>
+          <div className="stage-status"><span>MARKET VISUAL SYSTEM / 01</span><b>READY</b></div>
+          <div className="stage-platforms" aria-hidden="true"><span>OZON</span><span>WB</span><span>DY</span><span>TMALL</span></div>
+          <div className="stage-product" aria-hidden="true"><i /><i /><i /><b>PRODUCT<br />SIGNAL</b></div>
+          <ol className="stage-output">
+            <li><span>01</span><b>HERO DIRECTION</b><i>主图策略</i></li>
+            <li><span>02</span><b>DETAIL STORYBOARD</b><i>详情分镜</i></li>
+            <li><span>03</span><b>IMAGE PROMPT</b><i>作图提示词</i></li>
+          </ol>
+          <div className="scene-signature"><small>AUTHOR SIGNAL</small><ParticleText text={site.englishName} /></div>
+          <div className="coordinates"><span>STRATEGY → VISUAL</span><span>CN / RU</span></div>
         </div>
         <aside className="status-card"><p><span>✦</span>{profile.statusTitle}</p><div><i>“</i><span>{profile.status}</span></div><small>STATUS / {site.availability}</small></aside>
       </div>
