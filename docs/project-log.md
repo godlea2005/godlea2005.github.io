@@ -112,3 +112,13 @@
 - 点击音乐按钮后，桌面端展开右下角浮层，手机端展开底部面板；保留歌曲信息、进度、播放/切歌、音量、歌单和音乐可视化入口。
 - 展开与收起只改变界面状态，不影响 `MusicProvider` 中的播放；Playwright 已验证收起后进度继续前进，并验证桌面/390px 手机端导航、菜单和播放器状态。
 - 生产构建通过；浏览器控制台无应用错误，仅保留 React 开发模式提示。
+
+## 2026-08-30 — AI 电商设计工作台（待外部操作门槛）
+
+- 产品范围：新增面向俄罗斯跨境市场及抖音、淘宝等国内平台的 AI 电商设计工作台，覆盖产品资料、图片、平台预设、策略分析、提示词与可追踪生成记录；首页已将 AI 电商能力作为主入口，个人身份作为作者与交付能力证据。
+- 数据库迁移：`202608210001_ai_commerce.sql`、`202608290001_admin_entitlement_daily_limit.sql`、`202608300001_commerce_cleanup_lease.sql`、`202608300002_commerce_cleanup_claim.sql`、`202608300003_commerce_cleanup_recovery.sql`；函数目录为 `analyze-commerce` 与 `cleanup-commerce-assets`。
+- 认证与权限：沿用 Supabase OAuth/会话；匿名分析必须拒绝。生成采用幂等扣次与失败退款，站长经 `site_admins` 和管理员 RPC 管理默认额度、每日额度、999 次、不限次数、禁用状态与审计原因。
+- 资产策略：私有 `commerce-assets` 桶默认保留 7 天，每用户 30 MB 软上限；仅清理最旧且符合条件的未锁定资产，active、locked、被引用资产受保护，cleanup lease/claim/recovery 负责并发恢复。
+- 本地验证：Task 11 静态部署契约 3/3、全量 11 个测试文件共 186/186 通过，生产构建通过（保留既有 MusicPage 大于 500 kB 警告）。Task 10 已完成首页桌面 1440px 与移动 390px 的本地视觉复核；最终全站 Playwright 浏览器审计由父任务在整体验收时补录。
+- 发布状态：`待外部操作门槛`。尚未在本任务执行远程迁移、函数部署、GitHub Pages 发布或生产数据写入。
+- 已知限制：Deno Edge runtime、真实 PostgreSQL/RLS、真实 GitHub/Google OAuth、OpenAI 调用、私有 Storage 签名访问和 cleanup 安全边界仍须在受控部署环境完成生产门槛验证。
