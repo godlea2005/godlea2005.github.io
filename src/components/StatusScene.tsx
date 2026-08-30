@@ -36,7 +36,7 @@ export function StatusScene() {
           opacity={1.0}
           mouseInteraction={!reducedMotion}
           parallaxStrength={0.5}
-          grain={true}
+          grain={!reducedMotion}
           grainIntensity={0.05}
         />
       </div>
@@ -44,7 +44,7 @@ export function StatusScene() {
       <div className="status-scene-inner frame">
         <div className="scene-copy">
           <p className="scene-index"><span>001</span> AI COMMERCE DESIGN STUDIO <i>●</i></p>
-          <h1 id="home-title"><span>AI 电商视觉，</span><span>先把策略想清楚。</span></h1>
+          <h1 id="home-title" aria-label={commerceHome.title}><span aria-hidden="true">AI 电商视觉，</span><span aria-hidden="true">先把策略想清楚。</span></h1>
           <p className="scene-statement">{commerceHome.description}</p>
           <div className="scene-actions">
             <a href="#ai-commerce" className="scene-primary">免费分析一个产品 <span aria-hidden="true">↘</span></a>

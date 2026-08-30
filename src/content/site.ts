@@ -7,7 +7,6 @@ export const site = {
 
 export const profile = {
   roles: ['AI 设计师', '电商运营专员', '前端开发设计师'],
-  statement: '把市场判断、视觉策略和前端体验放在同一条工作流里。',
   statusTitle: '今天在做什么？',
   status: '整理一套用 AI 加速电商内容生产的轻量工作流，也在给这个小站补充新的故事。',
 }
@@ -29,16 +28,10 @@ export const commerceHome = {
   demo: {
     product: '便携式蒸汽熨斗 / Ozon',
     direction: '用「行李箱里的平整秩序」建立出差场景；主图以产品三分之四侧视为视觉锚点，冰灰背景控制跨境货架中的识别度。',
-    storyboard: ['出差衣物褶皱痛点', '20 秒快速出汽', '折叠收纳与双电压', '衬衫 / 西装 / 家居多场景', '参数与安全信息收束'],
+    storyboard: ['出差衣物褶皱场景', '快速出汽场景', '折叠收纳展示', '多面料使用场景', '使用步骤与安全提醒'],
     prompt: 'Premium marketplace product photography, compact travel garment steamer in three-quarter view, cool graphite background, precise soft rim light, subtle steam trail, clean negative space for Russian headline, realistic materials, restrained commercial composition, no logo, no text.',
   },
 }
-
-export const notices = [
-  '更新 / 数字工作室首版已启动',
-  '实践 / AI、内容增长与前端体验交叉进行',
-  '状态 / 当前接受有趣的品牌与产品合作',
-]
 
 export const projects = [
   {

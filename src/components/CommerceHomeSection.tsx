@@ -41,7 +41,7 @@ export function CommerceHomeSection() {
             <section className="demo-direction" aria-labelledby="demo-direction-title">
               <p>01 / HERO</p>
               <h3 id="demo-direction-title">主图方向</h3>
-              <div className="demo-product-visual" aria-hidden="true"><i /><i /><b>TRAVEL<br />READY</b><span>20s</span></div>
+              <div className="demo-product-visual" aria-hidden="true"><i /><i /><b>TRAVEL<br />CONCEPT</b><span>DEMO</span></div>
               <p>{commerceHome.demo.direction}</p>
             </section>
 
