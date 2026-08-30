@@ -607,4 +607,12 @@ describe('commerce repository', () => {
     expect(migration).toContain('revoke all on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text)')
     expect(migration).toContain('grant execute on function public.admin_set_entitlement(uuid, integer, boolean, boolean, integer, text) to authenticated;')
   })
+
+  it('publishes only the bounded reservation RPC to authenticated upload callers', () => {
+    const migration = readFileSync('supabase/migrations/202608310001_commerce_upload_security.sql', 'utf8')
+    expect(migration).toMatch(/create or replace function public\.reserve_commerce_asset\(\s*p_project_id uuid,\s*p_extension text,\s*p_mime_type text,\s*p_size_bytes bigint\s*\)[\s\S]*security definer[\s\S]*set search_path = ''/)
+    expect(migration).toMatch(/revoke all on function public\.reserve_commerce_asset\(uuid, text, text, bigint\)\s+from public, anon, authenticated, service_role;/)
+    expect(migration).toContain('grant execute on function public.reserve_commerce_asset(uuid, text, text, bigint) to authenticated;')
+    expect(migration).not.toMatch(/grant execute on function public\.(?:finalize_commerce_asset_upload|fail_commerce_asset_upload|reconcile_terminal_commerce_assets|list_abandoned_commerce_uploads|list_orphan_commerce_storage_objects)[^;]+to authenticated/i)
+  })
 })

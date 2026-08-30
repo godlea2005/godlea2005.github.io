@@ -5,6 +5,79 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8')
 
 describe('commerce cleanup deployment contracts', () => {
+  it('removes authenticated asset and Storage write authority in the forward migration', () => {
+    const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    expect(migration).toMatch(/revoke insert, update, delete on public\.commerce_project_assets from authenticated/i)
+    expect(migration).toMatch(/drop policy if exists "commerce_assets_insert_own" on public\.commerce_project_assets/i)
+    expect(migration).toMatch(/drop policy if exists "commerce_assets_update_own" on public\.commerce_project_assets/i)
+    expect(migration).toMatch(/drop policy if exists "commerce_assets_delete_own" on public\.commerce_project_assets/i)
+    expect(migration).toMatch(/drop policy if exists "commerce_storage_insert_own" on storage\.objects/i)
+  })
+
+  it('reserves bounded owned uploads with a server-generated path under the project lock', () => {
+    const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    const reserve = migration.slice(migration.indexOf('create or replace function public.reserve_commerce_asset'))
+    expect(reserve).toMatch(/auth\.uid\(\)[\s\S]*auth\.jwt\(\)[\s\S]*is_anonymous/)
+    expect(reserve).toMatch(/commerce_projects[\s\S]*user_id = current_user_id[\s\S]*for update[\s\S]*state = 'deleting'/)
+    expect(reserve).toMatch(/max_project_images[\s\S]*coalesce[\s\S]*'max_project_images'[\s\S]*6/)
+    expect(reserve).toMatch(/count\(\*\)[\s\S]*state in \('uploading', 'ready', 'processing', 'deleting'\)[\s\S]*active_asset_count >= max_project_images/)
+    expect(reserve).toMatch(/p_size_bytes[\s\S]*between 1 and 8388608/)
+    expect(reserve).toMatch(/image\/jpeg[\s\S]*image\/png[\s\S]*image\/webp/)
+    expect(reserve).toMatch(/gen_random_uuid\(\)[\s\S]*current_user_id::text[\s\S]*p_project_id::text[\s\S]*normalized_extension/)
+    expect(reserve).not.toMatch(/p_storage_path|p_path/)
+    expect(migration).toContain('grant execute on function public.reserve_commerce_asset(uuid, text, text, bigint) to authenticated;')
+  })
+
+  it('keeps upload finalization and cleanup discovery service-only and fail-closed', () => {
+    const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    const finalize = migration.slice(
+      migration.indexOf('create or replace function public.finalize_commerce_asset_upload'),
+      migration.indexOf('create or replace function public.fail_commerce_asset_upload'),
+    )
+    expect(finalize).toMatch(/auth\.role\(\) is distinct from 'service_role'/)
+    expect(finalize).toMatch(/id = p_asset_id[\s\S]*user_id = p_user_id[\s\S]*for update/)
+    expect(finalize).toMatch(/state = 'ready'[\s\S]*mime_type[\s\S]*size_bytes[\s\S]*return query/)
+    expect(finalize).toMatch(/state <> 'uploading'[\s\S]*raise exception/)
+    expect(finalize).toMatch(/p_actual_mime_type is distinct from asset_row\.mime_type[\s\S]*p_actual_size_bytes is distinct from asset_row\.size_bytes/)
+
+    const abandoned = migration.slice(
+      migration.indexOf('create or replace function public.list_abandoned_commerce_uploads'),
+      migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'),
+    )
+    expect(abandoned).toMatch(/state = 'uploading'[\s\S]*created_at < p_cutoff[\s\S]*order by asset\.created_at, asset\.id/)
+
+    const orphan = migration.slice(migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'))
+    expect(orphan).toMatch(/storage\.objects[\s\S]*left join public\.commerce_project_assets[\s\S]*asset\.storage_path = object\.name/)
+    expect(orphan).toMatch(/p_limit not between 1 and 500[\s\S]*bucket_id = 'commerce-assets'[\s\S]*object\.name > p_after_name[\s\S]*order by object\.name/)
+    expect(migration).toContain('grant execute on function public.finalize_commerce_asset_upload(uuid, uuid, text, bigint) to service_role;')
+    expect(migration).toContain('grant execute on function public.fail_commerce_asset_upload(uuid, uuid) to service_role;')
+    expect(migration).not.toMatch(/grant execute on function public\.(?:finalize|fail|reconcile|list_)commerce_[^;]+to authenticated/i)
+  })
+
+  it('atomically restores processing assets on terminal writes and historical reconciliation', () => {
+    const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    const complete = migration.slice(
+      migration.indexOf('create or replace function public.complete_commerce_generation'),
+      migration.indexOf('create or replace function public.fail_commerce_generation'),
+    )
+    expect(complete).toMatch(/commerce_generations[\s\S]*for update[\s\S]*status = 'completed'[\s\S]*commerce_project_assets[\s\S]*state = 'ready'/)
+    expect(complete).toMatch(/not exists \([\s\S]*status in \('queued', 'processing'\)[\s\S]*state = 'processing'/)
+
+    const fail = migration.slice(
+      migration.indexOf('create or replace function public.fail_commerce_generation'),
+      migration.indexOf('create or replace function public.reconcile_terminal_commerce_assets'),
+    )
+    expect(fail).toMatch(/commerce_generations[\s\S]*for update[\s\S]*status = 'failed'[\s\S]*generation_refund[\s\S]*commerce_project_assets[\s\S]*state = 'ready'/)
+    expect(fail).toMatch(/generation_row\.credit_charged and generation_row\.refunded_at is null/)
+
+    const reconcile = migration.slice(
+      migration.indexOf('create or replace function public.reconcile_terminal_commerce_assets'),
+      migration.indexOf('create or replace function public.list_abandoned_commerce_uploads'),
+    )
+    expect(reconcile).toMatch(/auth\.role\(\) is distinct from 'service_role'[\s\S]*commerce_projects[\s\S]*for update[\s\S]*state = 'processing'/)
+    expect(reconcile).toMatch(/not exists \([\s\S]*status in \('queued', 'processing'\)[\s\S]*set state = 'ready'/)
+  })
+
   it('keeps the workflow scheduled/manual, env-secret-only, quiet, bounded, and minimally privileged', () => {
     const workflow = read('.github/workflows/cleanup-commerce-assets.yml')
     expect(workflow).toContain("cron: '20 19 * * *'")
