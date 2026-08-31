@@ -28,6 +28,14 @@ const assertEquals = (actual: unknown, expected: unknown, message = 'values diff
 }
 
 const NOW = '2026-08-30T12:00:00.000Z'
+const ASSET_ID = '11111111-1111-4111-8111-111111111111'
+const PROJECT_ID = '22222222-2222-4222-8222-222222222222'
+const USER_ID = '33333333-3333-4333-8333-333333333333'
+const ATTEMPT_ID = '44444444-4444-4444-8444-444444444444'
+const page = (prefix: string, count: number) => Array.from(
+  { length: count },
+  (_, index) => `${prefix}-${String(index).padStart(4, '0')}`,
+)
 
 const asset = (input: Partial<CleanupAsset> & Pick<CleanupAsset, 'id'>): CleanupAsset => ({
   id: input.id,
@@ -66,6 +74,7 @@ test('candidate ordering is deterministic, deduplicated, and excludes invalid ea
     asset({ id: 'a-expired', expiresAt: '2026-08-29T00:00:00.000Z', createdAt: '2026-08-02T00:00:00.000Z' }),
     asset({ id: 'a-expired', expiresAt: '2026-08-29T00:00:00.000Z', createdAt: '2026-08-02T00:00:00.000Z' }),
     asset({ id: 'uploading', state: 'uploading', sizeBytes: 900n }),
+    asset({ id: 'validating', state: 'validating', sizeBytes: 900n }),
     asset({ id: 'failed', state: 'failed', sizeBytes: 900n }),
     asset({ id: 'deleted', state: 'deleted', sizeBytes: 900n }),
   ], { now: NOW, softLimit: 1n, target: 1n })
@@ -103,6 +112,10 @@ const createStore = (overrides: Partial<CleanupStore> = {}) => {
   ]
   const store: CleanupStore = {
     acquireLease: async () => ({ acquired: true, token: 'lease-token', runId: 'run-1' }),
+    reconcileTerminalAssets: async () => { events.push('reconcile-terminal') },
+    listAbandonedUploads: async () => [],
+    cleanupAbandonedUpload: async () => 'not_claimed',
+    listOrphanStorageObjects: async () => [],
     listStaleGenerations: async () => [{ id: 'stale-1' }, { id: 'stale-2' }],
     failGeneration: async (id) => {
       events.push(`fail:${id}`)
@@ -133,10 +146,117 @@ const createStore = (overrides: Partial<CleanupStore> = {}) => {
   return { store, events, runRecords, getAssets: () => activeAssets }
 }
 
+test('terminal assets reconcile first and abandoned/orphan recovery pages deterministically beyond page one', async () => {
+  const fixture = createStore()
+  const abandonedCursors: Array<string | null> = []
+  const orphanCursors: Array<string | null> = []
+  const cleaned: string[] = []
+  const takeoverAttempts: string[] = []
+  const removedOrphans: string[] = []
+  const firstAbandonedPage = page('abandoned', 100)
+  const firstOrphanPage = page('orphan', 100).map((name) => `owner/project/${name}.png`)
+  let activeSnapshotRead = false
+  fixture.store.listActiveAssets = async () => {
+    activeSnapshotRead = true
+    return []
+  }
+  fixture.store.listStaleGenerations = async () => []
+  fixture.store.reconcileTerminalAssets = async () => {
+    assert(!activeSnapshotRead)
+    fixture.events.push('reconcile-terminal')
+  }
+  fixture.store.listAbandonedUploads = async (cutoff, afterId, limit) => {
+    assertEquals(cutoff, '2026-08-30T11:45:00.000Z')
+    assertEquals(limit, 100)
+    abandonedCursors.push(afterId)
+    if (afterId === null) return firstAbandonedPage.map((id) => ({ id }))
+    if (afterId === firstAbandonedPage.at(-1)) return [{ id: 'abandoned-page-two' }]
+    return []
+  }
+  fixture.store.cleanupAbandonedUpload = async (id, cutoff, attemptId) => {
+    assertEquals(cutoff, '2026-08-30T11:45:00.000Z')
+    assert(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId))
+    cleaned.push(id)
+    takeoverAttempts.push(attemptId)
+    return 'cleaned'
+  }
+  fixture.store.listOrphanStorageObjects = async (afterPath, limit) => {
+    assertEquals(limit, 100)
+    orphanCursors.push(afterPath)
+    if (afterPath === null) return firstOrphanPage
+    if (afterPath === firstOrphanPage.at(-1)) return ['owner/project/orphan-page-two.png']
+    return []
+  }
+  fixture.store.deleteStorageObject = async (path) => { removedOrphans.push(path) }
+
+  await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
+  assertEquals(fixture.events[0], 'reconcile-terminal')
+  assertEquals(abandonedCursors, [null, firstAbandonedPage.at(-1) ?? null])
+  assertEquals(orphanCursors, [null, firstOrphanPage.at(-1) ?? null])
+  assertEquals(cleaned.length, 101)
+  assertEquals(new Set(takeoverAttempts).size, 101)
+  assertEquals(cleaned.at(-1), 'abandoned-page-two')
+  assertEquals(removedOrphans.length, 101)
+  assertEquals(removedOrphans.at(-1), 'owner/project/orphan-page-two.png')
+})
+
+test('reconciliation has a strict 500-item per-kind bound even when every page is full', async () => {
+  const fixture = createStore({ listStaleGenerations: async () => [], listActiveAssets: async () => [] })
+  let abandonedPages = 0
+  let orphanPages = 0
+  let abandonedCleanups = 0
+  let orphanRemovals = 0
+  fixture.store.listAbandonedUploads = async (_cutoff, _afterId, limit) => {
+    const pageIndex = abandonedPages
+    abandonedPages += 1
+    if (abandonedPages > 10) throw new Error('abandoned cleanup exceeded its run bound')
+    return page(`abandoned-${pageIndex}`, limit).map((id) => ({ id }))
+  }
+  fixture.store.cleanupAbandonedUpload = async () => { abandonedCleanups += 1; return 'cleaned' }
+  fixture.store.listOrphanStorageObjects = async (_afterPath, limit) => {
+    const pageIndex = orphanPages
+    orphanPages += 1
+    if (orphanPages > 10) throw new Error('orphan cleanup exceeded its run bound')
+    return page(`owner/project/orphan-${pageIndex}`, limit)
+  }
+  fixture.store.deleteStorageObject = async () => { orphanRemovals += 1 }
+
+  await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
+  assertEquals(abandonedPages, 5)
+  assertEquals(orphanPages, 5)
+  assertEquals(abandonedCleanups, 500)
+  assertEquals(orphanRemovals, 500)
+})
+
+test('reconciliation failures are safe and bounded while later abandoned and orphan items continue', async () => {
+  const fixture = createStore({ listStaleGenerations: async () => [], listActiveAssets: async () => [] })
+  const laterEvents: string[] = []
+  fixture.store.reconcileTerminalAssets = async () => { throw new Error('private terminal reconciliation detail') }
+  fixture.store.listAbandonedUploads = async (_cutoff, afterId) => afterId === null
+    ? Array.from({ length: 30 }, (_, index) => ({ id: `private-abandoned-${index}` }))
+    : []
+  fixture.store.cleanupAbandonedUpload = async (id) => {
+    if (id === 'private-abandoned-29') laterEvents.push('later-abandoned')
+    return 'retry'
+  }
+  fixture.store.listOrphanStorageObjects = async (_afterPath) => ['owner/project/later-orphan.png']
+  fixture.store.deleteStorageObject = async (path) => { laterEvents.push(path) }
+
+  const result = await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
+  assertEquals(result.status, 'partial')
+  assertEquals(laterEvents, ['later-abandoned', 'owner/project/later-orphan.png'])
+  const details = fixture.runRecords[0]?.details as { error_count: number; errors: unknown[] }
+  assertEquals(details.error_count, 25)
+  assertEquals(details.errors.length, 25)
+  const serialized = JSON.stringify(details)
+  assert(!serialized.includes('owner/project/later-orphan.png'))
+  assert(!serialized.includes('private terminal reconciliation detail'))
+})
+
 test('cleanup fails and refunds stale jobs independently, restores safe assets, and deletes Storage before rows', async () => {
   const fixture = createStore()
   const result = await executeCommerceCleanup(fixture.store, { now: NOW, triggerReason: 'scheduled' })
-  assertEquals(fixture.events.slice(0, 3), ['fail:stale-1', 'restore:stale-1', 'fail:stale-2'])
+  assertEquals(fixture.events.slice(0, 4), ['reconcile-terminal', 'fail:stale-1', 'restore:stale-1', 'fail:stale-2'])
   const storageIndex = fixture.events.indexOf('storage:expired-ok')
   const rowIndex = fixture.events.indexOf('row:expired-ok')
   const claimIndex = fixture.events.indexOf('claim:expired-ok:expired')
@@ -200,8 +320,9 @@ test('adopted claims replay before ordinary candidates and finalize idempotent S
   const result = await executeCommerceCleanup(fixture.store, {
     now: NOW, triggerReason: 'scheduled', runId: 'new-run', leaseToken: 'new-lease',
   })
-  assertEquals(fixture.events[0], 'storage:adopted.png')
-  assertEquals(fixture.events.slice(0, 3), ['storage:adopted.png', 'claim:ordinary', 'storage:ordinary.png'])
+  assertEquals(fixture.events.slice(0, 4), [
+    'reconcile-terminal', 'storage:adopted.png', 'claim:ordinary', 'storage:ordinary.png',
+  ])
   assertEquals(result.summary.deletedAssets, 2)
   assertEquals(result.summary.beforeBytes, 120)
   assertEquals(result.summary.afterBytes, 0)
@@ -213,6 +334,10 @@ test('release failure remains adoptable and the next run can finalize the orphan
   const runRecords: Array<Record<string, unknown>> = []
   const store: CleanupStore = {
     acquireLease: async () => ({ acquired: true, token: 'lease', runId: 'run' }),
+    reconcileTerminalAssets: async () => {},
+    listAbandonedUploads: async () => [],
+    cleanupAbandonedUpload: async () => 'not_claimed',
+    listOrphanStorageObjects: async () => [],
     listStaleGenerations: async () => [],
     failGeneration: async () => {},
     restoreGenerationAssets: async () => {},
@@ -315,15 +440,38 @@ test('summary intentionally serializes byte counters beyond JavaScript safe inte
 test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliation contracts', async () => {
   const rpcCalls: Array<{ name: string; parameters: Record<string, unknown> }> = []
   const storageCalls: string[][] = []
+  const callSequence: string[] = []
   const tableCalls: Array<{ table: string; operation: string; payload?: unknown }> = []
   const client = {
     rpc: async (name: string, parameters: Record<string, unknown>) => {
       rpcCalls.push({ name, parameters })
+      callSequence.push(`rpc:${name}`)
       if (name === 'begin_commerce_cleanup') {
         return { data: [{ acquired: true, lease_token: 'lease', run_id: 'run' }], error: null }
       }
       if (name === 'get_commerce_cleanup_settings') {
         return { data: [{ storage_soft_limit_bytes: '9007199254740993', storage_target_bytes: '800000000' }], error: null }
+      }
+      if (name === 'reconcile_terminal_commerce_assets') return { data: 2, error: null }
+      if (name === 'list_abandoned_commerce_uploads') return { data: [{ id: ASSET_ID }], error: null }
+      if (name === 'takeover_abandoned_commerce_asset_upload') {
+        return {
+          data: [{
+            id: ASSET_ID,
+            project_id: PROJECT_ID,
+            user_id: USER_ID,
+            storage_path: `${USER_ID}/${PROJECT_ID}/${ASSET_ID}.png`,
+            mime_type: 'image/png',
+            size_bytes: 100,
+            state: 'validating',
+            validation_attempt_id: ATTEMPT_ID,
+          }],
+          error: null,
+        }
+      }
+      if (name === 'fail_commerce_asset_upload') return { data: true, error: null }
+      if (name === 'list_orphan_commerce_storage_objects') {
+        return { data: [{ storage_path: 'owner/project/orphan.png' }], error: null }
       }
       if (name === 'claim_commerce_asset_for_cleanup') return { data: true, error: null }
       if (name === 'release_commerce_asset_cleanup_claim' || name === 'finalize_commerce_asset_cleanup') {
@@ -336,6 +484,7 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
         remove: async (paths: string[]) => {
           assertEquals(bucket, 'commerce-assets')
           storageCalls.push(paths)
+          callSequence.push(`storage:${paths[0]}`)
           return { data: [], error: null }
         },
       }),
@@ -367,6 +516,10 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
   }
   const store = createSupabaseCleanupStore(client as never)
   assertEquals(await store.acquireLease('scheduled'), { acquired: true, token: 'lease', runId: 'run' })
+  await store.reconcileTerminalAssets()
+  assertEquals(await store.listAbandonedUploads(NOW, null, 100), [{ id: ASSET_ID }])
+  assertEquals(await store.cleanupAbandonedUpload(ASSET_ID, NOW, ATTEMPT_ID), 'cleaned')
+  assertEquals(await store.listOrphanStorageObjects(null, 100), ['owner/project/orphan.png'])
   await store.failGeneration('generation-1')
   await store.restoreGenerationAssets('generation-1')
   assertEquals(await store.getSettings(), { softLimit: 9_007_199_254_740_993n, target: 800_000_000n })
@@ -382,6 +535,11 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
   })
   assertEquals(rpcCalls.map((call) => call.name), [
     'begin_commerce_cleanup',
+    'reconcile_terminal_commerce_assets',
+    'list_abandoned_commerce_uploads',
+    'takeover_abandoned_commerce_asset_upload',
+    'fail_commerce_asset_upload',
+    'list_orphan_commerce_storage_objects',
     'fail_commerce_generation',
     'restore_commerce_assets_after_stale_generation',
     'get_commerce_cleanup_settings',
@@ -400,8 +558,59 @@ test('Supabase cleanup store uses exact privileged RPC, Storage, and reconciliat
   assertEquals(rpcCalls.find((call) => call.name === 'finalize_commerce_asset_cleanup')?.parameters, {
     p_run_id: 'run', p_lease_token: 'lease', p_asset_id: 'asset-1', p_deleted_at: NOW,
   })
-  assertEquals(storageCalls, [['owner/project/image.png']])
+  assertEquals(rpcCalls.find((call) => call.name === 'list_abandoned_commerce_uploads')?.parameters, {
+    p_cutoff: NOW, p_after_id: null, p_limit: 100,
+  })
+  assertEquals(rpcCalls.find((call) => call.name === 'takeover_abandoned_commerce_asset_upload')?.parameters, {
+    p_asset_id: ASSET_ID, p_cutoff: NOW, p_attempt_id: ATTEMPT_ID,
+  })
+  assertEquals(rpcCalls.find((call) => call.name === 'fail_commerce_asset_upload')?.parameters, {
+    p_asset_id: ASSET_ID, p_user_id: USER_ID, p_attempt_id: ATTEMPT_ID,
+  })
+  assertEquals(rpcCalls.find((call) => call.name === 'list_orphan_commerce_storage_objects')?.parameters, {
+    p_after_name: null, p_limit: 100,
+  })
+  assertEquals(storageCalls, [[`${USER_ID}/${PROJECT_ID}/${ASSET_ID}.png`], ['owner/project/image.png']])
+  assert(
+    callSequence.indexOf(`storage:${USER_ID}/${PROJECT_ID}/${ASSET_ID}.png`)
+      < callSequence.indexOf('rpc:fail_commerce_asset_upload'),
+    'abandoned object must be removed before the attempt-bound fail transition',
+  )
   assertEquals(tableCalls.filter((call) => call.operation === 'update').length, 0)
+})
+
+test('abandoned cleanup keeps the attempt retryable when Storage removal is not confirmed', async () => {
+  const rpcNames: string[] = []
+  const client = {
+    rpc: async (name: string, parameters: Record<string, unknown>) => {
+      rpcNames.push(name)
+      if (name === 'takeover_abandoned_commerce_asset_upload') {
+        return {
+          data: [{
+            id: ASSET_ID,
+            project_id: PROJECT_ID,
+            user_id: USER_ID,
+            storage_path: `${USER_ID}/${PROJECT_ID}/${ASSET_ID}.png`,
+            mime_type: 'image/png',
+            size_bytes: 100,
+            state: 'validating',
+            validation_attempt_id: parameters.p_attempt_id,
+          }],
+          error: null,
+        }
+      }
+      if (name === 'release_commerce_asset_upload_validation') return { data: true, error: null }
+      if (name === 'fail_commerce_asset_upload') throw new Error('must not fail the row before removal')
+      return { data: null, error: null }
+    },
+    storage: { from: () => ({ remove: async () => ({ data: null, error: { message: 'private Storage detail' } }) }) },
+    from: () => ({}),
+  }
+  const result = await createSupabaseCleanupStore(client as never)
+    .cleanupAbandonedUpload(ASSET_ID, NOW, ATTEMPT_ID)
+  assertEquals(result, 'retry')
+  assert(rpcNames.includes('release_commerce_asset_upload_validation'))
+  assert(!rpcNames.includes('fail_commerce_asset_upload'))
 })
 
 test('Supabase cleanup snapshots paginate assets and later locked projects deterministically', async () => {

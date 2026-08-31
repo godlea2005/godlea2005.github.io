@@ -2,7 +2,7 @@ name: Cleanup private commerce assets
 
 on:
   schedule:
-    - cron: '20 19 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions: {}

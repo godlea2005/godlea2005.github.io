@@ -19,7 +19,13 @@ export class SafeProviderError extends Error {
 type ProviderDependencies = {
   fetchFn?: typeof fetch
   getEnv?: (name: string) => string | undefined
+  setTimeoutFn?: typeof setTimeout
+  clearTimeoutFn?: typeof clearTimeout
 }
+
+const DEFAULT_TIMEOUT_MS = 60_000
+const MIN_TIMEOUT_MS = 5_000
+const MAX_TIMEOUT_MS = 90_000
 
 const denoEnv = (name: string): string | undefined => {
   const runtime = globalThis as unknown as { Deno?: { env?: { get(name: string): string | undefined } } }
@@ -52,9 +58,22 @@ const numericUsage = (value: unknown): Record<string, number> => {
   )
 }
 
+const providerTimeoutMs = (getEnv: (name: string) => string | undefined) => {
+  const configured = Number(getEnv('OPENAI_TIMEOUT_MS')?.trim())
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_TIMEOUT_MS
+  return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, configured))
+}
+
+const timeoutError = () => new SafeProviderError(
+  'PROVIDER_TIMEOUT',
+  'AI 服务响应超时，请稍后重试。',
+)
+
 export const createOpenAiProvider = ({
   fetchFn = fetch,
   getEnv = denoEnv,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
 }: ProviderDependencies = {}): AiProvider => ({
   async generate({ prompt, imageUrls, schema }) {
     const apiKey = getEnv('OPENAI_API_KEY')?.trim()
@@ -69,61 +88,73 @@ export const createOpenAiProvider = ({
       ...imageUrls.map((imageUrl) => ({ type: 'input_image', image_url: imageUrl })),
     ]
 
-    let response: Response
+    const controller = new AbortController()
+    const timer = setTimeoutFn(() => controller.abort(), providerTimeoutMs(getEnv))
     try {
-      response = await fetchFn('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          store: false,
-          input: [{ role: 'user', content }],
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'commerce_result',
-              strict: true,
-              schema,
-            },
+      let response: Response
+      try {
+        response = await fetchFn('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
           },
-        }),
-      })
-    } catch {
-      throw new SafeProviderError('PROVIDER_UNAVAILABLE', 'AI 服务暂时无法连接。')
-    }
+          body: JSON.stringify({
+            model,
+            store: false,
+            input: [{ role: 'user', content }],
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'commerce_result',
+                strict: true,
+                schema,
+              },
+            },
+          }),
+          signal: controller.signal,
+        })
+      } catch {
+        if (controller.signal.aborted) throw timeoutError()
+        throw new SafeProviderError('PROVIDER_UNAVAILABLE', 'AI 服务暂时无法连接。')
+      }
+      if (controller.signal.aborted) throw timeoutError()
 
-    if (!response.ok) {
-      throw new SafeProviderError('PROVIDER_ERROR', 'AI 服务暂时无法完成分析。')
-    }
+      if (!response.ok) {
+        throw new SafeProviderError('PROVIDER_ERROR', 'AI 服务暂时无法完成分析。')
+      }
 
-    let body: Record<string, unknown>
-    try {
-      const parsed = await response.json()
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('invalid response')
-      body = parsed as Record<string, unknown>
-    } catch {
-      throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
-    }
+      let body: Record<string, unknown>
+      try {
+        const parsed = await response.json()
+        if (controller.signal.aborted) throw timeoutError()
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('invalid response')
+        body = parsed as Record<string, unknown>
+      } catch (error) {
+        if (controller.signal.aborted) throw timeoutError()
+        if (error instanceof SafeProviderError) throw error
+        throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
+      }
 
-    const outputText = outputTextFrom(body)
-    if (!outputText) {
-      throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
-    }
+      const outputText = outputTextFrom(body)
+      if (!outputText) {
+        throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
+      }
 
-    let result: unknown
-    try {
-      result = JSON.parse(outputText)
-    } catch {
-      throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
-    }
+      let result: unknown
+      try {
+        result = JSON.parse(outputText)
+      } catch {
+        throw new SafeProviderError('PROVIDER_RESPONSE_INVALID', 'AI 返回了无法读取的结果。')
+      }
 
-    return {
-      result,
-      model: typeof body.model === 'string' && body.model.trim() ? body.model : model,
-      usage: numericUsage(body.usage),
+      return {
+        result,
+        model: typeof body.model === 'string' && body.model.trim() ? body.model : model,
+        usage: numericUsage(body.usage),
+      }
+    } finally {
+      clearTimeoutFn(timer)
     }
   },
 })

@@ -210,6 +210,7 @@ export const createProcessGeneration = (dependencies: {
 }) => async ({ generationId, userId }: ProcessGenerationInput): Promise<void> => {
   let processingAssetIds: string[] = []
   let failureInvoked = false
+  let terminalCommitted = false
 
   const failOnce = async (error: unknown) => {
     if (failureInvoked) return
@@ -217,6 +218,7 @@ export const createProcessGeneration = (dependencies: {
     const safe = safeMessage(error)
     try {
       await dependencies.store.failGeneration({ generationId, code: safe.code, message: safe.message })
+      terminalCommitted = true
     } catch {
       console.error('commerce generation refund failed')
     }
@@ -285,10 +287,13 @@ export const createProcessGeneration = (dependencies: {
       model: generated.model,
       usage: generated.usage,
     })
+    terminalCommitted = true
   } catch (error) {
     await failOnce(error)
   } finally {
-    if (processingAssetIds.length > 0) {
+    // Successful terminal RPCs restore processing assets atomically. This guarded fallback
+    // is only for a worker that marked assets processing but could not commit either terminal RPC.
+    if (processingAssetIds.length > 0 && !terminalCommitted) {
       try {
         await dependencies.store.markAssetsState(generationId, processingAssetIds, 'ready')
       } catch {

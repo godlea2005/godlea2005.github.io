@@ -216,6 +216,72 @@ test('OpenAI provider supports configured model and hides provider errors', asyn
   }
 })
 
+test('OpenAI provider aborts a hanging request at the configured deadline and clears its timer', async () => {
+  let timeoutCallback: (() => void) | undefined
+  let timeoutDelay = 0
+  let clearedTimer: unknown
+  let requestSignal: AbortSignal | undefined
+  const provider = createOpenAiProvider({
+    getEnv: (name) => name === 'OPENAI_API_KEY'
+      ? 'test-key'
+      : name === 'OPENAI_TIMEOUT_MS'
+      ? '5000'
+      : undefined,
+    setTimeoutFn: ((callback: () => void, delay: number) => {
+      timeoutCallback = callback
+      timeoutDelay = delay
+      return 42
+    }) as typeof setTimeout,
+    clearTimeoutFn: ((timer: unknown) => { clearedTimer = timer }) as typeof clearTimeout,
+    fetchFn: async (_url, init) => {
+      requestSignal = init?.signal ?? undefined
+      return await new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => reject(new Error('private provider timeout detail')))
+      })
+    },
+  })
+
+  const pending = provider.generate({ prompt: 'x', imageUrls: [], schema: {} })
+  await Promise.resolve()
+  assertEquals(timeoutDelay, 5000)
+  assert(requestSignal instanceof AbortSignal)
+  assert(timeoutCallback, 'provider timeout was not scheduled')
+  timeoutCallback()
+  try {
+    await pending
+    throw new Error('provider should time out')
+  } catch (error) {
+    assert(error instanceof SafeProviderError)
+    assertEquals(error.code, 'PROVIDER_TIMEOUT')
+    assert(!error.message.includes('private provider timeout detail'))
+  }
+  assert(requestSignal.aborted)
+  assertEquals(clearedTimer, 42)
+})
+
+test('OpenAI provider defaults invalid deadlines and clamps finite overrides to 5000..90000 ms', async () => {
+  for (const [configured, expected] of [
+    [undefined, 60_000],
+    ['not-a-number', 60_000],
+    ['0', 60_000],
+    ['100', 5_000],
+    ['120000', 90_000],
+  ] as const) {
+    let scheduledDelay = 0
+    const provider = createOpenAiProvider({
+      getEnv: (name) => name === 'OPENAI_API_KEY' ? 'test-key' : name === 'OPENAI_TIMEOUT_MS' ? configured : undefined,
+      setTimeoutFn: ((_callback: () => void, delay: number) => {
+        scheduledDelay = delay
+        return 7
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      fetchFn: async () => Response.json({ output_text: JSON.stringify(sampleResult()) }),
+    })
+    await provider.generate({ prompt: 'x', imageUrls: [], schema: {} })
+    assertEquals(scheduledDelay, expected)
+  }
+})
+
 const handlerWith = (overrides: Partial<Parameters<typeof createAnalyzeCommerceHandler>[0]> = {}) => {
   const backgroundTasks: Promise<void>[] = []
   const client: UserClient = {
@@ -384,11 +450,11 @@ const createBackgroundHarness = (overrides: Partial<BackgroundStore> = {}, gener
   return { events, store, aiProvider }
 }
 
-test('background success signs for ten minutes, processes, completes, and restores assets', async () => {
+test('background success relies on the atomic terminal RPC to restore assets', async () => {
   const harness = createBackgroundHarness()
   const process = createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })
   await process({ generationId: GENERATION_ID, userId: USER_ID })
-  assertEquals(harness.events, ['signed:600', 'assets:processing', 'ai', 'complete', 'assets:ready'])
+  assertEquals(harness.events, ['signed:600', 'assets:processing', 'ai', 'complete'])
 })
 
 test('background retries exactly once only for an invalid result', async () => {
@@ -399,15 +465,15 @@ test('background retries exactly once only for an invalid result', async () => {
   assertEquals(harness.events.filter((event) => event === 'fail').length, 0)
 })
 
-test('a second invalid result fails once and restores assets', async () => {
+test('a second invalid result fails once through the atomic terminal RPC', async () => {
   const harness = createBackgroundHarness({}, [{ invalid: true }, { stillInvalid: true }])
   await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({ generationId: GENERATION_ID, userId: USER_ID })
   assertEquals(harness.events.filter((event) => event === 'ai').length, 2)
   assertEquals(harness.events.filter((event) => event === 'fail').length, 1)
-  assertEquals(harness.events.at(-1), 'assets:ready')
+  assertEquals(harness.events.at(-1), 'fail')
 })
 
-test('provider and completion failures refund exactly once and restore assets', async () => {
+test('provider and completion failures refund exactly once through the atomic terminal RPC', async () => {
   for (const mode of ['provider', 'complete'] as const) {
     const harness = createBackgroundHarness(
       mode === 'complete' ? { completeGeneration: async () => { harness.events.push('complete'); throw new Error('db detail') } } : {},
@@ -415,8 +481,32 @@ test('provider and completion failures refund exactly once and restore assets', 
     )
     await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({ generationId: GENERATION_ID, userId: USER_ID })
     assertEquals(harness.events.filter((event) => event === 'fail').length, 1)
-    assertEquals(harness.events.at(-1), 'assets:ready')
+    assertEquals(harness.events.at(-1), 'fail')
   }
+})
+
+test('a provider timeout follows the normal safe fail/refund path', async () => {
+  const harness = createBackgroundHarness({}, [
+    new SafeProviderError('PROVIDER_TIMEOUT', 'AI 服务响应超时，请稍后重试。'),
+  ])
+  await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({
+    generationId: GENERATION_ID,
+    userId: USER_ID,
+  })
+  assertEquals(harness.events.filter((event) => event === 'fail').length, 1)
+  assertEquals(harness.events.at(-1), 'fail')
+})
+
+test('asset restoration remains a pre-terminal fallback when fail/refund cannot commit', async () => {
+  const harness = createBackgroundHarness({
+    failGeneration: async () => { harness.events.push('fail-error'); throw new Error('database unavailable') },
+  }, [new SafeProviderError('PROVIDER_ERROR', 'safe failure')])
+  await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({
+    generationId: GENERATION_ID,
+    userId: USER_ID,
+  })
+  assertEquals(harness.events.at(-2), 'fail-error')
+  assertEquals(harness.events.at(-1), 'assets:ready')
 })
 
 test('signed URL failure skips AI, fails/refunds safely, and does not leave processing assets', async () => {

@@ -165,7 +165,7 @@ describe('commerce cleanup deployment contracts', () => {
 
   it('keeps the workflow scheduled/manual, env-secret-only, quiet, bounded, and minimally privileged', () => {
     const workflow = read('.github/workflows/cleanup-commerce-assets.yml')
-    expect(workflow).toContain("cron: '20 19 * * *'")
+    expect(workflow).toContain("cron: '*/15 * * * *'")
     expect(workflow).toContain('workflow_dispatch:')
     expect(workflow).toContain('permissions: {}')
     expect(workflow).toMatch(/timeout-minutes:\s*5/)

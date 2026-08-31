@@ -1,4 +1,9 @@
-export type CleanupAssetState = 'uploading' | 'ready' | 'processing' | 'deleting' | 'deleted' | 'failed'
+import {
+  cleanupAbandonedCommerceUpload,
+  type CommerceUploadServiceClient,
+} from './commerce-upload-runtime.ts'
+
+export type CleanupAssetState = 'uploading' | 'validating' | 'ready' | 'processing' | 'deleting' | 'deleted' | 'failed'
 
 export type CleanupAsset = {
   id: string
@@ -27,7 +32,18 @@ export type CleanupSummary = {
 }
 
 type CleanupError = {
-  stage: 'stale_fail' | 'stale_restore' | 'storage_delete' | 'row_reconcile' | 'snapshot' | 'finalize'
+  stage:
+    | 'terminal_reconcile'
+    | 'abandoned_list'
+    | 'abandoned_cleanup'
+    | 'orphan_list'
+    | 'orphan_delete'
+    | 'stale_fail'
+    | 'stale_restore'
+    | 'storage_delete'
+    | 'row_reconcile'
+    | 'snapshot'
+    | 'finalize'
   code: string
   itemId?: string
 }
@@ -50,6 +66,14 @@ export type CleanupRunRecord = {
 
 export type CleanupStore = {
   acquireLease(triggerReason: CleanupTriggerReason): Promise<LeaseResult>
+  reconcileTerminalAssets(): Promise<void>
+  listAbandonedUploads(cutoff: string, afterId: string | null, limit: number): Promise<Array<{ id: string }>>
+  cleanupAbandonedUpload(
+    assetId: string,
+    cutoff: string,
+    attemptId: string,
+  ): Promise<'cleaned' | 'not_claimed' | 'retry'>
+  listOrphanStorageObjects(afterPath: string | null, limit: number): Promise<string[]>
   listStaleGenerations(cutoff: string): Promise<Array<{ id: string }>>
   failGeneration(generationId: string): Promise<void>
   restoreGenerationAssets(generationId: string): Promise<void>
@@ -63,11 +87,8 @@ export type CleanupStore = {
   finishRun(record: CleanupRunRecord): Promise<void>
 }
 
-type RpcResult = { data: unknown; error: unknown }
-export type CleanupSupabaseClient = {
+export type CleanupSupabaseClient = CommerceUploadServiceClient & {
   from(table: string): any
-  rpc(name: string, parameters: Record<string, unknown>): Promise<RpcResult>
-  storage: { from(bucket: string): any }
 }
 
 type SupabaseClientFactory = (
@@ -76,9 +97,12 @@ type SupabaseClientFactory = (
   options: Record<string, unknown>,
 ) => CleanupSupabaseClient
 
-const ACTIVE_STATES = new Set<CleanupAssetState>(['uploading', 'ready', 'processing', 'deleting', 'failed'])
+const ACTIVE_STATES = new Set<CleanupAssetState>(['uploading', 'validating', 'ready', 'processing', 'deleting', 'failed'])
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER)
 const MAX_ERRORS = 25
+const RECONCILIATION_PAGE_SIZE = 100
+const MAX_RECONCILIATION_ITEMS = 500
+const ABANDONED_UPLOAD_WINDOW_MS = 15 * 60 * 1000
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -132,7 +156,7 @@ export const selectCleanupCandidates = (
 
   const active = activeAssets(assets)
   const expired = active
-    .filter((item) => item.state !== 'processing' && item.state !== 'uploading' && isExpired(item, nowMs))
+    .filter((item) => !['processing', 'uploading', 'validating'].includes(item.state) && isExpired(item, nowMs))
     .sort(compareExpired)
     .map((item) => ({ ...item, reason: 'expired' as const }))
   const selectedIds = new Set(expired.map((item) => item.id))
@@ -157,6 +181,11 @@ const addError = (errors: CleanupError[], error: CleanupError) => {
 }
 
 const errorCode = (stage: CleanupError['stage']) => ({
+  terminal_reconcile: 'TERMINAL_ASSET_RECONCILIATION_FAILED',
+  abandoned_list: 'ABANDONED_UPLOAD_LIST_FAILED',
+  abandoned_cleanup: 'ABANDONED_UPLOAD_CLEANUP_FAILED',
+  orphan_list: 'ORPHAN_OBJECT_LIST_FAILED',
+  orphan_delete: 'ORPHAN_OBJECT_DELETE_FAILED',
   stale_fail: 'STALE_GENERATION_FAIL_FAILED',
   stale_restore: 'STALE_ASSET_RESTORE_FAILED',
   storage_delete: 'STORAGE_DELETE_FAILED',
@@ -164,6 +193,92 @@ const errorCode = (stage: CleanupError['stage']) => ({
   snapshot: 'CLEANUP_SNAPSHOT_FAILED',
   finalize: 'CLEANUP_FINALIZE_FAILED',
 }[stage])
+
+const reconcileAbandonedUploads = async (
+  store: CleanupStore,
+  cutoff: string,
+  errors: CleanupError[],
+) => {
+  let afterId: string | null = null
+  let processed = 0
+  while (processed < MAX_RECONCILIATION_ITEMS) {
+    const limit = Math.min(RECONCILIATION_PAGE_SIZE, MAX_RECONCILIATION_ITEMS - processed)
+    let page: Array<{ id: string }>
+    try {
+      page = await store.listAbandonedUploads(cutoff, afterId, limit)
+    } catch {
+      addError(errors, { stage: 'abandoned_list', code: errorCode('abandoned_list') })
+      return
+    }
+    const batch = page.slice(0, limit)
+    if (batch.length === 0) return
+    for (const item of batch) {
+      try {
+        const result = await store.cleanupAbandonedUpload(item.id, cutoff, crypto.randomUUID())
+        if (result === 'retry') {
+          addError(errors, {
+            stage: 'abandoned_cleanup',
+            code: errorCode('abandoned_cleanup'),
+            itemId: item.id,
+          })
+        }
+      } catch {
+        addError(errors, {
+          stage: 'abandoned_cleanup',
+          code: errorCode('abandoned_cleanup'),
+          itemId: item.id,
+        })
+      }
+    }
+    processed += batch.length
+    const nextCursor = batch.at(-1)?.id ?? null
+    if (batch.length < limit) return
+    if (!nextCursor || nextCursor === afterId) {
+      addError(errors, { stage: 'abandoned_list', code: errorCode('abandoned_list') })
+      return
+    }
+    afterId = nextCursor
+  }
+}
+
+const reconcileOrphanStorageObjects = async (
+  store: CleanupStore,
+  errors: CleanupError[],
+) => {
+  let afterPath: string | null = null
+  let processed = 0
+  while (processed < MAX_RECONCILIATION_ITEMS) {
+    const limit = Math.min(RECONCILIATION_PAGE_SIZE, MAX_RECONCILIATION_ITEMS - processed)
+    let page: string[]
+    try {
+      page = await store.listOrphanStorageObjects(afterPath, limit)
+    } catch {
+      addError(errors, { stage: 'orphan_list', code: errorCode('orphan_list') })
+      return
+    }
+    const batch = page.slice(0, limit)
+    if (batch.length === 0) return
+    for (const storagePath of batch) {
+      try {
+        await store.deleteStorageObject(storagePath)
+      } catch {
+        addError(errors, {
+          stage: 'orphan_delete',
+          code: errorCode('orphan_delete'),
+          itemId: storagePath,
+        })
+      }
+    }
+    processed += batch.length
+    const nextCursor = batch.at(-1) ?? null
+    if (batch.length < limit) return
+    if (!nextCursor || nextCursor === afterPath) {
+      addError(errors, { stage: 'orphan_list', code: errorCode('orphan_list') })
+      return
+    }
+    afterPath = nextCursor
+  }
+}
 
 const deleteCandidates = async (
   store: CleanupStore,
@@ -242,6 +357,16 @@ export const executeCommerceCleanup = async (
   let status: CleanupRunRecord['status'] = 'completed'
 
   try {
+    try {
+      await store.reconcileTerminalAssets()
+    } catch {
+      addError(errors, { stage: 'terminal_reconcile', code: errorCode('terminal_reconcile') })
+    }
+
+    const cutoff = new Date(nowMs - ABANDONED_UPLOAD_WINDOW_MS).toISOString()
+    await reconcileAbandonedUploads(store, cutoff, errors)
+    await reconcileOrphanStorageObjects(store, errors)
+
     const settings = await store.getSettings()
     const initial = activeAssets(await store.listActiveAssets())
     assetsExamined = initial.length
@@ -252,7 +377,6 @@ export const executeCommerceCleanup = async (
     // would incorrectly reject the already-deleting row.
     const adopted = await store.listClaimedAssets(runId, leaseToken)
 
-    const cutoff = new Date(nowMs - 15 * 60 * 1000).toISOString()
     const stale = await store.listStaleGenerations(cutoff)
     for (const generation of stale) {
       try {
@@ -473,6 +597,48 @@ export const createSupabaseCleanupStore = (client: CleanupSupabaseClient): Clean
     const runId = String(row.run_id ?? '')
     if (!token || !runId) throw new Error('Cleanup lease malformed')
     return { acquired: true, token, runId }
+  },
+
+  async reconcileTerminalAssets() {
+    const response = await client.rpc('reconcile_terminal_commerce_assets', {})
+    if (response.error) throw new Error('Terminal asset reconciliation failed')
+  },
+
+  async listAbandonedUploads(cutoff, afterId, limit) {
+    const response = await client.rpc('list_abandoned_commerce_uploads', {
+      p_cutoff: cutoff,
+      p_after_id: afterId,
+      p_limit: limit,
+    })
+    if (response.error) throw new Error('Abandoned upload query failed')
+    const rows: unknown[] = Array.isArray(response.data) ? response.data : []
+    return rows
+      .filter(isRecord)
+      .map((row) => ({ id: String(row.id ?? '') }))
+      .filter((row) => row.id)
+  },
+
+  async cleanupAbandonedUpload(assetId, cutoff, attemptId) {
+    return await cleanupAbandonedCommerceUpload({
+      serviceClient: client,
+      assetId,
+      cutoff,
+      attemptId,
+      logError: () => {},
+    })
+  },
+
+  async listOrphanStorageObjects(afterPath, limit) {
+    const response = await client.rpc('list_orphan_commerce_storage_objects', {
+      p_after_name: afterPath,
+      p_limit: limit,
+    })
+    if (response.error) throw new Error('Orphan Storage query failed')
+    const rows: unknown[] = Array.isArray(response.data) ? response.data : []
+    return rows
+      .filter(isRecord)
+      .map((row) => String(row.storage_path ?? ''))
+      .filter(Boolean)
   },
 
   async listStaleGenerations(cutoff) {
