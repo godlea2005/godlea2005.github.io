@@ -20,7 +20,7 @@ describe('commerce cleanup deployment contracts', () => {
     expect(reserve).toMatch(/auth\.uid\(\)[\s\S]*auth\.jwt\(\)[\s\S]*is_anonymous/)
     expect(reserve).toMatch(/commerce_projects[\s\S]*user_id = current_user_id[\s\S]*for update[\s\S]*state = 'deleting'/)
     expect(reserve).toMatch(/max_project_images[\s\S]*coalesce[\s\S]*'max_project_images'[\s\S]*6/)
-    expect(reserve).toMatch(/count\(\*\)[\s\S]*state in \('uploading', 'ready', 'processing', 'deleting'\)[\s\S]*active_asset_count >= max_project_images/)
+    expect(reserve).toMatch(/count\(\*\)[\s\S]*state in \('uploading', 'validating', 'ready', 'processing', 'deleting'\)[\s\S]*active_asset_count >= max_project_images/)
     expect(reserve).toMatch(/p_size_bytes[\s\S]*between 1 and 8388608/)
     expect(reserve).toMatch(/image\/jpeg[\s\S]*image\/png[\s\S]*image\/webp/)
     expect(reserve).toMatch(/gen_random_uuid\(\)[\s\S]*current_user_id::text[\s\S]*p_project_id::text[\s\S]*normalized_extension/)
@@ -30,6 +30,26 @@ describe('commerce cleanup deployment contracts', () => {
 
   it('keeps upload finalization and cleanup discovery service-only and fail-closed', () => {
     const migration = read('supabase/migrations/202608310001_commerce_upload_security.sql')
+    expect(migration).toMatch(/add column if not exists validation_attempt_id uuid/)
+    expect(migration).toMatch(/add column if not exists validation_started_at timestamptz/)
+    expect(migration).toMatch(/state in \('uploading','validating','ready','processing','deleting','deleted','failed'\)/)
+    expect(migration).toMatch(/commerce_project_assets_validation_claim_check[\s\S]*state = 'validating'[\s\S]*validation_attempt_id is not null[\s\S]*validation_started_at is not null/)
+
+    const claim = migration.slice(
+      migration.indexOf('create or replace function public.claim_commerce_asset_upload_validation'),
+      migration.indexOf('create or replace function public.release_commerce_asset_upload_validation'),
+    )
+    expect(claim).toMatch(/auth\.role\(\) is distinct from 'service_role'/)
+    expect(claim).toMatch(/id = p_asset_id[\s\S]*user_id = p_user_id[\s\S]*for update/)
+    expect(claim).toMatch(/state <> 'uploading'[\s\S]*return false/)
+    expect(claim).toMatch(/set state = 'validating'[\s\S]*validation_attempt_id = p_attempt_id[\s\S]*validation_started_at = pg_catalog\.clock_timestamp\(\)/)
+
+    const release = migration.slice(
+      migration.indexOf('create or replace function public.release_commerce_asset_upload_validation'),
+      migration.indexOf('create or replace function public.finalize_commerce_asset_upload'),
+    )
+    expect(release).toMatch(/set state = 'uploading'[\s\S]*state = 'validating'[\s\S]*validation_attempt_id = p_attempt_id/)
+
     const finalize = migration.slice(
       migration.indexOf('create or replace function public.finalize_commerce_asset_upload'),
       migration.indexOf('create or replace function public.fail_commerce_asset_upload'),
@@ -37,21 +57,37 @@ describe('commerce cleanup deployment contracts', () => {
     expect(finalize).toMatch(/auth\.role\(\) is distinct from 'service_role'/)
     expect(finalize).toMatch(/id = p_asset_id[\s\S]*user_id = p_user_id[\s\S]*for update/)
     expect(finalize).toMatch(/state = 'ready'[\s\S]*mime_type[\s\S]*size_bytes[\s\S]*return query/)
-    expect(finalize).toMatch(/state <> 'uploading'[\s\S]*raise exception/)
+    expect(finalize).toMatch(/state <> 'validating'[\s\S]*raise exception/)
+    expect(finalize).toMatch(/validation_attempt_id is distinct from p_attempt_id[\s\S]*raise exception/)
     expect(finalize).toMatch(/p_actual_mime_type is distinct from asset_row\.mime_type[\s\S]*p_actual_size_bytes is distinct from asset_row\.size_bytes/)
+
+    const failUpload = migration.slice(
+      migration.indexOf('create or replace function public.fail_commerce_asset_upload'),
+      migration.indexOf('create or replace function public.complete_commerce_generation'),
+    )
+    expect(failUpload).toMatch(/state <> 'validating'[\s\S]*raise exception/)
+    expect(failUpload).toMatch(/current_attempt_id is distinct from p_attempt_id[\s\S]*raise exception/)
+    expect(failUpload).toMatch(/set state = 'failed'[\s\S]*validation_attempt_id = null[\s\S]*validation_started_at = null/)
 
     const abandoned = migration.slice(
       migration.indexOf('create or replace function public.list_abandoned_commerce_uploads'),
       migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'),
     )
-    expect(abandoned).toMatch(/state = 'uploading'[\s\S]*created_at < p_cutoff[\s\S]*order by asset\.created_at, asset\.id/)
+    expect(abandoned).toMatch(/state in \('uploading', 'validating'\)[\s\S]*coalesce\(asset\.validation_started_at, asset\.created_at\) < p_cutoff[\s\S]*order by asset\.created_at, asset\.id/)
 
     const orphan = migration.slice(migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'))
     expect(orphan).toMatch(/storage\.objects[\s\S]*left join public\.commerce_project_assets[\s\S]*asset\.storage_path = object\.name/)
     expect(orphan).toMatch(/p_limit not between 1 and 500[\s\S]*bucket_id = 'commerce-assets'[\s\S]*object\.name > p_after_name[\s\S]*order by object\.name/)
-    expect(migration).toContain('grant execute on function public.finalize_commerce_asset_upload(uuid, uuid, text, bigint) to service_role;')
-    expect(migration).toContain('grant execute on function public.fail_commerce_asset_upload(uuid, uuid) to service_role;')
+    expect(migration).toContain('grant execute on function public.claim_commerce_asset_upload_validation(uuid, uuid, uuid) to service_role;')
+    expect(migration).toContain('grant execute on function public.release_commerce_asset_upload_validation(uuid, uuid, uuid) to service_role;')
+    expect(migration).toContain('grant execute on function public.finalize_commerce_asset_upload(uuid, uuid, uuid, text, bigint) to service_role;')
+    expect(migration).toContain('grant execute on function public.fail_commerce_asset_upload(uuid, uuid, uuid) to service_role;')
+    expect(migration).toContain('revoke all on function public.claim_commerce_asset_upload_validation(uuid, uuid, uuid)')
+    expect(migration).toContain('revoke all on function public.release_commerce_asset_upload_validation(uuid, uuid, uuid)')
+    expect(migration).toContain('revoke all on function public.finalize_commerce_asset_upload(uuid, uuid, uuid, text, bigint)')
+    expect(migration).toContain('revoke all on function public.fail_commerce_asset_upload(uuid, uuid, uuid)')
     expect(migration).not.toMatch(/grant execute on function public\.(?:finalize|fail|reconcile|list_)commerce_[^;]+to authenticated/i)
+    expect(migration).not.toMatch(/grant execute on function public\.(?:claim|release)_commerce_asset_upload_validation[^;]+to authenticated/i)
   })
 
   it('qualifies RETURNS TABLE output names in SQL predicates, including finalization updates', () => {
@@ -60,7 +96,7 @@ describe('commerce cleanup deployment contracts', () => {
       migration.indexOf('create or replace function public.finalize_commerce_asset_upload'),
       migration.indexOf('create or replace function public.fail_commerce_asset_upload'),
     )
-    expect(finalize).toMatch(/update public\.commerce_project_assets as asset\s+set state = 'ready'\s+where asset\.id = p_asset_id\s+and asset\.user_id = p_user_id\s+and asset\.state = 'uploading'/)
+    expect(finalize).toMatch(/update public\.commerce_project_assets as asset\s+set state = 'ready',[\s\S]*where asset\.id = p_asset_id\s+and asset\.user_id = p_user_id\s+and asset\.state = 'validating'\s+and asset\.validation_attempt_id = p_attempt_id/)
 
     const returnsTableFunctions = [
       'reserve_commerce_asset',

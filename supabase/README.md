@@ -49,8 +49,10 @@ Secret/service role key 只用于函数启动时构造后台数据客户端。�
 
 `commerce-upload` 是浏览器上传私有产品图的唯一入口。浏览器先调用 `reserve` 获取由服务端
 生成的对象路径和一次性 signed upload token，使用该 token 直传后，再调用 `finalize`。
-函数会以可信 Storage 客户端下载真实对象，核对实际字节数、8 MiB 上限、声明 MIME 与
-JPEG/PNG/WebP 文件头；不通过校验的对象会被删除，并把预留资源标记为 `failed`。
+函数会先以 service-only CAS 把资源认领为 `validating`，再用可信 Storage 客户端下载真实
+对象，核对 Blob MIME、实际字节数、8 MiB 上限及 JPEG/PNG/WebP 容器结构。只有对象删除
+确认成功后，校验失败的预留才会进入 `failed`；删除暂时失败会释放认领以供重试，进程中断
+留下的超时 `validating` 预留则由清理任务发现。
 
 该函数与 `analyze-commerce` 使用相同的 Supabase 新式/legacy key 优先级和
 `ALLOWED_ORIGINS`。`verify_jwt = false` 仅用于兼容当前 publishable key；函数内部仍使用

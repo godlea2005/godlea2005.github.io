@@ -28,10 +28,27 @@ const assertEquals = (actual: unknown, expected: unknown, message = 'values diff
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const USER_ID = '22222222-2222-4222-8222-222222222222'
 const ASSET_ID = '33333333-3333-4333-8333-333333333333'
+const ATTEMPT_ID = '44444444-4444-4444-8444-444444444444'
 const STORAGE_PATH = `${USER_ID}/${PROJECT_ID}/${ASSET_ID}.jpg`
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0x01])
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+
+const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
+
+// Real 1x1 image containers, not magic-only test doubles.
+const JPEG = fromBase64('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==')
+const PNG = fromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+const WEBP = fromBase64('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==').slice(0, 42)
+
+const webpContainer = (type: string, payload: Uint8Array) => {
+  const paddedLength = payload.byteLength + (payload.byteLength & 1)
+  const bytes = new Uint8Array(20 + paddedLength)
+  bytes.set(new TextEncoder().encode('RIFF'), 0)
+  new DataView(bytes.buffer).setUint32(4, bytes.byteLength - 8, true)
+  bytes.set(new TextEncoder().encode('WEBP'), 8)
+  bytes.set(new TextEncoder().encode(type), 12)
+  new DataView(bytes.buffer).setUint32(16, payload.byteLength, true)
+  bytes.set(payload, 20)
+  return bytes
+}
 
 const uploadingAsset = (overrides: Record<string, unknown> = {}) => ({
   id: ASSET_ID,
@@ -42,6 +59,8 @@ const uploadingAsset = (overrides: Record<string, unknown> = {}) => ({
   size_bytes: JPEG.byteLength,
   expires_at: '2026-09-07T00:00:00.000Z',
   state: 'uploading',
+  validation_attempt_id: null,
+  validation_started_at: null,
   deleted_at: null,
   created_at: '2026-08-31T00:00:00.000Z',
   ...overrides,
@@ -68,6 +87,8 @@ type HarnessOptions = {
   downloadResult?: { data: Blob | null; error: unknown }
   finalizeResult?: { data: unknown; error: unknown }
   failResult?: { data: unknown; error: unknown }
+  claimResult?: { data: unknown; error: unknown }
+  releaseResult?: { data: unknown; error: unknown }
   removeResult?: { data: unknown; error: unknown }
 }
 
@@ -110,8 +131,14 @@ const createHarness = (options: HarnessOptions = {}) => {
     rpc: async (name, parameters) => {
       events.push(`service-rpc:${name}`)
       serviceRpcCalls.push({ name, parameters })
+      if (name === 'claim_commerce_asset_upload_validation') {
+        return options.claimResult ?? { data: true, error: null }
+      }
       if (name === 'fail_commerce_asset_upload') {
         return options.failResult ?? { data: true, error: null }
+      }
+      if (name === 'release_commerce_asset_upload_validation') {
+        return options.releaseResult ?? { data: true, error: null }
       }
       return options.finalizeResult ?? {
         data: [{ ...uploadingAsset(), state: 'ready' }],
@@ -128,7 +155,7 @@ const createHarness = (options: HarnessOptions = {}) => {
         download: async (path: string) => {
           events.push('download')
           storagePaths.push(path)
-          return options.downloadResult ?? { data: new Blob([JPEG]), error: null }
+          return options.downloadResult ?? { data: new Blob([JPEG], { type: 'image/jpeg' }), error: null }
         },
         remove: async (paths: string[]) => {
           events.push('remove')
@@ -149,17 +176,48 @@ const createHarness = (options: HarnessOptions = {}) => {
       createUserClient: () => userClient,
       serviceClient,
       logError: () => events.push('safe-log'),
+      createAttemptId: () => ATTEMPT_ID,
     }),
   }
 }
 
-test('detectImageMime recognizes only trusted JPEG, PNG, and WebP signatures', () => {
+test('detectImageMime accepts structurally valid JPEG, PNG, and WebP containers', () => {
   assertEquals(detectImageMime(JPEG), 'image/jpeg')
   assertEquals(detectImageMime(PNG), 'image/png')
   assertEquals(detectImageMime(WEBP), 'image/webp')
-  assertEquals(detectImageMime(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>')), null)
-  assertEquals(detectImageMime(new Uint8Array([0x89, 0x50, 0x4e])), null)
-  assertEquals(detectImageMime(new Uint8Array([...JPEG, ...new TextEncoder().encode('<svg></svg>')])), null)
+})
+
+test('detectImageMime rejects malformed lengths, chunks, termination, and trailing text polyglots', () => {
+  const riffLengthMismatch = WEBP.slice()
+  riffLengthMismatch[4] ^= 1
+  const missingWebpChunk = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+  const unknownWebpChunk = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x0c, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x4a, 0x55, 0x4e, 0x4b, 0, 0, 0, 0])
+  const truncatedWebp = WEBP.slice(0, -1)
+  const headerOnlyVp8 = webpContainer('VP8 ', WEBP.slice(20, 30))
+  const headerOnlyVp8l = webpContainer('VP8L', new Uint8Array([0x2f, 0, 0, 0, 0]))
+  const headerOnlyVp8x = webpContainer('VP8X', new Uint8Array(10))
+  const textPayloads = ['<iframe src=x></iframe>', '<?xml version="1.0"?>', '<html><body>x</body></html>', 'plain trailing text']
+
+  for (const bytes of [
+    new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+    new Uint8Array([0x89, 0x50, 0x4e]),
+    JPEG.slice(0, -2),
+    PNG.slice(0, -4),
+    riffLengthMismatch,
+    missingWebpChunk,
+    unknownWebpChunk,
+    truncatedWebp,
+    headerOnlyVp8,
+    headerOnlyVp8l,
+    headerOnlyVp8x,
+  ]) assertEquals(detectImageMime(bytes), null)
+
+  for (const payload of textPayloads) {
+    const suffix = new TextEncoder().encode(payload)
+    assertEquals(detectImageMime(new Uint8Array([...JPEG, ...suffix])), null)
+    assertEquals(detectImageMime(new Uint8Array([...PNG, ...suffix])), null)
+    assertEquals(detectImageMime(new Uint8Array([...WEBP, ...suffix])), null)
+  }
 })
 
 test('handler rejects missing, invalid, and anonymous authentication with safe 401 errors', async () => {
@@ -236,10 +294,17 @@ test('reserve marks the row failed when signed token creation fails and hides in
     sizeBytes: JPEG.byteLength,
   }))
   assertEquals(response.status, 500)
-  assertEquals(harness.serviceRpcCalls, [{
-    name: 'fail_commerce_asset_upload',
-    parameters: { p_asset_id: ASSET_ID, p_user_id: USER_ID },
-  }])
+  assertEquals(harness.serviceRpcCalls, [
+    {
+      name: 'claim_commerce_asset_upload_validation',
+      parameters: { p_asset_id: ASSET_ID, p_user_id: USER_ID, p_attempt_id: ATTEMPT_ID },
+    },
+    {
+      name: 'fail_commerce_asset_upload',
+      parameters: { p_asset_id: ASSET_ID, p_user_id: USER_ID, p_attempt_id: ATTEMPT_ID },
+    },
+  ])
+  assert(harness.events.indexOf('remove') < harness.events.indexOf('service-rpc:fail_commerce_asset_upload'))
   assert(!JSON.stringify(await response.json()).includes('storage endpoint'))
 })
 
@@ -268,31 +333,55 @@ test('finalize validates actual bytes and calls the exact service RPC once', asy
   const harness = createHarness()
   const response = await harness.handler(request({ action: 'finalize', assetId: ASSET_ID }))
   assertEquals(response.status, 200)
-  assertEquals(harness.events, ['owned-select', 'download', 'service-rpc:finalize_commerce_asset_upload'])
-  assertEquals(harness.serviceRpcCalls, [{
-    name: 'finalize_commerce_asset_upload',
-    parameters: {
-      p_asset_id: ASSET_ID,
-      p_user_id: USER_ID,
-      p_actual_mime_type: 'image/jpeg',
-      p_actual_size_bytes: JPEG.byteLength,
+  assertEquals(harness.events, [
+    'owned-select',
+    'service-rpc:claim_commerce_asset_upload_validation',
+    'download',
+    'service-rpc:finalize_commerce_asset_upload',
+  ])
+  assertEquals(harness.serviceRpcCalls, [
+    {
+      name: 'claim_commerce_asset_upload_validation',
+      parameters: { p_asset_id: ASSET_ID, p_user_id: USER_ID, p_attempt_id: ATTEMPT_ID },
     },
-  }])
+    {
+      name: 'finalize_commerce_asset_upload',
+      parameters: {
+        p_asset_id: ASSET_ID,
+        p_user_id: USER_ID,
+        p_attempt_id: ATTEMPT_ID,
+        p_actual_mime_type: 'image/jpeg',
+        p_actual_size_bytes: JPEG.byteLength,
+      },
+    },
+  ])
   assertEquals(await response.json(), { asset: { ...uploadingAsset(), state: 'ready' } })
+})
+
+test('finalize rejects an empty or mismatched stored Blob MIME before terminal failure', async () => {
+  for (const blobType of ['', 'image/png', 'text/html']) {
+    const harness = createHarness({
+      downloadResult: { data: new Blob([JPEG], { type: blobType }), error: null },
+    })
+    const response = await harness.handler(request({ action: 'finalize', assetId: ASSET_ID }))
+    assertEquals(response.status, 422, blobType || 'empty MIME')
+    assert(harness.events.indexOf('remove') < harness.events.indexOf('service-rpc:fail_commerce_asset_upload'))
+  }
 })
 
 test('invalid finalize objects are removed before the asset is marked failed', async () => {
   const oversized = new Uint8Array(8_388_609)
   oversized.set(JPEG)
+  const htmlPolyglot = new Uint8Array([...JPEG, ...new TextEncoder().encode('<iframe src=x></iframe>')])
   const invalidCases: Array<{ name: string; asset?: Record<string, unknown>; download: { data: Blob | null; error: unknown } }> = [
     { name: 'missing object', download: { data: null, error: new Error('bucket name detail') } },
-    { name: 'size mismatch', asset: uploadingAsset({ size_bytes: 5 }), download: { data: new Blob([JPEG]), error: null } },
-    { name: 'MIME mismatch', asset: uploadingAsset({ mime_type: 'image/jpeg', size_bytes: PNG.byteLength, storage_path: STORAGE_PATH }), download: { data: new Blob([PNG]), error: null } },
-    { name: 'bad PNG magic', asset: uploadingAsset({ mime_type: 'image/png' }), download: { data: new Blob([new Uint8Array(JPEG.byteLength)]), error: null } },
-    { name: 'bad JPEG magic', download: { data: new Blob([new Uint8Array(JPEG.byteLength)]), error: null } },
-    { name: 'bad WebP magic', asset: uploadingAsset({ mime_type: 'image/webp' }), download: { data: new Blob([new Uint8Array(JPEG.byteLength)]), error: null } },
-    { name: 'SVG polyglot', asset: uploadingAsset({ size_bytes: JPEG.byteLength + 11 }), download: { data: new Blob([JPEG, '<svg></svg>']), error: null } },
-    { name: 'oversize object', asset: uploadingAsset({ size_bytes: oversized.byteLength }), download: { data: new Blob([oversized]), error: null } },
+    { name: 'size mismatch', asset: uploadingAsset({ size_bytes: JPEG.byteLength + 1 }), download: { data: new Blob([JPEG], { type: 'image/jpeg' }), error: null } },
+    { name: 'MIME mismatch', asset: uploadingAsset({ mime_type: 'image/jpeg', size_bytes: PNG.byteLength, storage_path: STORAGE_PATH }), download: { data: new Blob([PNG], { type: 'image/png' }), error: null } },
+    { name: 'bad PNG magic', asset: uploadingAsset({ mime_type: 'image/png', size_bytes: 8 }), download: { data: new Blob([new Uint8Array(8)], { type: 'image/png' }), error: null } },
+    { name: 'bad JPEG magic', asset: uploadingAsset({ size_bytes: 4 }), download: { data: new Blob([new Uint8Array(4)], { type: 'image/jpeg' }), error: null } },
+    { name: 'bad WebP magic', asset: uploadingAsset({ mime_type: 'image/webp', size_bytes: 12 }), download: { data: new Blob([new Uint8Array(12)], { type: 'image/webp' }), error: null } },
+    { name: 'HTML polyglot', asset: uploadingAsset({ size_bytes: htmlPolyglot.byteLength }), download: { data: new Blob([htmlPolyglot], { type: 'image/jpeg' }), error: null } },
+    { name: 'oversize object', asset: uploadingAsset({ size_bytes: oversized.byteLength }), download: { data: new Blob([oversized], { type: 'image/jpeg' }), error: null } },
   ]
 
   for (const invalidCase of invalidCases) {
@@ -306,18 +395,189 @@ test('invalid finalize objects are removed before the asset is marked failed', a
   }
 })
 
-test('cleanup failures are logged safely but do not expose internals or skip fail RPC', async () => {
+test('removal failure releases the validation claim without terminal failure', async () => {
   const harness = createHarness({
     downloadResult: { data: null, error: new Error('download provider internals') },
     removeResult: { data: null, error: new Error('remove provider internals') },
-    failResult: { data: null, error: new Error('RPC provider internals') },
   })
   const response = await harness.handler(request({ action: 'finalize', assetId: ASSET_ID }))
   const publicBody = JSON.stringify(await response.json())
-  assertEquals(response.status, 422)
+  assertEquals(response.status, 503)
   assert(harness.events.includes('safe-log'))
-  assert(harness.events.includes('service-rpc:fail_commerce_asset_upload'))
+  assert(!harness.events.includes('service-rpc:fail_commerce_asset_upload'))
+  assert(harness.events.includes('service-rpc:release_commerce_asset_upload_validation'))
   assert(!/provider internals/i.test(publicBody))
+})
+
+test('a retry after removal failure converges to object absent and a failed row', async () => {
+  const attempts = [ATTEMPT_ID, '55555555-5555-4555-8555-555555555555']
+  let state = 'uploading'
+  let activeAttempt: string | null = null
+  let objectPresent = true
+  let removeCalls = 0
+  let failCalls = 0
+
+  const userClient: CommerceUploadUserClient = {
+    auth: { getUser: async () => ({ data: { user: { id: USER_ID, is_anonymous: false } }, error: null }) },
+    rpc: async () => ({ data: null, error: null }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle: async () => ({ data: uploadingAsset({ state }), error: null }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  }
+  const serviceClient: CommerceUploadServiceClient = {
+    rpc: async (name, parameters) => {
+      const attempt = String(parameters.p_attempt_id ?? '')
+      if (name === 'claim_commerce_asset_upload_validation') {
+        if (state !== 'uploading') return { data: false, error: null }
+        state = 'validating'
+        activeAttempt = attempt
+        return { data: true, error: null }
+      }
+      if (name === 'release_commerce_asset_upload_validation') {
+        if (state !== 'validating' || activeAttempt !== attempt) return { data: false, error: null }
+        state = 'uploading'
+        activeAttempt = null
+        return { data: true, error: null }
+      }
+      if (name === 'fail_commerce_asset_upload') {
+        failCalls += 1
+        assert(!objectPresent, 'row cannot become failed while the object exists')
+        assertEquals(activeAttempt, attempt)
+        state = 'failed'
+        activeAttempt = null
+        return { data: true, error: null }
+      }
+      return { data: null, error: new Error('unexpected RPC') }
+    },
+    storage: {
+      from: () => ({
+        createSignedUploadUrl: async () => ({ data: null, error: null }),
+        download: async () => objectPresent
+          ? { data: new Blob([JPEG.slice(0, -2)], { type: 'image/jpeg' }), error: null }
+          : { data: null, error: new Error('not found') },
+        remove: async () => {
+          removeCalls += 1
+          if (removeCalls === 1) return { data: null, error: new Error('transient removal failure') }
+          objectPresent = false
+          return { data: [], error: null }
+        },
+      }),
+    },
+  }
+  const handler = createCommerceUploadHandler({
+    allowedOrigins: new Set(['https://geniusli.cn']),
+    createUserClient: () => userClient,
+    serviceClient,
+    createAttemptId: () => attempts.shift() ?? ATTEMPT_ID,
+    logError: () => {},
+  })
+
+  assertEquals((await handler(request({ action: 'finalize', assetId: ASSET_ID }))).status, 503)
+  assertEquals({ state, objectPresent, failCalls }, { state: 'uploading', objectPresent: true, failCalls: 0 })
+  assertEquals((await handler(request({ action: 'finalize', assetId: ASSET_ID }))).status, 422)
+  assertEquals({ state, objectPresent, failCalls }, { state: 'failed', objectPresent: false, failCalls: 1 })
+})
+
+const deferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+test('CAS claim serializes simultaneous valid and invalid finalize views so ready never loses its object', async () => {
+  const attemptIds = [ATTEMPT_ID, '55555555-5555-4555-8555-555555555555']
+  const bothSelected = deferred<void>()
+  const validDownload = deferred<{ data: Blob; error: null }>()
+  let selectCalls = 0
+  let state = 'uploading'
+  let activeAttempt: string | null = null
+  let objectPresent = true
+  let downloadCalls = 0
+  let removeCalls = 0
+
+  const userClient: CommerceUploadUserClient = {
+    auth: { getUser: async () => ({ data: { user: { id: USER_ID, is_anonymous: false } }, error: null }) },
+    rpc: async () => ({ data: null, error: null }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              maybeSingle: async () => {
+                selectCalls += 1
+                if (selectCalls === 2) bothSelected.resolve()
+                await bothSelected.promise
+                return { data: uploadingAsset({ state: 'uploading' }), error: null }
+              },
+            }),
+          }),
+        }),
+      }),
+    }),
+  }
+  const serviceClient: CommerceUploadServiceClient = {
+    rpc: async (name, parameters) => {
+      const attempt = String(parameters.p_attempt_id ?? '')
+      if (name === 'claim_commerce_asset_upload_validation') {
+        if (state !== 'uploading') return { data: false, error: null }
+        state = 'validating'
+        activeAttempt = attempt
+        return { data: true, error: null }
+      }
+      if (name === 'finalize_commerce_asset_upload') {
+        assertEquals(activeAttempt, attempt)
+        assert(objectPresent)
+        state = 'ready'
+        activeAttempt = null
+        return { data: [{ ...uploadingAsset(), state: 'ready' }], error: null }
+      }
+      return { data: false, error: null }
+    },
+    storage: {
+      from: () => ({
+        createSignedUploadUrl: async () => ({ data: null, error: null }),
+        download: async () => {
+          downloadCalls += 1
+          if (downloadCalls === 1) return await validDownload.promise
+          return { data: null, error: new Error('competing invalid view') }
+        },
+        remove: async () => {
+          removeCalls += 1
+          objectPresent = false
+          return { data: [], error: null }
+        },
+      }),
+    },
+  }
+  const handler = createCommerceUploadHandler({
+    allowedOrigins: new Set(['https://geniusli.cn']),
+    createUserClient: () => userClient,
+    serviceClient,
+    createAttemptId: () => attemptIds.shift() ?? ATTEMPT_ID,
+  })
+
+  const first = handler(request({ action: 'finalize', assetId: ASSET_ID }))
+  const second = handler(request({ action: 'finalize', assetId: ASSET_ID }))
+  await bothSelected.promise
+  await Promise.resolve()
+  validDownload.resolve({ data: new Blob([JPEG], { type: 'image/jpeg' }), error: null })
+  const statuses = [(await first).status, (await second).status].sort()
+
+  assertEquals(statuses, [200, 409])
+  assertEquals({ state, objectPresent, downloadCalls, removeCalls }, {
+    state: 'ready',
+    objectPresent: true,
+    downloadCalls: 1,
+    removeCalls: 0,
+  })
 })
 
 test('production bootstrap uses new-key priority and fails closed without a secret client', () => {

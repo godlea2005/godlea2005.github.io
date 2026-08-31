@@ -7,6 +7,32 @@ drop policy if exists "commerce_assets_update_own" on public.commerce_project_as
 drop policy if exists "commerce_assets_delete_own" on public.commerce_project_assets;
 drop policy if exists "commerce_storage_insert_own" on storage.objects;
 
+alter table public.commerce_project_assets
+  add column if not exists validation_attempt_id uuid,
+  add column if not exists validation_started_at timestamptz;
+
+alter table public.commerce_project_assets
+  drop constraint if exists commerce_project_assets_state_check;
+alter table public.commerce_project_assets
+  add constraint commerce_project_assets_state_check
+  check (state in ('uploading','validating','ready','processing','deleting','deleted','failed'));
+
+alter table public.commerce_project_assets
+  drop constraint if exists commerce_project_assets_validation_claim_check;
+alter table public.commerce_project_assets
+  add constraint commerce_project_assets_validation_claim_check check (
+    (
+      state = 'validating'
+      and validation_attempt_id is not null
+      and validation_started_at is not null
+    )
+    or (
+      state <> 'validating'
+      and validation_attempt_id is null
+      and validation_started_at is null
+    )
+  );
+
 create or replace function public.reserve_commerce_asset(
   p_project_id uuid,
   p_extension text,
@@ -75,7 +101,7 @@ begin
   perform 1
   from public.commerce_project_assets as asset
   where asset.project_id = p_project_id
-    and asset.state in ('uploading', 'ready', 'processing', 'deleting')
+    and asset.state in ('uploading', 'validating', 'ready', 'processing', 'deleting')
   for update;
 
   if exists (
@@ -100,7 +126,7 @@ begin
   into active_asset_count
   from public.commerce_project_assets as asset
   where asset.project_id = p_project_id
-    and asset.state in ('uploading', 'ready', 'processing', 'deleting');
+    and asset.state in ('uploading', 'validating', 'ready', 'processing', 'deleting');
 
   if active_asset_count >= max_project_images then
     raise exception 'project image limit reached' using errcode = '54000';
@@ -138,9 +164,85 @@ begin
 end;
 $$;
 
+create or replace function public.claim_commerce_asset_upload_validation(
+  p_asset_id uuid,
+  p_user_id uuid,
+  p_attempt_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  asset_row public.commerce_project_assets%rowtype;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service role required' using errcode = '42501';
+  end if;
+  if p_attempt_id is null then
+    raise exception 'validation attempt required' using errcode = '22023';
+  end if;
+
+  select asset.*
+  into asset_row
+  from public.commerce_project_assets as asset
+  where asset.id = p_asset_id
+    and asset.user_id = p_user_id
+  for update;
+  if not found then
+    raise exception 'asset not found' using errcode = 'P0002';
+  end if;
+  if asset_row.state = 'validating'
+     and asset_row.validation_attempt_id = p_attempt_id then
+    return true;
+  end if;
+  if asset_row.state <> 'uploading' then
+    return false;
+  end if;
+
+  update public.commerce_project_assets as asset
+  set state = 'validating',
+      validation_attempt_id = p_attempt_id,
+      validation_started_at = pg_catalog.clock_timestamp()
+  where asset.id = p_asset_id
+    and asset.user_id = p_user_id
+    and asset.state = 'uploading';
+  return found;
+end;
+$$;
+
+create or replace function public.release_commerce_asset_upload_validation(
+  p_asset_id uuid,
+  p_user_id uuid,
+  p_attempt_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service role required' using errcode = '42501';
+  end if;
+
+  update public.commerce_project_assets as asset
+  set state = 'uploading',
+      validation_attempt_id = null,
+      validation_started_at = null
+  where asset.id = p_asset_id
+    and asset.user_id = p_user_id
+    and asset.state = 'validating'
+    and asset.validation_attempt_id = p_attempt_id;
+  return found;
+end;
+$$;
+
 create or replace function public.finalize_commerce_asset_upload(
   p_asset_id uuid,
   p_user_id uuid,
+  p_attempt_id uuid,
   p_actual_mime_type text,
   p_actual_size_bytes bigint
 )
@@ -191,8 +293,11 @@ begin
     return;
   end if;
 
-  if asset_row.state <> 'uploading' then
+  if asset_row.state <> 'validating' then
     raise exception 'asset cannot be finalized' using errcode = '55000';
+  end if;
+  if asset_row.validation_attempt_id is distinct from p_attempt_id then
+    raise exception 'validation attempt mismatch' using errcode = '55000';
   end if;
   if p_actual_mime_type is distinct from asset_row.mime_type
      or p_actual_size_bytes is distinct from asset_row.size_bytes then
@@ -200,10 +305,13 @@ begin
   end if;
 
   update public.commerce_project_assets as asset
-  set state = 'ready'
+  set state = 'ready',
+      validation_attempt_id = null,
+      validation_started_at = null
   where asset.id = p_asset_id
     and asset.user_id = p_user_id
-    and asset.state = 'uploading';
+    and asset.state = 'validating'
+    and asset.validation_attempt_id = p_attempt_id;
 
   return query
   select asset.id, asset.project_id, asset.user_id, asset.storage_path,
@@ -216,7 +324,8 @@ $$;
 
 create or replace function public.fail_commerce_asset_upload(
   p_asset_id uuid,
-  p_user_id uuid
+  p_user_id uuid,
+  p_attempt_id uuid
 )
 returns boolean
 language plpgsql
@@ -225,13 +334,14 @@ set search_path = ''
 as $$
 declare
   current_state text;
+  current_attempt_id uuid;
 begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service role required' using errcode = '42501';
   end if;
 
-  select asset.state
-  into current_state
+  select asset.state, asset.validation_attempt_id
+  into current_state, current_attempt_id
   from public.commerce_project_assets as asset
   where asset.id = p_asset_id
     and asset.user_id = p_user_id
@@ -239,18 +349,21 @@ begin
   if not found then
     raise exception 'asset not found' using errcode = 'P0002';
   end if;
-  if current_state = 'failed' then
-    return true;
-  end if;
-  if current_state <> 'uploading' then
+  if current_state <> 'validating' then
     raise exception 'asset cannot be failed' using errcode = '55000';
   end if;
+  if current_attempt_id is distinct from p_attempt_id then
+    raise exception 'validation attempt mismatch' using errcode = '55000';
+  end if;
 
-  update public.commerce_project_assets
-  set state = 'failed'
-  where id = p_asset_id
-    and user_id = p_user_id
-    and state = 'uploading';
+  update public.commerce_project_assets as asset
+  set state = 'failed',
+      validation_attempt_id = null,
+      validation_started_at = null
+  where asset.id = p_asset_id
+    and asset.user_id = p_user_id
+    and asset.state = 'validating'
+    and asset.validation_attempt_id = p_attempt_id;
   return found;
 end;
 $$;
@@ -535,8 +648,8 @@ begin
   return query
   select asset.id, asset.project_id, asset.user_id, asset.storage_path, asset.created_at
   from public.commerce_project_assets as asset
-  where asset.state = 'uploading'
-    and asset.created_at < p_cutoff
+  where asset.state in ('uploading', 'validating')
+    and coalesce(asset.validation_started_at, asset.created_at) < p_cutoff
     and (
       p_after_id is null
       or (asset.created_at, asset.id) > (cursor_created_at, p_after_id)
@@ -578,9 +691,13 @@ $$;
 
 revoke all on function public.reserve_commerce_asset(uuid, text, text, bigint)
   from public, anon, authenticated, service_role;
-revoke all on function public.finalize_commerce_asset_upload(uuid, uuid, text, bigint)
+revoke all on function public.claim_commerce_asset_upload_validation(uuid, uuid, uuid)
   from public, anon, authenticated, service_role;
-revoke all on function public.fail_commerce_asset_upload(uuid, uuid)
+revoke all on function public.release_commerce_asset_upload_validation(uuid, uuid, uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.finalize_commerce_asset_upload(uuid, uuid, uuid, text, bigint)
+  from public, anon, authenticated, service_role;
+revoke all on function public.fail_commerce_asset_upload(uuid, uuid, uuid)
   from public, anon, authenticated, service_role;
 revoke all on function public.complete_commerce_generation(uuid, jsonb, text, text, jsonb)
   from public, anon, authenticated, service_role;
@@ -594,8 +711,10 @@ revoke all on function public.list_orphan_commerce_storage_objects(text, integer
   from public, anon, authenticated, service_role;
 
 grant execute on function public.reserve_commerce_asset(uuid, text, text, bigint) to authenticated;
-grant execute on function public.finalize_commerce_asset_upload(uuid, uuid, text, bigint) to service_role;
-grant execute on function public.fail_commerce_asset_upload(uuid, uuid) to service_role;
+grant execute on function public.claim_commerce_asset_upload_validation(uuid, uuid, uuid) to service_role;
+grant execute on function public.release_commerce_asset_upload_validation(uuid, uuid, uuid) to service_role;
+grant execute on function public.finalize_commerce_asset_upload(uuid, uuid, uuid, text, bigint) to service_role;
+grant execute on function public.fail_commerce_asset_upload(uuid, uuid, uuid) to service_role;
 grant execute on function public.complete_commerce_generation(uuid, jsonb, text, text, jsonb) to service_role;
 grant execute on function public.fail_commerce_generation(uuid, text, text) to service_role;
 grant execute on function public.reconcile_terminal_commerce_assets() to service_role;
