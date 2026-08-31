@@ -2,6 +2,7 @@ import { test as nodeTest } from 'node:test'
 import {
   createCommerceUploadHandler,
   createProductionCommerceUploadHandler,
+  cleanupAbandonedCommerceUpload,
   detectImageMime,
   type CommerceUploadServiceClient,
   type CommerceUploadUserClient,
@@ -34,9 +35,9 @@ const STORAGE_PATH = `${USER_ID}/${PROJECT_ID}/${ASSET_ID}.jpg`
 const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 
 // Real 1x1 image containers, not magic-only test doubles.
-const JPEG = fromBase64('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==')
+const JPEG = fromBase64('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD7LooooA//2Q==')
 const PNG = fromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
-const WEBP = fromBase64('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==').slice(0, 42)
+const WEBP = fromBase64('UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAUAmJaQAA3AA/vz0AAA=')
 
 const webpContainer = (type: string, payload: Uint8Array) => {
   const paddedLength = payload.byteLength + (payload.byteLength & 1)
@@ -49,6 +50,61 @@ const webpContainer = (type: string, payload: Uint8Array) => {
   bytes.set(payload, 20)
   return bytes
 }
+
+const pngChunk = (type: string, payload: Uint8Array) => {
+  const result = new Uint8Array(12 + payload.byteLength)
+  const view = new DataView(result.buffer)
+  view.setUint32(0, payload.byteLength)
+  result.set(new TextEncoder().encode(type), 4)
+  result.set(payload, 8)
+  let crc = 0xffffffff
+  for (let offset = 4; offset < 8 + payload.byteLength; offset += 1) {
+    crc ^= result[offset]
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)
+  }
+  view.setUint32(8 + payload.byteLength, (crc ^ 0xffffffff) >>> 0)
+  return result
+}
+
+const concatBytes = (...parts: Uint8Array[]) => {
+  const result = new Uint8Array(parts.reduce((size, part) => size + part.byteLength, 0))
+  let offset = 0
+  for (const part of parts) {
+    result.set(part, offset)
+    offset += part.byteLength
+  }
+  return result
+}
+
+const pngWithDimensions = (width: number, height: number, idat = new Uint8Array()) => {
+  const ihdr = new Uint8Array(13)
+  const view = new DataView(ihdr.buffer)
+  view.setUint32(0, width)
+  view.setUint32(4, height)
+  ihdr.set([8, 6, 0, 0, 0], 8)
+  return concatBytes(
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', idat),
+    pngChunk('IEND', new Uint8Array()),
+  )
+}
+
+const EMPTY_ENTROPY_JPEG = new Uint8Array([
+  0xff, 0xd8,
+  0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00,
+  0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00,
+  0xff, 0xd9,
+])
+const EMPTY_IDAT_PNG = pngWithDimensions(1, 1)
+const FRAMELESS_ANIMATED_WEBP = (() => {
+  const vp8x = webpContainer('VP8X', new Uint8Array(10))
+  const anmfPayload = new Uint8Array(16)
+  const anmf = webpContainer('ANMF', anmfPayload).slice(12)
+  const result = concatBytes(vp8x, anmf)
+  new DataView(result.buffer).setUint32(4, result.byteLength - 8, true)
+  return result
+})()
 
 const uploadingAsset = (overrides: Record<string, unknown> = {}) => ({
   id: ASSET_ID,
@@ -90,6 +146,7 @@ type HarnessOptions = {
   claimResult?: { data: unknown; error: unknown }
   releaseResult?: { data: unknown; error: unknown }
   removeResult?: { data: unknown; error: unknown }
+  decodeImage?: (bytes: Uint8Array, mimeType: 'image/jpeg' | 'image/png' | 'image/webp') => Promise<{ width: number; height: number }>
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -177,6 +234,7 @@ const createHarness = (options: HarnessOptions = {}) => {
       serviceClient,
       logError: () => events.push('safe-log'),
       createAttemptId: () => ATTEMPT_ID,
+      decodeImage: options.decodeImage ?? (async () => ({ width: 1, height: 1 })),
     }),
   }
 }
@@ -217,6 +275,48 @@ test('detectImageMime rejects malformed lengths, chunks, termination, and traili
     assertEquals(detectImageMime(new Uint8Array([...JPEG, ...suffix])), null)
     assertEquals(detectImageMime(new Uint8Array([...PNG, ...suffix])), null)
     assertEquals(detectImageMime(new Uint8Array([...WEBP, ...suffix])), null)
+  }
+})
+
+test('finalize rejects structurally plausible containers that a trusted decoder cannot decode', async () => {
+  for (const [name, bytes, mimeType] of [
+    ['empty entropy JPEG', EMPTY_ENTROPY_JPEG, 'image/jpeg'],
+    ['empty IDAT PNG', EMPTY_IDAT_PNG, 'image/png'],
+    ['VP8X/ANMF without a frame', FRAMELESS_ANIMATED_WEBP, 'image/webp'],
+  ] as const) {
+    assertEquals(detectImageMime(bytes), mimeType, `${name} must reach the trusted decoder`)
+    let decodeCalls = 0
+    const harness = createHarness({
+      ownedAsset: uploadingAsset({ mime_type: mimeType, size_bytes: bytes.byteLength }),
+      downloadResult: { data: new Blob([bytes], { type: mimeType }), error: null },
+      decodeImage: async () => {
+        decodeCalls += 1
+        throw new Error('decoder internals must stay private')
+      },
+    })
+    const response = await harness.handler(request({ action: 'finalize', assetId: ASSET_ID }))
+    assertEquals(response.status, 422, name)
+    assertEquals(decodeCalls, 1, name)
+    assert(!JSON.stringify(await response.json()).includes('decoder internals'))
+  }
+})
+
+test('trusted decode dimensions must be positive and remain within the pixel budget', async () => {
+  for (const [name, bytes, decoded] of [
+    ['zero decoded width', JPEG, { width: 0, height: 1 }],
+    ['decoded pixel bomb', JPEG, { width: 100_000, height: 100_000 }],
+    ['container pixel bomb', pngWithDimensions(10_000, 10_000, new Uint8Array([1])), { width: 1, height: 1 }],
+  ] as const) {
+    let decodeCalls = 0
+    const mimeType = name === 'container pixel bomb' ? 'image/png' : 'image/jpeg'
+    const harness = createHarness({
+      ownedAsset: uploadingAsset({ mime_type: mimeType, size_bytes: bytes.byteLength }),
+      downloadResult: { data: new Blob([bytes], { type: mimeType }), error: null },
+      decodeImage: async () => { decodeCalls += 1; return decoded },
+    })
+    const response = await harness.handler(request({ action: 'finalize', assetId: ASSET_ID }))
+    assertEquals(response.status, 422, name)
+    assertEquals(decodeCalls, name === 'container pixel bomb' ? 0 : 1, name)
   }
 })
 
@@ -478,6 +578,7 @@ test('a retry after removal failure converges to object absent and a failed row'
     serviceClient,
     createAttemptId: () => attempts.shift() ?? ATTEMPT_ID,
     logError: () => {},
+    decodeImage: async () => ({ width: 1, height: 1 }),
   })
 
   assertEquals((await handler(request({ action: 'finalize', assetId: ASSET_ID }))).status, 503)
@@ -562,6 +663,7 @@ test('CAS claim serializes simultaneous valid and invalid finalize views so read
     createUserClient: () => userClient,
     serviceClient,
     createAttemptId: () => attemptIds.shift() ?? ATTEMPT_ID,
+    decodeImage: async () => ({ width: 1, height: 1 }),
   })
 
   const first = handler(request({ action: 'finalize', assetId: ASSET_ID }))
@@ -577,6 +679,81 @@ test('CAS claim serializes simultaneous valid and invalid finalize views so read
     objectPresent: true,
     downloadCalls: 1,
     removeCalls: 0,
+  })
+})
+
+test('abandoned takeover recovers a crashed validation claim but never steals an active claim', async () => {
+  const cleanupAttempt = '66666666-6666-4666-8666-666666666666'
+  const cutoff = '2026-08-31T00:05:00.000Z'
+  let state = 'validating'
+  let activeAttempt = ATTEMPT_ID
+  let validationStartedAt = '2026-08-31T00:00:00.000Z'
+  let objectPresent = true
+  let removeCalls = 0
+
+  const serviceClient: CommerceUploadServiceClient = {
+    rpc: async (name, parameters) => {
+      if (name === 'takeover_abandoned_commerce_asset_upload') {
+        if (state !== 'validating' || validationStartedAt >= String(parameters.p_cutoff)) {
+          return { data: [], error: null }
+        }
+        const previousAttempt = activeAttempt
+        activeAttempt = String(parameters.p_attempt_id)
+        validationStartedAt = '2026-08-31T00:06:00.000Z'
+        return {
+          data: [{
+            ...uploadingAsset({ state: 'validating' }),
+            previous_state: 'validating',
+            previous_attempt_id: previousAttempt,
+            previous_validation_started_at: '2026-08-31T00:00:00.000Z',
+            validation_attempt_id: activeAttempt,
+            validation_started_at: validationStartedAt,
+          }],
+          error: null,
+        }
+      }
+      if (name === 'fail_commerce_asset_upload') {
+        assertEquals(parameters.p_attempt_id, activeAttempt)
+        assert(!objectPresent, 'attempt-bound fail must follow successful removal')
+        state = 'failed'
+        activeAttempt = ''
+        return { data: true, error: null }
+      }
+      return { data: false, error: null }
+    },
+    storage: {
+      from: () => ({
+        createSignedUploadUrl: async () => ({ data: null, error: null }),
+        download: async () => ({ data: null, error: null }),
+        remove: async () => {
+          removeCalls += 1
+          objectPresent = false
+          return { data: [], error: null }
+        },
+      }),
+    },
+  }
+
+  assertEquals(await cleanupAbandonedCommerceUpload({
+    serviceClient,
+    assetId: ASSET_ID,
+    cutoff,
+    attemptId: cleanupAttempt,
+  }), 'cleaned')
+  assertEquals({ state, objectPresent, removeCalls }, { state: 'failed', objectPresent: false, removeCalls: 1 })
+
+  state = 'validating'
+  activeAttempt = ATTEMPT_ID
+  validationStartedAt = '2026-08-31T00:10:00.000Z'
+  objectPresent = true
+  assertEquals(await cleanupAbandonedCommerceUpload({
+    serviceClient,
+    assetId: ASSET_ID,
+    cutoff,
+    attemptId: cleanupAttempt,
+  }), 'not_claimed')
+  assertEquals({ state, activeAttempt, objectPresent, removeCalls }, {
+    state: 'validating', activeAttempt: ATTEMPT_ID, objectPresent: true, removeCalls: 1,
   })
 })
 
@@ -600,6 +777,7 @@ test('production bootstrap uses new-key priority and fails closed without a secr
         ? ({} as CommerceUploadServiceClient)
         : ({} as CommerceUploadUserClient)
     },
+    decodeImage: async () => ({ width: 1, height: 1 }),
   })
   assertEquals(keys, ['secret-new'])
 
@@ -611,6 +789,7 @@ test('production bootstrap uses new-key priority and fails closed without a secr
         if (key === 'secret-new') throw new Error('secret client cannot initialize')
         return client as never
       },
+      decodeImage: async () => ({ width: 1, height: 1 }),
     })
   } catch {
     serviceBootstrapThrew = true
@@ -623,6 +802,7 @@ test('production bootstrap uses new-key priority and fails closed without a secr
     createProductionCommerceUploadHandler({
       getEnv: (name) => name === 'SUPABASE_URL' ? env.SUPABASE_URL : undefined,
       createClient: () => { factoryCalls += 1; return client as never },
+      decodeImage: async () => ({ width: 1, height: 1 }),
     })
   } catch {
     threw = true

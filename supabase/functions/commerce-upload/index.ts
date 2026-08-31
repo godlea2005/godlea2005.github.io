@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.3'
+import { decodeCommerceImage } from '../_shared/commerce-image-decoder.ts'
 import {
   createProductionCommerceUploadHandler,
   type CommerceUploadServiceClient,
@@ -19,6 +20,7 @@ if (import.meta.main) {
     getEnv: (name) => runtime.Deno?.env?.get(name),
     createClient: (url, key, options) => createClient(url, key, options) as unknown as
       CommerceUploadUserClient & CommerceUploadServiceClient,
+    decodeImage: decodeCommerceImage,
   })
   runtime.Deno?.serve(handler)
 }

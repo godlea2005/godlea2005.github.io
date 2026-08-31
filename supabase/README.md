@@ -50,9 +50,14 @@ Secret/service role key 只用于函数启动时构造后台数据客户端。�
 `commerce-upload` 是浏览器上传私有产品图的唯一入口。浏览器先调用 `reserve` 获取由服务端
 生成的对象路径和一次性 signed upload token，使用该 token 直传后，再调用 `finalize`。
 函数会先以 service-only CAS 把资源认领为 `validating`，再用可信 Storage 客户端下载真实
-对象，核对 Blob MIME、实际字节数、8 MiB 上限及 JPEG/PNG/WebP 容器结构。只有对象删除
-确认成功后，校验失败的预留才会进入 `failed`；删除暂时失败会释放认领以供重试，进程中断
-留下的超时 `validating` 预留则由清理任务发现。
+对象，核对 Blob MIME、实际字节数、8 MiB 上限及 JPEG/PNG/WebP 容器结构，并真实解码后
+要求正整数尺寸、容器与解码尺寸一致且不超过 16,777,216 像素。JPEG/PNG 会使用 Edge
+原生解码（可用时）并以固定版本 `@jsquash/jpeg@1.6.0` / `@jsquash/png@3.1.1` 复核；WebP
+在 Deno 1.46 上始终使用 `@jsquash/webp@1.5.0`。三个 decoder WASM 由函数
+`static_files` 一并打包。只有对象删除确认成功后，校验失败的预留才会进入 `failed`；删除
+暂时失败会释放认领以供重试。清理任务必须通过 service-only takeover RPC 原子接管超过
+cutoff 的 `uploading` 或 `validating` 行，活动中的校验 claim 不能被接管；接管后使用新的
+attempt token 删除对象并执行 attempt-bound fail，使进程中断的校验最终收敛。
 
 该函数与 `analyze-commerce` 使用相同的 Supabase 新式/legacy key 优先级和
 `ALLOWED_ORIGINS`。`verify_jwt = false` 仅用于兼容当前 publishable key；函数内部仍使用

@@ -2,6 +2,7 @@ import { resolveSupabaseRuntimeKey } from './commerce-runtime.ts'
 import { corsForRequest, parseAllowedOrigins } from './cors.ts'
 
 const MAX_IMAGE_BYTES = 8_388_608
+export const MAX_IMAGE_PIXELS = 16_777_216
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ASSET_COLUMNS = 'id,project_id,user_id,storage_path,mime_type,size_bytes,expires_at,state,validation_attempt_id,validation_started_at,deleted_at,created_at'
 
@@ -43,6 +44,13 @@ type AssetRow = Record<string, unknown> & {
   size_bytes: number
   state: string
 }
+
+export type TrustedImageMime = AssetRow['mime_type']
+export type TrustedImageDimensions = { width: number; height: number }
+export type TrustedImageDecoder = (
+  bytes: Uint8Array,
+  mimeType: TrustedImageMime,
+) => Promise<TrustedImageDimensions>
 
 type ReserveBody = {
   action: 'reserve'
@@ -341,6 +349,73 @@ export const detectImageMime = (bytes: Uint8Array): AssetRow['mime_type'] | null
   return null
 }
 
+const jpegDimensions = (bytes: Uint8Array): TrustedImageDimensions | null => {
+  const frameMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf])
+  let offset = 2
+  while (offset + 3 < bytes.length) {
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1
+    if (offset >= bytes.length) return null
+    const marker = bytes[offset++]
+    if (marker === 0xd9 || marker === 0xda) return null
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue
+    if (offset + 2 > bytes.length) return null
+    const length = readU16Be(bytes, offset)
+    if (length < 2 || offset + length > bytes.length) return null
+    if (frameMarkers.has(marker)) {
+      return { width: readU16Be(bytes, offset + 5), height: readU16Be(bytes, offset + 3) }
+    }
+    offset += length
+  }
+  return null
+}
+
+const webpDimensions = (bytes: Uint8Array): TrustedImageDimensions | null => {
+  let offset = 12
+  while (offset + 8 <= bytes.length) {
+    const type = webpType(bytes, offset)
+    const length = readU32Le(bytes, offset + 4)
+    const dataOffset = offset + 8
+    if (type === 'VP8 ' && length >= 10) {
+      return {
+        width: (bytes[dataOffset + 6] | (bytes[dataOffset + 7] << 8)) & 0x3fff,
+        height: (bytes[dataOffset + 8] | (bytes[dataOffset + 9] << 8)) & 0x3fff,
+      }
+    }
+    if (type === 'VP8L' && length >= 5) {
+      const bits = readU32Le(bytes, dataOffset + 1)
+      return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 }
+    }
+    if (type === 'VP8X' && length === 10) {
+      return {
+        width: bytes[dataOffset + 4] + (bytes[dataOffset + 5] << 8) + (bytes[dataOffset + 6] << 16) + 1,
+        height: bytes[dataOffset + 7] + (bytes[dataOffset + 8] << 8) + (bytes[dataOffset + 9] << 16) + 1,
+      }
+    }
+    offset = dataOffset + length + (length & 1)
+  }
+  return null
+}
+
+const containerDimensions = (
+  bytes: Uint8Array,
+  mimeType: TrustedImageMime,
+): TrustedImageDimensions | null => {
+  if (mimeType === 'image/jpeg') return jpegDimensions(bytes)
+  if (mimeType === 'image/png') return bytes.length >= 24
+    ? { width: readU32Be(bytes, 16), height: readU32Be(bytes, 20) }
+    : null
+  return webpDimensions(bytes)
+}
+
+const dimensionsAreSafe = (
+  dimensions: TrustedImageDimensions | null,
+): dimensions is TrustedImageDimensions => !!dimensions
+  && Number.isSafeInteger(dimensions.width)
+  && Number.isSafeInteger(dimensions.height)
+  && dimensions.width > 0
+  && dimensions.height > 0
+  && dimensions.width * dimensions.height <= MAX_IMAGE_PIXELS
+
 const reserveError = (error: unknown) => {
   const value = isRecord(error) ? error : {}
   const code = typeof value.code === 'string' ? value.code : ''
@@ -456,12 +531,54 @@ const removeAndFailClaimedAsset = async (
   }
 }
 
+export const cleanupAbandonedCommerceUpload = async (dependencies: {
+  serviceClient: CommerceUploadServiceClient
+  assetId: string
+  cutoff: string
+  attemptId: string
+  logError?: (stage: string, context: Record<string, string>) => void
+}): Promise<'cleaned' | 'not_claimed' | 'retry'> => {
+  const logError = dependencies.logError ?? (() => {})
+  if (
+    !UUID_PATTERN.test(dependencies.assetId)
+    || !UUID_PATTERN.test(dependencies.attemptId)
+    || !Number.isFinite(Date.parse(dependencies.cutoff))
+  ) return 'retry'
+
+  let takeover: RpcResult
+  try {
+    takeover = await dependencies.serviceClient.rpc('takeover_abandoned_commerce_asset_upload', {
+      p_asset_id: dependencies.assetId,
+      p_cutoff: dependencies.cutoff,
+      p_attempt_id: dependencies.attemptId,
+    })
+  } catch {
+    return 'retry'
+  }
+  if (takeover.error) return 'retry'
+  if (Array.isArray(takeover.data) && takeover.data.length === 0) return 'not_claimed'
+  const asset = assetRow(takeover.data)
+  if (
+    !asset || asset.id !== dependencies.assetId || asset.state !== 'validating'
+    || asset.validation_attempt_id !== dependencies.attemptId
+  ) return 'retry'
+
+  return await removeAndFailClaimedAsset(
+    dependencies.serviceClient,
+    logError,
+    asset,
+    asset.user_id,
+    dependencies.attemptId,
+  ) ? 'cleaned' : 'retry'
+}
+
 export const createCommerceUploadHandler = (dependencies: {
   allowedOrigins: ReadonlySet<string>
   createUserClient(authorization: string): CommerceUploadUserClient | Promise<CommerceUploadUserClient>
   serviceClient: CommerceUploadServiceClient
   logError?: (stage: string, context: Record<string, string>) => void
   createAttemptId?: () => string
+  decodeImage: TrustedImageDecoder
 }) => async (request: Request): Promise<Response> => {
   const logError = dependencies.logError ?? ((stage, context) => console.error({ stage, ...context }))
   const cors = corsForRequest(request, dependencies.allowedOrigins)
@@ -617,6 +734,29 @@ export const createCommerceUploadHandler = (dependencies: {
       : errorResponse(503, 'UPLOAD_RETRY_REQUIRED', '图片清理暂未完成，请稍后重试。', cors.headers)
   }
 
+  const expectedDimensions = containerDimensions(bytes, actualMime)
+  let decodedDimensions: TrustedImageDimensions | null = null
+  if (dimensionsAreSafe(expectedDimensions)) {
+    try {
+      decodedDimensions = await dependencies.decodeImage(bytes, actualMime)
+    } catch {
+      decodedDimensions = null
+    }
+  }
+  if (
+    !dimensionsAreSafe(expectedDimensions)
+    || !dimensionsAreSafe(decodedDimensions)
+    || decodedDimensions.width !== expectedDimensions.width
+    || decodedDimensions.height !== expectedDimensions.height
+  ) {
+    const failed = await removeAndFailClaimedAsset(
+      dependencies.serviceClient, logError, ownedAsset, user.id, attemptId,
+    )
+    return failed
+      ? errorResponse(422, 'UPLOAD_INVALID', '图片内容校验失败，请重新上传。', cors.headers)
+      : errorResponse(503, 'UPLOAD_RETRY_REQUIRED', '图片清理暂未完成，请稍后重试。', cors.headers)
+  }
+
   let finalized: RpcResult
   try {
     finalized = await dependencies.serviceClient.rpc('finalize_commerce_asset_upload', {
@@ -641,6 +781,7 @@ export const createCommerceUploadHandler = (dependencies: {
 export const createProductionCommerceUploadHandler = (dependencies: {
   getEnv(name: string): string | undefined
   createClient: SupabaseClientFactory
+  decodeImage: TrustedImageDecoder
 }) => {
   const url = dependencies.getEnv('SUPABASE_URL')?.trim()
   const publishableKey = resolveSupabaseRuntimeKey(dependencies.getEnv, 'publishable')
@@ -662,5 +803,6 @@ export const createProductionCommerceUploadHandler = (dependencies: {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     }),
     serviceClient,
+    decodeImage: dependencies.decodeImage,
   })
 }

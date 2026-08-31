@@ -616,6 +616,9 @@ returns table (
   project_id uuid,
   user_id uuid,
   storage_path text,
+  state text,
+  validation_attempt_id uuid,
+  validation_started_at timestamptz,
   created_at timestamptz
 )
 language plpgsql
@@ -646,7 +649,8 @@ begin
   end if;
 
   return query
-  select asset.id, asset.project_id, asset.user_id, asset.storage_path, asset.created_at
+  select asset.id, asset.project_id, asset.user_id, asset.storage_path, asset.state,
+         asset.validation_attempt_id, asset.validation_started_at, asset.created_at
   from public.commerce_project_assets as asset
   where asset.state in ('uploading', 'validating')
     and coalesce(asset.validation_started_at, asset.created_at) < p_cutoff
@@ -656,6 +660,98 @@ begin
     )
   order by asset.created_at, asset.id
   limit p_limit;
+end;
+$$;
+
+create or replace function public.takeover_abandoned_commerce_asset_upload(
+  p_asset_id uuid,
+  p_cutoff timestamptz,
+  p_attempt_id uuid
+)
+returns table (
+  id uuid,
+  project_id uuid,
+  user_id uuid,
+  storage_path text,
+  mime_type text,
+  size_bytes bigint,
+  expires_at timestamptz,
+  state text,
+  previous_state text,
+  previous_attempt_id uuid,
+  previous_validation_started_at timestamptz,
+  validation_attempt_id uuid,
+  validation_started_at timestamptz,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  asset_row public.commerce_project_assets%rowtype;
+  old_state text;
+  old_attempt_id uuid;
+  old_validation_started_at timestamptz;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service role required' using errcode = '42501';
+  end if;
+  if p_asset_id is null or p_cutoff is null or p_attempt_id is null then
+    raise exception 'takeover parameters required' using errcode = '22023';
+  end if;
+
+  select asset.*
+  into asset_row
+  from public.commerce_project_assets as asset
+  where asset.id = p_asset_id
+  for update;
+
+  if not found then
+    return;
+  end if;
+  if not (
+    (asset_row.state = 'uploading' and asset_row.created_at < p_cutoff)
+    or (
+      asset_row.state = 'validating'
+      and asset_row.validation_started_at is not null
+      and asset_row.validation_started_at < p_cutoff
+    )
+  ) then
+    return;
+  end if;
+  if asset_row.validation_attempt_id is not distinct from p_attempt_id then
+    return;
+  end if;
+
+  old_state := asset_row.state;
+  old_attempt_id := asset_row.validation_attempt_id;
+  old_validation_started_at := asset_row.validation_started_at;
+
+  update public.commerce_project_assets as asset
+  set state = 'validating',
+      validation_attempt_id = p_attempt_id,
+      validation_started_at = pg_catalog.clock_timestamp()
+  where asset.id = p_asset_id
+    and (
+      (asset.state = 'uploading' and asset.created_at < p_cutoff)
+      or (
+        asset.state = 'validating'
+        and asset.validation_started_at is not null
+        and asset.validation_started_at < p_cutoff
+      )
+    )
+  returning asset.* into asset_row;
+
+  if not found then
+    return;
+  end if;
+
+  return query
+  select asset_row.id, asset_row.project_id, asset_row.user_id, asset_row.storage_path,
+         asset_row.mime_type, asset_row.size_bytes, asset_row.expires_at, asset_row.state,
+         old_state, old_attempt_id, old_validation_started_at,
+         asset_row.validation_attempt_id, asset_row.validation_started_at, asset_row.created_at;
 end;
 $$;
 
@@ -707,6 +803,8 @@ revoke all on function public.reconcile_terminal_commerce_assets()
   from public, anon, authenticated, service_role;
 revoke all on function public.list_abandoned_commerce_uploads(timestamptz, uuid, integer)
   from public, anon, authenticated, service_role;
+revoke all on function public.takeover_abandoned_commerce_asset_upload(uuid, timestamptz, uuid)
+  from public, anon, authenticated, service_role;
 revoke all on function public.list_orphan_commerce_storage_objects(text, integer)
   from public, anon, authenticated, service_role;
 
@@ -719,4 +817,5 @@ grant execute on function public.complete_commerce_generation(uuid, jsonb, text,
 grant execute on function public.fail_commerce_generation(uuid, text, text) to service_role;
 grant execute on function public.reconcile_terminal_commerce_assets() to service_role;
 grant execute on function public.list_abandoned_commerce_uploads(timestamptz, uuid, integer) to service_role;
+grant execute on function public.takeover_abandoned_commerce_asset_upload(uuid, timestamptz, uuid) to service_role;
 grant execute on function public.list_orphan_commerce_storage_objects(text, integer) to service_role;

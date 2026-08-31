@@ -9,3 +9,4 @@ verify_jwt = false
 
 [functions.commerce-upload]
 verify_jwt = false
+static_files = [ "./functions/commerce-upload/vendor/*" ]

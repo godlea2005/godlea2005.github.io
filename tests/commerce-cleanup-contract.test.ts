@@ -75,6 +75,16 @@ describe('commerce cleanup deployment contracts', () => {
     )
     expect(abandoned).toMatch(/state in \('uploading', 'validating'\)[\s\S]*coalesce\(asset\.validation_started_at, asset\.created_at\) < p_cutoff[\s\S]*order by asset\.created_at, asset\.id/)
 
+    const takeover = migration.slice(
+      migration.indexOf('create or replace function public.takeover_abandoned_commerce_asset_upload'),
+      migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'),
+    )
+    expect(takeover).toMatch(/auth\.role\(\) is distinct from 'service_role'/)
+    expect(takeover).toMatch(/where asset\.id = p_asset_id[\s\S]*for update/)
+    expect(takeover).toMatch(/state = 'uploading'[\s\S]*created_at < p_cutoff[\s\S]*state = 'validating'[\s\S]*validation_started_at < p_cutoff/)
+    expect(takeover).toMatch(/set state = 'validating'[\s\S]*validation_attempt_id = p_attempt_id[\s\S]*validation_started_at = pg_catalog\.clock_timestamp\(\)/)
+    expect(takeover).toMatch(/previous_state[\s\S]*previous_attempt_id[\s\S]*previous_validation_started_at[\s\S]*validation_attempt_id[\s\S]*validation_started_at[\s\S]*created_at/)
+
     const orphan = migration.slice(migration.indexOf('create or replace function public.list_orphan_commerce_storage_objects'))
     expect(orphan).toMatch(/storage\.objects[\s\S]*left join public\.commerce_project_assets[\s\S]*asset\.storage_path = object\.name/)
     expect(orphan).toMatch(/p_limit not between 1 and 500[\s\S]*bucket_id = 'commerce-assets'[\s\S]*object\.name > p_after_name[\s\S]*order by object\.name/)
@@ -86,6 +96,8 @@ describe('commerce cleanup deployment contracts', () => {
     expect(migration).toContain('revoke all on function public.release_commerce_asset_upload_validation(uuid, uuid, uuid)')
     expect(migration).toContain('revoke all on function public.finalize_commerce_asset_upload(uuid, uuid, uuid, text, bigint)')
     expect(migration).toContain('revoke all on function public.fail_commerce_asset_upload(uuid, uuid, uuid)')
+    expect(migration).toContain('revoke all on function public.takeover_abandoned_commerce_asset_upload(uuid, timestamptz, uuid)')
+    expect(migration).toContain('grant execute on function public.takeover_abandoned_commerce_asset_upload(uuid, timestamptz, uuid) to service_role;')
     expect(migration).not.toMatch(/grant execute on function public\.(?:finalize|fail|reconcile|list_)commerce_[^;]+to authenticated/i)
     expect(migration).not.toMatch(/grant execute on function public\.(?:claim|release)_commerce_asset_upload_validation[^;]+to authenticated/i)
   })
