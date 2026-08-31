@@ -12,6 +12,7 @@ type QueryBuilder = {
   insert: ReturnType<typeof vi.fn>
   select: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn>
   eq: ReturnType<typeof vi.fn>
   in: ReturnType<typeof vi.fn>
   order: ReturnType<typeof vi.fn>
@@ -25,6 +26,7 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
     insert: vi.fn(),
     select: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     eq: vi.fn(),
     in: vi.fn(),
     order: vi.fn(),
@@ -37,6 +39,7 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
   builder.insert.mockReturnValue(builder)
   builder.select.mockReturnValue(builder)
   builder.update.mockReturnValue(builder)
+  builder.delete.mockReturnValue(builder)
   builder.eq.mockReturnValue(builder)
   builder.in.mockReturnValue(builder)
   builder.order.mockReturnValue(builder)
@@ -45,26 +48,17 @@ const query = (response: SupabaseResult<unknown>): QueryBuilder => {
   return builder
 }
 
-const rejectedQuery = (error: unknown): QueryBuilder => {
-  const builder = query({ data: null, error: null })
-  builder.then = (_onfulfilled, onrejected) => Promise.reject(error).then(undefined, onrejected)
-  return builder
-}
-
 const makeClient = (options: {
   assetResponse?: SupabaseResult<unknown>
   projectResponse?: SupabaseResult<unknown>
   generationResponse?: SupabaseResult<unknown>
   rpcResponses?: Record<string, SupabaseResult<unknown>>
-  storageUploadError?: unknown
-  storageUploadReject?: unknown
+  signedUploadResponses?: Array<SupabaseResult<unknown> | Error>
   storageRemoveError?: unknown
-  readyUpdateError?: unknown
-  readyUpdateReject?: unknown
-  failedUpdateError?: unknown
   authUser?: { id: string; is_anonymous?: boolean } | null
   authError?: unknown
   functionResponse?: SupabaseResult<unknown>
+  functionResponses?: Array<SupabaseResult<unknown> | Error>
 } = {}) => {
   const assetQuery = query(options.assetResponse ?? {
     data: {
@@ -74,21 +68,21 @@ const makeClient = (options: {
     },
     error: null,
   })
-  const readyUpdateQuery = options.readyUpdateReject
-    ? rejectedQuery(options.readyUpdateReject)
-    : query({ data: null, error: options.readyUpdateError ?? null })
-  const failedUpdateQuery = query({ data: null, error: options.failedUpdateError ?? null })
-  assetQuery.update.mockImplementation((payload: { state?: string }) =>
-    payload.state === 'failed' ? failedUpdateQuery : readyUpdateQuery,
-  )
   const projectQuery = query(options.projectResponse ?? { data: [], error: null })
   const generationQuery = query(options.generationResponse ?? { data: null, error: null })
-  const storageUpload = vi.fn().mockResolvedValue({ data: { path: 'uploaded' }, error: options.storageUploadError ?? null })
-  if (options.storageUploadReject) storageUpload.mockRejectedValue(options.storageUploadReject)
+  const storageUpload = vi.fn().mockResolvedValue({ data: { path: 'legacy-uploaded' }, error: null })
+  const signedUploadResponses = [...(options.signedUploadResponses ?? [])]
+  const uploadToSignedUrl = vi.fn().mockImplementation(() => {
+    const response = signedUploadResponses.shift() ?? { data: { path: 'signed-uploaded' }, error: null }
+    return response instanceof Error ? Promise.reject(response) : Promise.resolve(response)
+  })
   const storage = {
     upload: storageUpload,
+    uploadToSignedUrl,
     remove: vi.fn().mockResolvedValue({ data: [], error: options.storageRemoveError ?? null }),
   }
+  const functionResponses = [...(options.functionResponses ?? [])]
+  let reservationIndex = 0
   const client = {
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -103,13 +97,47 @@ const makeClient = (options: {
     }),
     storage: { from: vi.fn(() => storage) },
     functions: {
-      invoke: vi.fn().mockResolvedValue(options.functionResponse ?? {
-        data: { generationId: 'generation-1', status: 'queued' }, error: null,
+      invoke: vi.fn().mockImplementation((name: string, request: { body?: Record<string, unknown> }) => {
+        const queuedResponse = functionResponses.shift()
+        if (queuedResponse) return queuedResponse instanceof Error ? Promise.reject(queuedResponse) : Promise.resolve(queuedResponse)
+        if (options.functionResponse) return Promise.resolve(options.functionResponse)
+        if (name === 'commerce-upload' && request.body?.action === 'reserve') {
+          reservationIndex += 1
+          const id = `asset-${reservationIndex}`
+          const path = `user-1/project-1/${id}.png`
+          return Promise.resolve({
+            data: {
+              asset: {
+                id, project_id: 'project-1', user_id: 'user-1', storage_path: path,
+                mime_type: request.body.mimeType, size_bytes: request.body.sizeBytes,
+                expires_at: '2026-09-07T00:00:00.000Z', state: 'uploading', deleted_at: null,
+                created_at: '2026-08-31T00:00:00.000Z',
+              },
+              path,
+              token: `token-${reservationIndex}`,
+            },
+            error: null,
+          })
+        }
+        if (name === 'commerce-upload' && request.body?.action === 'finalize') {
+          const id = String(request.body.assetId)
+          return Promise.resolve({
+            data: {
+              asset: {
+                id, project_id: 'project-1', user_id: 'user-1', storage_path: `user-1/project-1/${id}.png`,
+                mime_type: 'image/png', size_bytes: 3, expires_at: '2026-09-07T00:00:00.000Z',
+                state: 'ready', deleted_at: null, created_at: '2026-08-31T00:00:00.000Z',
+              },
+            },
+            error: null,
+          })
+        }
+        return Promise.resolve({ data: { generationId: 'generation-1', status: 'queued' }, error: null })
       }),
     },
     rpc: vi.fn((name: string) => Promise.resolve(options.rpcResponses?.[name] ?? { data: null, error: null })),
   }
-  return { client, assetQuery, readyUpdateQuery, failedUpdateQuery, projectQuery, generationQuery, storage }
+  return { client, assetQuery, projectQuery, generationQuery, storage }
 }
 
 describe('commerce repository', () => {
@@ -126,27 +154,38 @@ describe('commerce repository', () => {
     projectQuery = mock.projectQuery
     storage = mock.storage
     repository = createCommerceRepository(client as never)
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('123e4567-e89b-12d3-a456-426614174000')
   })
 
   afterEach(() => vi.restoreAllMocks())
 
-  it('stores validated images under the authenticated user/project path and reports file states', async () => {
+  it('uploads each validated image through reserve, signed upload, and finalize in order', async () => {
     const progress = vi.fn()
     const file = new File(['png'], '产品 图.png', { type: 'image/png' })
 
-    await repository.uploadAssets('project-1', [file], progress)
+    const result = await repository.uploadAssets('project-1', [file], progress)
 
-    expect(assetQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
-      project_id: 'project-1', user_id: 'user-1', state: 'uploading',
-      storage_path: 'user-1/project-1/123e4567-e89b-12d3-a456-426614174000.png',
-    }))
-    expect(storage.upload).toHaveBeenCalledWith(
-      'user-1/project-1/123e4567-e89b-12d3-a456-426614174000.png',
+    expect(client.functions.invoke).toHaveBeenNthCalledWith(1, 'commerce-upload', {
+      body: {
+        action: 'reserve', projectId: 'project-1', fileName: '产品 图.png', mimeType: 'image/png', sizeBytes: 3,
+      },
+    })
+    expect(storage.uploadToSignedUrl).toHaveBeenCalledWith(
+      'user-1/project-1/asset-1.png',
+      'token-1',
       file,
-      { contentType: 'image/png', upsert: false },
+      { contentType: 'image/png' },
     )
-    expect(assetQuery.update).toHaveBeenCalledWith({ state: 'ready' })
+    expect(client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    expect(client.functions.invoke.mock.invocationCallOrder[0]).toBeLessThan(storage.uploadToSignedUrl.mock.invocationCallOrder[0])
+    expect(storage.uploadToSignedUrl.mock.invocationCallOrder[0]).toBeLessThan(client.functions.invoke.mock.invocationCallOrder[1])
+    expect(result).toEqual([expect.objectContaining({ id: 'asset-1', storagePath: 'user-1/project-1/asset-1.png', state: 'ready' })])
+    expect(client.from).not.toHaveBeenCalledWith('commerce_project_assets')
+    expect(assetQuery.insert).not.toHaveBeenCalled()
+    expect(assetQuery.update).not.toHaveBeenCalled()
+    expect(assetQuery.delete).not.toHaveBeenCalled()
+    expect(storage.upload).not.toHaveBeenCalled()
     expect(progress).toHaveBeenNthCalledWith(1, {
       completedFiles: 0, totalFiles: 1, currentFile: { name: '产品 图.png', state: 'uploading' },
     })
@@ -155,61 +194,201 @@ describe('commerce repository', () => {
     })
   })
 
-  it('marks an asset failed and gives an actionable Chinese error when storage upload fails', async () => {
-    const mock = makeClient({ storageUploadError: { message: 'bucket unavailable' } })
+  it('reports a failed state and does not finalize when signed Storage returns a definite API error', async () => {
+    const mock = makeClient({
+      signedUploadResponses: [{
+        data: null,
+        error: { name: 'StorageApiError', message: 'bucket unavailable', status: 503, statusCode: 'InternalError' },
+      }],
+    })
+    repository = createCommerceRepository(mock.client as never)
+    const progress = vi.fn()
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
+      .rejects.toThrow('网络或服务暂时不可用')
+
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(1)
+    expect(progress).toHaveBeenLastCalledWith({
+      completedFiles: 0, totalFiles: 1, currentFile: { name: 'a.png', state: 'failed' },
+    })
+    expect(mock.assetQuery.update).not.toHaveBeenCalled()
+  })
+
+  it('reconciles a realistic StorageUnknownError result by finalizing the same reservation', async () => {
+    const storageFailure = {
+      name: 'StorageUnknownError',
+      message: 'Failed to fetch',
+      originalError: new TypeError('Failed to fetch'),
+    }
+    const mock = makeClient({ signedUploadResponses: [{ data: null, error: storageFailure }] })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['png'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .resolves.toEqual([expect.objectContaining({ id: 'asset-1', state: 'ready' })])
+
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
+    expect(mock.client.functions.invoke).toHaveBeenLastCalledWith('commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    expect(mock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries finalize with the same reserved asset without reserving or uploading again', async () => {
+    const finalizeFailure = { name: 'FunctionsFetchError', message: 'Failed to send a request to the Edge Function' }
+    const fallback = makeClient()
+    const reserveResponse = await fallback.client.functions.invoke('commerce-upload', {
+      body: { action: 'reserve', projectId: 'project-1', fileName: 'a.png', mimeType: 'image/png', sizeBytes: 3 },
+    })
+    const readyResponse = await fallback.client.functions.invoke('commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    const retryMock = makeClient({ functionResponses: [reserveResponse, { data: null, error: finalizeFailure }, readyResponse] })
+    repository = createCommerceRepository(retryMock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['png'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .resolves.toEqual([expect.objectContaining({ id: 'asset-1', state: 'ready' })])
+
+    expect(retryMock.client.functions.invoke).toHaveBeenCalledTimes(3)
+    expect(retryMock.client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    expect(retryMock.client.functions.invoke).toHaveBeenNthCalledWith(3, 'commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    expect(retryMock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('decodes reserve FunctionsHttpError bodies and stops before Storage', async () => {
+    const reserveFailure = {
+      name: 'FunctionsHttpError',
+      message: 'Edge Function returned a non-2xx status code',
+      context: new Response(JSON.stringify({ code: 'AUTH_REQUIRED', message: 'login required' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }
+    const mock = makeClient({ functionResponses: [{ data: null, error: reserveFailure }] })
+    repository = createCommerceRepository(mock.client as never)
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
+      .rejects.toMatchObject({ code: 'AUTH_REQUIRED', cause: reserveFailure })
+
+    expect(mock.storage.uploadToSignedUrl).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{ asset: null, path: 'server/path.png', token: 'token' }, 'asset'],
+    [{ asset: { id: 'asset-1' }, path: '', token: 'token' }, 'path'],
+    [{ asset: { id: 'asset-1' }, path: 'server/path.png', token: '' }, 'token'],
+  ])('fails safely when a reserve response is missing %s', async (data) => {
+    const mock = makeClient({ functionResponses: [{ data, error: null }] })
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
       .rejects.toThrow('网络或服务暂时不可用')
 
-    expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
-    expect(mock.assetQuery.update.mock.invocationCallOrder[0]).toBeGreaterThan(mock.storage.upload.mock.invocationCallOrder[0])
+    expect(mock.storage.uploadToSignedUrl).not.toHaveBeenCalled()
   })
 
-  it('surfaces a failed-state write error instead of silently leaving an uploading asset behind', async () => {
-    const failedStateError = { message: 'database unavailable' }
-    const mock = makeClient({ storageUploadError: { message: 'bucket unavailable' }, failedUpdateError: failedStateError })
+  it('fails safely without retrying when finalize omits its snake_case asset response', async () => {
+    const fallback = makeClient()
+    const reserveResponse = await fallback.client.functions.invoke('commerce-upload', {
+      body: { action: 'reserve', projectId: 'project-1', fileName: 'a.png', mimeType: 'image/png', sizeBytes: 1 },
+    })
+    const mock = makeClient({
+      functionResponses: [reserveResponse, { data: {}, error: null }],
+    })
+    repository = createCommerceRepository(mock.client as never)
+    const progress = vi.fn()
+
+    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
+      .rejects.toThrow('网络或服务暂时不可用')
+
+    expect(progress).toHaveBeenLastCalledWith({
+      completedFiles: 0, totalFiles: 1, currentFile: { name: 'a.png', state: 'failed' },
+    })
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
+  })
+
+  it('decodes deterministic finalize FunctionsHttpError bodies without retrying', async () => {
+    const finalizeFailure = {
+      name: 'FunctionsHttpError',
+      message: 'Edge Function returned a non-2xx status code',
+      context: new Response(JSON.stringify({ code: 'RATE_LIMITED', message: 'too many requests' }), {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }
+    const fallback = makeClient()
+    const reserveResponse = await fallback.client.functions.invoke('commerce-upload', {
+      body: { action: 'reserve', projectId: 'project-1', fileName: 'a.png', mimeType: 'image/png', sizeBytes: 1 },
+    })
+    const mock = makeClient({
+      functionResponses: [
+        reserveResponse,
+        { data: null, error: finalizeFailure },
+      ],
+    })
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toMatchObject({ code: 'NETWORK', cause: failedStateError })
+      .rejects.toMatchObject({ code: 'RATE_LIMITED', cause: finalizeFailure })
 
-    expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
+    expect(mock.client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      body: { action: 'finalize', assetId: 'asset-1' },
+    })
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
   })
 
-  it('marks an asset failed when Storage rejects instead of returning an error result', async () => {
-    const storageFailure = new TypeError('Failed to fetch')
-    const mock = makeClient({ storageUploadReject: storageFailure })
+  it('keeps completed progress when a later file fails and never starts later files', async () => {
+    const mock = makeClient({
+      signedUploadResponses: [
+        { data: { path: 'asset-1.png' }, error: null },
+        { data: null, error: { message: 'bucket unavailable' } },
+      ],
+    })
     repository = createCommerceRepository(mock.client as never)
+    const progress = vi.fn()
+    const files = [
+      new File(['png'], 'a.png', { type: 'image/png' }),
+      new File(['png'], 'b.png', { type: 'image/png' }),
+      new File(['png'], 'c.png', { type: 'image/png' }),
+    ]
 
-    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toMatchObject({ code: 'NETWORK', cause: storageFailure })
+    await expect(repository.uploadAssets('project-1', files, progress)).rejects.toThrow('网络或服务暂时不可用')
 
-    expect(mock.assetQuery.update).toHaveBeenCalledWith({ state: 'failed' })
+    expect(progress).toHaveBeenNthCalledWith(2, {
+      completedFiles: 1, totalFiles: 3, currentFile: { name: 'a.png', state: 'ready' },
+    })
+    expect(progress).toHaveBeenLastCalledWith({
+      completedFiles: 1, totalFiles: 3, currentFile: { name: 'b.png', state: 'failed' },
+    })
+    expect(mock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(2)
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(3)
   })
 
-  it('marks an asset failed when the ready-state update rejects', async () => {
-    const readyFailure = new TypeError('Failed to fetch')
-    const mock = makeClient({ readyUpdateReject: readyFailure })
-    repository = createCommerceRepository(mock.client as never)
+  it('accepts at most six local files and rejects a seventh before account or upload calls', async () => {
+    const sixFiles = Array.from(
+      { length: 6 },
+      (_, index) => new File(['x'], `${index + 1}.png`, { type: 'image/png' }),
+    )
+    const sixMock = makeClient()
+    repository = createCommerceRepository(sixMock.client as never)
 
-    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toMatchObject({ code: 'NETWORK', cause: readyFailure })
+    await expect(repository.uploadAssets('project-1', sixFiles, vi.fn())).resolves.toHaveLength(6)
+    expect(sixMock.client.auth.getUser).toHaveBeenCalledTimes(1)
+    expect(sixMock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(6)
+    expect(sixMock.client.functions.invoke).toHaveBeenCalledTimes(12)
 
-    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(1, { state: 'ready' })
-    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(2, { state: 'failed' })
-  })
-
-  it('marks an asset failed when the ready-state update resolves with an error', async () => {
-    const readyFailure = { message: 'ready update unavailable' }
-    const mock = makeClient({ readyUpdateError: readyFailure })
-    repository = createCommerceRepository(mock.client as never)
-
-    await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toMatchObject({ code: 'NETWORK', cause: readyFailure })
-
-    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(1, { state: 'ready' })
-    expect(mock.assetQuery.update).toHaveBeenNthCalledWith(2, { state: 'failed' })
+    const sevenMock = makeClient()
+    repository = createCommerceRepository(sevenMock.client as never)
+    await expect(repository.uploadAssets('project-1', [
+      ...sixFiles,
+      new File(['x'], '7.png', { type: 'image/png' }),
+    ], vi.fn())).rejects.toThrow('图片数量必须为 1–6 张')
+    expect(sevenMock.client.auth.getUser).not.toHaveBeenCalled()
+    expect(sevenMock.client.functions.invoke).not.toHaveBeenCalled()
+    expect(sevenMock.client.storage.from).not.toHaveBeenCalled()
   })
 
   it('removes every owned storage object before deleting the project record', async () => {

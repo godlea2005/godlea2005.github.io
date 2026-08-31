@@ -26,6 +26,7 @@ const adminPageSize = 50
 
 type CommerceSupabaseClient = SupabaseClient<any>
 type DatabaseRow = Record<string, unknown>
+type UploadReservation = { asset: CommerceAsset; path: string; token: string }
 
 export type CommerceErrorCode =
   | 'AUTH_REQUIRED'
@@ -126,6 +127,21 @@ export const mapCommerceError = (error: unknown): CommerceRepositoryError => {
 const mapFunctionInvokeError = async (error: unknown): Promise<CommerceRepositoryError> => {
   const mapped = mapCommerceError(await responseErrorDetails(error))
   return new CommerceRepositoryError(mapped.code, mapped.message, error)
+}
+
+const isStorageTransportError = (error: unknown): boolean => {
+  if (error instanceof TypeError) return true
+  const record = asRecord(error)
+  const name = asString(record.name)
+  return name === 'StorageUnknownError'
+    || (name === 'StorageError' && !asNumber(record.status) && record.originalError instanceof TypeError)
+}
+
+const isFunctionTransportError = (error: unknown): boolean => {
+  const cause = error instanceof CommerceRepositoryError ? error.cause : error
+  if (cause instanceof TypeError) return true
+  const name = asString(asRecord(cause).name)
+  return name === 'FunctionsFetchError' || name === 'FunctionsRelayError'
 }
 
 const validationError = (messages: string[]) =>
@@ -336,13 +352,6 @@ const projectDetails = (input: CommerceProjectInput): CommerceProjectDetails => 
   }, {})
 }
 
-const extensionForMime = (mimeType: File['type']) => {
-  if (mimeType === 'image/jpeg') return 'jpg'
-  if (mimeType === 'image/png') return 'png'
-  if (mimeType === 'image/webp') return 'webp'
-  throw validationError(['仅支持 JPEG、PNG 或 WebP 图片'])
-}
-
 export interface CommerceRepository {
   getEntitlement(): Promise<CommerceEntitlement>
   createProject(input: CommerceProjectInput): Promise<CommerceProject>
@@ -420,98 +429,107 @@ class SupabaseCommerceRepository implements CommerceRepository {
     files: File[],
     onProgress: (progress: AssetUploadProgress) => void,
   ): Promise<CommerceAsset[]> {
+    if (files.length < 1 || files.length > 6) {
+      throw validationError(['图片数量必须为 1–6 张'])
+    }
     const validationErrors = files.flatMap((file, index) =>
       validateProductFile(file).errors.map((message) => `第 ${index + 1} 个文件：${message}`),
     )
     if (validationErrors.length > 0) throw validationError(validationErrors)
 
-    const userId = await this.requireAuthenticatedUser()
+    await this.requireAuthenticatedUser()
     const uploaded: CommerceAsset[] = []
 
     for (const [index, file] of files.entries()) {
-      const storagePath = `${userId}/${projectId}/${crypto.randomUUID()}.${extensionForMime(file.type)}`
       onProgress({
         completedFiles: uploaded.length,
         totalFiles: files.length,
         currentFile: { name: file.name, state: 'uploading' },
       })
 
-      const { data: assetData, error: assetError } = await this.client
-        .from('commerce_project_assets')
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          storage_path: storagePath,
-          mime_type: file.type,
-          size_bytes: file.size,
-          state: 'uploading',
-        })
-        .select('id,project_id,user_id,storage_path,mime_type,size_bytes,expires_at,state,deleted_at,created_at')
-        .single()
-      if (assetError) throw mapCommerceError(assetError)
-      if (!assetData) throw mapCommerceError(new Error('asset response missing'))
-
-      const asset = rowToAsset(assetData)
-      let uploadError: unknown = null
       try {
-        const uploadResult = await this.client.storage
-          .from(assetBucket)
-          .upload(storagePath, file, { contentType: file.type, upsert: false })
-        uploadError = uploadResult.error
+        const reservation = await this.reserveUpload(projectId, file)
+        let uploadError: unknown = null
+        try {
+          const result = await this.client.storage
+            .from(assetBucket)
+            .uploadToSignedUrl(reservation.path, reservation.token, file, { contentType: file.type })
+          uploadError = result.error
+        } catch (error) {
+          uploadError = error
+        }
+        if (uploadError && !isStorageTransportError(uploadError)) {
+          throw mapCommerceError(uploadError)
+        }
+
+        const readyAsset = await this.finalizeWithRetry(reservation.asset.id)
+        uploaded.push(readyAsset)
+        onProgress({
+          completedFiles: index + 1,
+          totalFiles: files.length,
+          currentFile: { name: file.name, state: 'ready' },
+        })
       } catch (error) {
-        uploadError = error
-      }
-      if (uploadError) {
-        const failedStateError = await this.markAssetFailed(asset.id)
         onProgress({
           completedFiles: uploaded.length,
           totalFiles: files.length,
           currentFile: { name: file.name, state: 'failed' },
         })
-        throw failedStateError ?? mapCommerceError(uploadError)
+        throw error instanceof CommerceRepositoryError ? error : mapCommerceError(error)
       }
-
-      let readyError: unknown = null
-      try {
-        const readyResult = await this.client
-          .from('commerce_project_assets')
-          .update({ state: 'ready' })
-          .eq('id', asset.id)
-        readyError = readyResult.error
-      } catch (error) {
-        readyError = error
-      }
-      if (readyError) {
-        const failedStateError = await this.markAssetFailed(asset.id)
-        onProgress({
-          completedFiles: uploaded.length,
-          totalFiles: files.length,
-          currentFile: { name: file.name, state: 'failed' },
-        })
-        throw failedStateError ?? mapCommerceError(readyError)
-      }
-
-      const readyAsset = { ...asset, state: 'ready' as const }
-      uploaded.push(readyAsset)
-      onProgress({
-        completedFiles: index + 1,
-        totalFiles: files.length,
-        currentFile: { name: file.name, state: 'ready' },
-      })
     }
 
     return uploaded
   }
 
-  private async markAssetFailed(assetId: string): Promise<CommerceRepositoryError | null> {
+  private async reserveUpload(projectId: string, file: File): Promise<UploadReservation> {
+    const { data, error } = await this.client.functions.invoke('commerce-upload', {
+      body: {
+        action: 'reserve',
+        projectId,
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+      },
+    })
+    if (error) throw await mapFunctionInvokeError(error)
+
+    const response = asRecord(data)
+    const assetValue = response.asset
+    const path = asString(response.path)
+    const token = asString(response.token)
+    if (!isRecord(assetValue) || !asString(assetValue.id) || !path || !token) {
+      throw mapCommerceError(new Error('upload reservation response missing'))
+    }
+
+    const asset = rowToAsset(assetValue)
+    if (!asset.id || asset.storagePath !== path) {
+      throw mapCommerceError(new Error('upload reservation response mismatch'))
+    }
+    return { asset, path, token }
+  }
+
+  private async finalizeUpload(assetId: string): Promise<CommerceAsset> {
+    const { data, error } = await this.client.functions.invoke('commerce-upload', {
+      body: { action: 'finalize', assetId },
+    })
+    if (error) throw await mapFunctionInvokeError(error)
+
+    const assetValue = asRecord(data).asset
+    if (!isRecord(assetValue)) throw mapCommerceError(new Error('upload finalize response missing'))
+    const asset = rowToAsset(assetValue)
+    if (!asset.id || asset.id !== assetId || asset.state !== 'ready') {
+      throw mapCommerceError(new Error('upload finalize response mismatch'))
+    }
+    return asset
+  }
+
+  private async finalizeWithRetry(assetId: string): Promise<CommerceAsset> {
     try {
-      const { error } = await this.client
-        .from('commerce_project_assets')
-        .update({ state: 'failed' })
-        .eq('id', assetId)
-      return error ? mapCommerceError(error) : null
+      return await this.finalizeUpload(assetId)
     } catch (error) {
-      return mapCommerceError(error)
+      if (!isFunctionTransportError(error)) throw error
+      return this.finalizeUpload(assetId)
     }
   }
 
