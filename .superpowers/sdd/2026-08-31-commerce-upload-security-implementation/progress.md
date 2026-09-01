@@ -52,3 +52,11 @@ Task 3: complete (commit 202eda1; independent scoped re-review APPROVED with no 
 Task 4: started at base 202eda1813a39d7aeb3b3a06f9d9e44968976649; implementing deterministic provider deadline, atomic terminal restoration ownership, and bounded cleanup reconciliation via strict RED→GREEN.
 
 Task 4: complete (required subject `fix: recover commerce background failures`; strict RED captured 6 analyze / 5 cleanup / 1 workflow-contract failures; focused Node 25/25 + 22/22, focused Vitest 57/57, full 227/227, strict Edge TypeScript and build clean; native Deno/Postgres/Storage integration remains an explicit external gate)
+
+Task 4 review: independent spec/quality APPROVED (0 Critical / 0 Important / 0 Minor; Node 47/47, focused Vitest 57/57, strict TypeScript and diff-check clean; real Deno/PostgreSQL/Storage remains a deployment gate)
+
+Task 5 review: first independent pass found 0 Critical / 2 Important deployment-contract coverage gaps (direct-orphan/forged-metadata/atomic-terminal assertions and timeout/workflow safeguard assertions).
+
+Task 5: fix round 1/5 (2 addressed, 0 open — deployment tests now bind exact implementation and fail-closed documentation requirements)
+
+Task 5: complete (commit 3688254; scoped independent re-review APPROVED, 0 Critical / 0 Important / 0 Minor; deployment contract 4/4, full 228/228, build and security scans clean; all live Deno/PostgreSQL/Storage/OAuth/Pages checks remain explicit external gates)
