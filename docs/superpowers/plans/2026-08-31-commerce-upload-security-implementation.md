@@ -53,7 +53,7 @@ expect(migration).toContain('grant execute on function public.finalize_commerce_
 
 - [ ] **Step 2: Run focused tests and confirm RED**
 
-Run: `npm.cmd test -- tests/commerce-cleanup-contract.test.ts tests/commerce-repository.test.ts`  
+Run: `npm.cmd test -- tests/commerce-cleanup-contract.test.ts tests/commerce-repository.test.ts`
 Expected: FAIL because the forward migration and RPC contracts do not exist.
 
 - [ ] **Step 3: Implement the forward migration**
@@ -78,7 +78,7 @@ Redefined complete/fail generation functions must lock the generation, preserve 
 
 - [ ] **Step 4: Run focused tests and migration scan**
 
-Run: `npm.cmd test -- tests/commerce-cleanup-contract.test.ts tests/commerce-repository.test.ts`  
+Run: `npm.cmd test -- tests/commerce-cleanup-contract.test.ts tests/commerce-repository.test.ts`
 Expected: PASS. Also run `git diff --check` and verify no direct authenticated asset writes remain after the final migration.
 
 - [ ] **Step 5: Commit Task 1**
@@ -121,7 +121,7 @@ const WEBP_KIND = 'WEBP' // bytes 8..11
 
 - [ ] **Step 2: Run focused tests and confirm RED**
 
-Run the existing Node-compatible Edge fallback used by `analyze-commerce` plus `npm.cmd test`.  
+Run the existing Node-compatible Edge fallback used by `analyze-commerce` plus `npm.cmd test`.
 Expected: FAIL because the runtime/function do not exist.
 
 - [ ] **Step 3: Implement pure upload runtime**
@@ -159,7 +159,7 @@ Assert each file calls reserve → signed upload → finalize in order; raw `fro
 
 - [ ] **Step 2: Run focused repository tests and confirm RED**
 
-Run: `npm.cmd test -- tests/commerce-repository.test.ts`  
+Run: `npm.cmd test -- tests/commerce-repository.test.ts`
 Expected: FAIL on old direct-row/direct-upload calls.
 
 - [ ] **Step 3: Implement secure upload flow**
