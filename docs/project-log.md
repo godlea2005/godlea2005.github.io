@@ -122,3 +122,11 @@
 - 本地验证：Task 11 静态部署契约 3/3、全量 11 个测试文件共 186/186 通过，生产构建通过（保留既有 MusicPage 大于 500 kB 警告）。父任务已用 Playwright 复核 1440px 与 390px、深浅主题、CTA 跳转 `#ai-commerce`、登录门槛/弹层、移动目录与 Escape、无横向溢出、音乐坞不遮挡；浏览器 console error/warning 为 0/0。登录后的真实生成、数据库与 Storage 流程仍待部署环境验证。
 - 发布状态：`待外部操作门槛`。尚未在本任务执行远程迁移、函数部署、GitHub Pages 发布或生产数据写入。
 - 已知限制：Deno Edge runtime、真实 PostgreSQL/RLS、真实 GitHub/Google OAuth、OpenAI 调用、私有 Storage 签名访问和 cleanup 安全边界仍须在受控部署环境完成生产门槛验证。
+
+## 2026-09-02 — AI 电商安全上传发布门槛
+
+- 安全边界收口：新增 `202608310001_commerce_upload_security.sql` 和 `commerce-upload`，浏览器仅走 reserve → signed upload → finalize；普通已认证用户不再能直写资产表或直传 Storage。上传校验包含 service-only CAS/takeover、Blob MIME/大小/容器检查和锁定 WASM 真实解码。
+- 后台恢复收口：OpenAI 请求默认 60 秒超时，`OPENAI_TIMEOUT_MS` 限定在 5..90 秒，超时继续走幂等失败/退款；cleanup 改为 `*/15 * * * *`，在普通候选前处理终态资产恢复、放弃上传和孤儿对象的确定分页。
+- 运维文档收口：明确了六个迁移的顺序、三个 Edge Function 的部署顺序、WASM `static_files`/来源/许可证/SHA-256、Supabase 与 GitHub 变量边界、安全错误/可观察性、disposable staging live gates 和禁止回退到直写的策略。
+- RED→GREEN 记录：部署契约首先因运维手册缺少新迁移/函数而失败（1 failed / 3 passed）；文档与契约更新后 focused 4/4 通过，全量 13 个测试文件共 228/228 通过，生产构建通过。构建仍仅有既有 `MusicPage` 527.28 kB 大于 500 kB 的 chunk 警告，本次未修改该模块。
+- 发布状态继续为“待外部操作门槛”：本任务没有 link 远程项目、应用迁移、部署函数、读写 Secrets、触发 workflow 或发布 Pages。原生 Deno 启动/bundle、真实 PostgreSQL 语法/grants/CAS/takeover、Storage signed upload/Blob MIME/删除、第七张、跨用户、响应丢失 finalize、超时退款、cleanup 分页/孤儿清理仍须在 disposable/staging 完成。
