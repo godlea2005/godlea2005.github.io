@@ -65,7 +65,7 @@ const makeRepository = (overrides: Partial<CommerceRepository> = {}): CommerceRe
   listProjects: vi.fn().mockResolvedValue([]),
   deleteProject: vi.fn().mockResolvedValue(undefined),
   setProjectLocked: vi.fn().mockResolvedValue(undefined),
-  getAdminDashboard: vi.fn(), setUserEntitlement: vi.fn(), updateAdminSettings: vi.fn(),
+  getAdminDashboard: vi.fn(), setUserEntitlement: vi.fn(), refundGeneration: vi.fn(), updateAdminSettings: vi.fn(),
   ...overrides,
 })
 

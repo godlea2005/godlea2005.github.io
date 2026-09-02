@@ -161,6 +161,12 @@ export type CommerceAdminDashboard = {
   settings: CommerceAdminSettings
 }
 
+export type GenerationRefundResult = {
+  status: 'refunded' | 'already_refunded'
+  credits: number
+  refundedAt: string
+}
+
 export type SetUserEntitlementInput = {
   userId: string
   credits: number

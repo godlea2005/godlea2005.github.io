@@ -65,7 +65,7 @@ const makeRepository = (overrides: Partial<CommerceRepository> = {}): CommerceRe
   startGeneration: vi.fn().mockResolvedValue({ generationId: 'generation-1', status: 'queued' }),
   getGeneration: vi.fn().mockResolvedValue(generation()), listProjects: vi.fn().mockResolvedValue([project()]),
   listGenerations: vi.fn().mockResolvedValue([generation()]), deleteProject: vi.fn().mockResolvedValue(undefined),
-  setProjectLocked: vi.fn().mockResolvedValue(undefined), getAdminDashboard: vi.fn(), setUserEntitlement: vi.fn(), updateAdminSettings: vi.fn(),
+  setProjectLocked: vi.fn().mockResolvedValue(undefined), getAdminDashboard: vi.fn(), setUserEntitlement: vi.fn(), refundGeneration: vi.fn(), updateAdminSettings: vi.fn(),
   ...overrides,
 })
 

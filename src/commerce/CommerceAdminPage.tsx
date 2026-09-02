@@ -79,6 +79,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
   const [settingsReason, setSettingsReason] = useState('')
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
+  const [refundingGenerationId, setRefundingGenerationId] = useState('')
   const scopeRef = useRef(0)
   const fetchRef = useRef(0)
   const mutationRef = useRef(false)
@@ -155,6 +156,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
     settingsDirtyRef.current = false
     setSettingsDirty(false)
     setSavingSettings(false)
+    setRefundingGenerationId('')
     if (authorized) void fetchDashboard(emptyQuery, { scope, owner: userId })
     return () => {
       scopeRef.current += 1
@@ -349,6 +351,35 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
     setSettingsDraft((current) => ({ ...current, [key]: value }))
   }
 
+  const refundGeneration = async (generation: CommerceAdminGeneration) => {
+    if (mutationRef.current || generation.refundedAt || !generation.creditCharged) return
+    const promptedReason = window.prompt('请输入人工退款原因（1–500 字）')
+    if (promptedReason === null) return
+    const reason = promptedReason.trim()
+    if (reason.length < 1 || reason.length > 500) {
+      setError('请填写 1–500 字人工退款原因。')
+      return
+    }
+    const scope = scopeRef.current
+    const owner = userId
+    mutationRef.current = true
+    setRefundingGenerationId(generation.generationId)
+    setError('')
+    setSuccess('')
+    try {
+      await repository.refundGeneration(generation.generationId, reason)
+      if (scopeRef.current !== scope || auth.user?.id !== owner) return
+      await fetchDashboard(queryRef.current, { announce: true, scope, owner })
+    } catch (mutationError) {
+      if (scopeRef.current === scope && auth.user?.id === owner) setError(messageForError(mutationError))
+    } finally {
+      if (scopeRef.current === scope && auth.user?.id === owner) {
+        mutationRef.current = false
+        setRefundingGenerationId('')
+      }
+    }
+  }
+
   if (!auth.ready) return <main className="commerce-page commerce-admin-page"><p className="commerce-admin-gate" role="status">正在确认管理员身份…</p></main>
   if (!authorized) return <main className="commerce-page commerce-admin-page"><section className="commerce-admin-gate"><span>403 / OPERATOR ONLY</span><h1>无权访问此页面</h1><p>此页面只向当前验证通过的站长账户开放。</p><a href="#ai-commerce">返回 AI 电商设计</a></section></main>
 
@@ -369,7 +400,7 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
         aria-selected={activeTab === tab.id}
         aria-controls={`commerce-admin-panel-${tab.id}`}
         tabIndex={activeTab === tab.id ? 0 : -1}
-        disabled={savingUser || savingSettings}
+        disabled={savingUser || savingSettings || Boolean(refundingGenerationId)}
         onClick={() => selectTab(tab.id)}
         onKeyDown={(event) => handleTabKey(event, index)}
       >{tab.label}</button>)}
@@ -404,6 +435,8 @@ export function CommerceAdminPage({ repository = commerceRepository }: { reposit
         onSearchChange={setGenerationSearchDraft}
         onSearch={submitGenerationSearch}
         onPage={(offset) => runQuery({ ...queryRef.current, generationOffset: offset })}
+        refundingGenerationId={refundingGenerationId}
+        onRefund={(generation) => void refundGeneration(generation)}
       /> : null}
       {activeTab === 'settings' ? <SettingsSection
         draft={settingsDraft}
@@ -479,6 +512,7 @@ function UsersSection(props: {
 function GenerationsSection(props: {
   generations: CommerceAdminGeneration[]; loading: boolean; search: string; offset: number
   onSearchChange: (value: string) => void; onSearch: (event: FormEvent) => void; onPage: (offset: number) => void
+  refundingGenerationId: string; onRefund: (generation: CommerceAdminGeneration) => void
 }) {
   return <div className="commerce-admin-section">
     <SectionHeader eyebrow="GENERATION TRACE" title="生成任务" count={props.generations.length} />
@@ -491,7 +525,12 @@ function GenerationsSection(props: {
         <div role="cell" data-label="耗时"><span className="commerce-admin-cell-label">耗时</span><strong>{formatDuration(generation)}</strong><small>{formatDate(generation.createdAt)}</small></div>
         <div role="cell" data-label="模型"><span className="commerce-admin-cell-label">模型</span><strong>{generation.model ?? '—'}</strong><small>{generation.provider ?? '—'}</small></div>
         <div role="cell" data-label="错误"><span className="commerce-admin-cell-label">错误</span><strong className={generation.errorCode ? 'is-danger' : ''}>{generation.errorCode ?? '—'}</strong><small>{generation.errorMessage ?? '—'}</small></div>
-        <div role="cell" data-label="退款"><span className="commerce-admin-cell-label">退款</span><strong>{generation.refundedAt ? '已退款' : generation.creditCharged ? '已扣次' : '未扣次'}</strong><small>{formatDate(generation.refundedAt)}</small></div>
+        <div role="cell" data-label="退款"><span className="commerce-admin-cell-label">退款</span><strong>{generation.refundedAt ? '已退款' : generation.creditCharged ? '已扣次' : '未扣次'}</strong><small>{formatDate(generation.refundedAt)}</small><button
+          type="button"
+          disabled={Boolean(props.refundingGenerationId) || Boolean(generation.refundedAt) || !generation.creditCharged}
+          aria-label={`${generation.refundedAt ? '已退款' : generation.creditCharged ? '人工退款' : '无需退款'} ${generation.generationId}`}
+          onClick={() => props.onRefund(generation)}
+        >{props.refundingGenerationId === generation.generationId ? '退款中…' : generation.refundedAt ? '已退款' : generation.creditCharged ? '人工退款' : '无需退款'}</button></div>
       </div>)}
       {props.generations.length === 0 ? <p className="commerce-admin-empty">没有匹配任务。</p> : null}
     </div>

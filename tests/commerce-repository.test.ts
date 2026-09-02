@@ -135,7 +135,25 @@ const makeClient = (options: {
         return Promise.resolve({ data: { generationId: 'generation-1', status: 'queued' }, error: null })
       }),
     },
-    rpc: vi.fn((name: string) => Promise.resolve(options.rpcResponses?.[name] ?? { data: null, error: null })),
+    rpc: vi.fn((name: string, parameters?: Record<string, unknown>) => {
+      if (options.rpcResponses?.[name]) return Promise.resolve(options.rpcResponses[name])
+      if (name === 'create_commerce_project') {
+        if (options.projectResponse) return Promise.resolve(options.projectResponse)
+        return Promise.resolve({
+          data: [{
+            id: 'project-1', user_id: 'user-1', name: parameters?.p_name,
+            platform: parameters?.p_platform, mode: parameters?.p_mode,
+            input_data: parameters?.p_input_data, locked: false,
+            created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:00.000Z',
+          }],
+          error: null,
+        })
+      }
+      if (name === 'admin_refund_commerce_generation') {
+        return Promise.resolve({ data: { status: 'refunded', credits: 4, refundedAt: '2026-08-27T08:02:00.000Z' }, error: null })
+      }
+      return Promise.resolve({ data: null, error: null })
+    }),
   }
   return { client, assetQuery, projectQuery, generationQuery, storage }
 }
@@ -391,7 +409,7 @@ describe('commerce repository', () => {
     expect(sevenMock.client.storage.from).not.toHaveBeenCalled()
   })
 
-  it('removes every owned storage object before deleting the project record', async () => {
+  it('deletes the project transaction before removing owned Storage objects', async () => {
     const mock = makeClient({
       assetResponse: { data: [{ storage_path: 'user-1/project-1/a.png' }, { storage_path: 'user-1/project-1/b.webp' }], error: null },
     })
@@ -403,32 +421,35 @@ describe('commerce repository', () => {
     expect(mock.assetQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
     expect(mock.storage.remove).toHaveBeenCalledWith(['user-1/project-1/a.png', 'user-1/project-1/b.webp'])
     expect(mock.client.rpc).toHaveBeenCalledWith('delete_commerce_project', { p_project_id: 'project-1' })
-    expect(mock.client.rpc.mock.invocationCallOrder[0]).toBeGreaterThan(mock.storage.remove.mock.invocationCallOrder[0])
+    expect(mock.client.rpc.mock.invocationCallOrder[0]).toBeLessThan(mock.storage.remove.mock.invocationCallOrder[0])
   })
 
-  it('keeps the project for retry and never calls the delete RPC when storage removal fails', async () => {
+  it('returns deletion success after the database commit when orphan cleanup must retry Storage removal', async () => {
     const mock = makeClient({
       assetResponse: { data: [{ storage_path: 'user-1/project-1/a.png' }], error: null },
       storageRemoveError: { message: 'permission denied' },
     })
     repository = createCommerceRepository(mock.client as never)
 
-    await expect(repository.deleteProject('project-1')).rejects.toThrow('网络或服务暂时不可用')
+    await expect(repository.deleteProject('project-1')).resolves.toBeUndefined()
 
-    expect(mock.client.rpc).not.toHaveBeenCalled()
+    expect(mock.client.rpc).toHaveBeenCalledWith('delete_commerce_project', { p_project_id: 'project-1' })
+    expect(mock.client.rpc.mock.invocationCallOrder[0]).toBeLessThan(mock.storage.remove.mock.invocationCallOrder[0])
   })
 
-  it('refuses active project deletion before removing Storage objects', async () => {
-    const mock = makeClient({ generationResponse: { data: [{ status: 'processing' }], error: null } })
+  it('models generation winning the fence: delete RPC rejects before Storage removal', async () => {
+    const mock = makeClient({
+      assetResponse: { data: [{ storage_path: 'user-1/project-1/a.png' }], error: null },
+      rpcResponses: {
+        delete_commerce_project: { data: null, error: { code: '55000', message: 'project has an active generation' } },
+      },
+    })
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.deleteProject('project-1')).rejects.toThrow('生成中')
 
-    expect(mock.generationQuery.eq).toHaveBeenCalledWith('project_id', 'project-1')
-    expect(mock.generationQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
-    expect(mock.generationQuery.in).toHaveBeenCalledWith('status', ['queued', 'processing'])
     expect(mock.storage.remove).not.toHaveBeenCalled()
-    expect(mock.client.rpc).not.toHaveBeenCalled()
+    expect(mock.client.rpc).toHaveBeenCalledWith('delete_commerce_project', { p_project_id: 'project-1' })
   })
 
   it('validates every asset before creating rows or calling Storage', async () => {
@@ -499,11 +520,16 @@ describe('commerce repository', () => {
       ...( { previewUrl: 'blob:https://example.test/preview', encoded: 'data:image/png;base64,AAAA' } as object),
     })
 
-    const payload = mock.projectQuery.insert.mock.calls[0][0]
-    expect(payload.input_data).toEqual({ category: '家居', notes: '无反光' })
-    expect(JSON.stringify(payload.input_data)).not.toContain('blob:')
-    expect(JSON.stringify(payload.input_data)).not.toContain('base64')
-    expect(JSON.stringify(payload.input_data)).not.toContain('"files"')
+    expect(mock.client.rpc).toHaveBeenCalledWith('create_commerce_project', {
+      p_name: '保温杯',
+      p_platform: 'ozon',
+      p_mode: 'professional',
+      p_input_data: { category: '家居', notes: '无反光' },
+    })
+    const payload = mock.client.rpc.mock.calls.find(([name]) => name === 'create_commerce_project')?.[1]
+    expect(JSON.stringify(payload)).not.toContain('blob:')
+    expect(JSON.stringify(payload)).not.toContain('base64')
+    expect(JSON.stringify(payload)).not.toContain('"files"')
   })
 
   it('rejects transient image URLs and Base64 data before persisting project input', async () => {
@@ -514,7 +540,7 @@ describe('commerce repository', () => {
       notes: 'data:image/png;base64,AAAA',
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
-    expect(projectQuery.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('create_commerce_project', expect.anything())
   })
 
   it.each((() => {
@@ -534,7 +560,7 @@ describe('commerce repository', () => {
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
-    expect(projectQuery.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('create_commerce_project', expect.anything())
   })
 
   it('rejects Base64 data URLs with media-type parameters before persisting project input', async () => {
@@ -545,7 +571,7 @@ describe('commerce repository', () => {
       notes: 'data:image/png;charset=utf-8;base64,AAAA',
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
-    expect(projectQuery.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('create_commerce_project', expect.anything())
   })
 
   it('rejects long raw Base64 payloads before persisting project input', async () => {
@@ -556,7 +582,7 @@ describe('commerce repository', () => {
       notes: 'A'.repeat(512),
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
-    expect(projectQuery.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('create_commerce_project', expect.anything())
   })
 
   it.each([
@@ -579,7 +605,7 @@ describe('commerce repository', () => {
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
     })).rejects.toThrow('不支持保存图片 URL 或 Base64 数据')
 
-    expect(projectQuery.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalledWith('create_commerce_project', expect.anything())
   })
 
   it('does not mistake ordinary long prose for raw Base64', async () => {
@@ -590,8 +616,8 @@ describe('commerce repository', () => {
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
     })).resolves.toBeDefined()
 
-    expect(projectQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
-      input_data: expect.objectContaining({ notes }),
+    expect(client.rpc).toHaveBeenCalledWith('create_commerce_project', expect.objectContaining({
+      p_input_data: expect.objectContaining({ notes }),
     }))
   })
 
@@ -618,8 +644,8 @@ describe('commerce repository', () => {
       name: '保温杯', mode: 'professional', platform: 'ozon', files: [file], notes,
     })).resolves.toBeDefined()
 
-    expect(projectQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
-      input_data: expect.objectContaining({ notes }),
+    expect(client.rpc).toHaveBeenCalledWith('create_commerce_project', expect.objectContaining({
+      p_input_data: expect.objectContaining({ notes }),
     }))
   })
 
@@ -643,6 +669,15 @@ describe('commerce repository', () => {
     await expect(repository.deleteProject('project-1')).resolves.toBeUndefined()
   })
 
+  it('changes project retention only through the locked-state RPC after direct updates are revoked', async () => {
+    await repository.setProjectLocked('project-1', true)
+
+    expect(client.rpc).toHaveBeenCalledWith('set_commerce_project_locked', {
+      p_project_id: 'project-1', p_locked: true,
+    })
+    expect(projectQuery.update).not.toHaveBeenCalled()
+  })
+
   it('requires a non-anonymous authenticated user before every user and administrator call', async () => {
     const settings = {
       newUserCredits: 3, defaultDailyLimit: 10, maxProjectImages: 6,
@@ -664,6 +699,7 @@ describe('commerce repository', () => {
       (repo: CommerceRepository) => repo.setUserEntitlement({
         userId: 'user-2', credits: 999, unlimited: false, disabled: false, dailyLimit: 10, reason: 'friend',
       }),
+      (repo: CommerceRepository) => repo.refundGeneration('generation-1', 'manual review'),
       (repo: CommerceRepository) => repo.updateAdminSettings(settings, 'capacity review'),
     ]
 
@@ -725,6 +761,7 @@ describe('commerce repository', () => {
 
     await repository.getAdminDashboard()
     await repository.setUserEntitlement({ userId: 'user-2', credits: 9, unlimited: true, disabled: false, dailyLimit: 25, reason: 'campaign' })
+    await repository.refundGeneration('generation-1', '人工复核后退款')
     await repository.updateAdminSettings({
       newUserCredits: 3, defaultDailyLimit: 10, maxProjectImages: 6,
       storageSoftLimitBytes: 800000000, storageTargetBytes: 650000000,
@@ -741,6 +778,9 @@ describe('commerce repository', () => {
         storage_soft_limit_bytes: 800000000, storage_target_bytes: 650000000,
       },
       p_reason: 'capacity review',
+    })
+    expect(mock.client.rpc).toHaveBeenCalledWith('admin_refund_commerce_generation', {
+      p_generation_id: 'generation-1', p_reason: '人工复核后退款',
     })
   })
 

@@ -115,6 +115,9 @@ export const validateProductFile = (file: File): ValidationResult => {
     if (!ALLOWED_MIME_TYPES.has(file.type)) {
       errors.push('仅支持 JPEG、PNG 或 WebP 图片')
     }
+    if (file.size < 1) {
+      errors.push('图片文件不能为空')
+    }
     if (file.size > MAX_FILE_SIZE) {
       errors.push('单个文件不能超过 8 MB')
     }

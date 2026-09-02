@@ -43,6 +43,7 @@ describe('AI commerce deployment contract', () => {
       '202608300002_commerce_cleanup_claim.sql',
       '202608300003_commerce_cleanup_recovery.sql',
       '202608310001_commerce_upload_security.sql',
+      '202609030001_commerce_project_validation.sql',
     ]
     for (const name of [
       ...migrations,
@@ -52,6 +53,10 @@ describe('AI commerce deployment contract', () => {
       'admin_set_entitlement',
       'admin_update_settings',
       'fail_commerce_generation',
+      'create_commerce_project',
+      'update_commerce_project',
+      'set_commerce_project_locked',
+      'admin_refund_commerce_generation',
       'SUPABASE_CLEANUP_URL',
       'SUPABASE_CLEANUP_SECRET',
     ]) expect(guide).toContain(name)
@@ -90,6 +95,9 @@ describe('AI commerce deployment contract', () => {
     expect(guide).toMatch(/OAuth.*回跳/)
     expect(guide).toMatch(/Pages.*冒烟/)
     expect(guide).toMatch(/reserve[\s\S]*signed upload[\s\S]*finalize/i)
+    expect(guide).toMatch(/delete_commerce_project[\s\S]*Storage[\s\S]*孤儿对象/i)
+    expect(guide).toMatch(/authenticated[\s\S]*commerce_projects[\s\S]*INSERT[\s\S]*UPDATE[\s\S]*撤销/i)
+    expect(guide).toMatch(/人工退款[\s\S]*generation_refund[\s\S]*幂等/i)
     expect(guide).toMatch(/OPENAI_TIMEOUT_MS[\s\S]*60 秒[\s\S]*5[\s\S]*90 秒/i)
     expect(guide).toMatch(/\*\/15 \* \* \* \*/)
     expect(guide).toContain('static_files = [ "./functions/commerce-upload/vendor/*" ]')
@@ -114,6 +122,8 @@ describe('AI commerce deployment contract', () => {
       '提供商超时/超时退款',
       'cleanup 分页/孤儿清理',
       '定时/安全错误',
+      '项目输入 RPC/直写拒绝',
+      '人工退款重复/并发',
     ]) expect(guide).toContain(gate)
     expect(guide).toMatch(/\*\*直传孤儿对象拒绝\*\*[\s\S]{0,250}不经 reserve[\s\S]{0,150}Storage 拒绝/)
     expect(guide).toMatch(/\*\*伪造 MIME\/大小与 Blob MIME\*\*[\s\S]{0,300}不一致[\s\S]{0,150}对象先被删除[\s\S]{0,100}failed/)

@@ -70,6 +70,7 @@ const makeRepository = (overrides: Partial<CommerceRepository> = {}): CommerceRe
   getGeneration: vi.fn(), listGenerations: vi.fn(), listProjects: vi.fn(), deleteProject: vi.fn(), setProjectLocked: vi.fn(),
   getAdminDashboard: vi.fn().mockResolvedValue(dashboard()),
   setUserEntitlement: vi.fn().mockResolvedValue(undefined),
+  refundGeneration: vi.fn().mockResolvedValue({ status: 'refunded', credits: 4, refundedAt: '2026-08-27T08:02:00.000Z' }),
   updateAdminSettings: vi.fn().mockResolvedValue(undefined),
   ...overrides,
 })
@@ -332,6 +333,52 @@ describe('commerce administrator console operations', () => {
     expect(within(panel).getAllByText('已退款').length).toBeGreaterThan(0)
     expect(panel).not.toHaveTextContent(/NaN|负/)
     expect(within(panel).getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('requires a reason and submits one idempotent manual refund while disabling the action', async () => {
+    const pending = deferred<{ status: 'refunded'; credits: number; refundedAt: string }>()
+    const repository = makeRepository({ refundGeneration: vi.fn().mockReturnValue(pending.promise) })
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('供应商故障人工退款')
+    const unrefunded = dashboard({
+      generations: [{ ...dashboard().generations[0], refundedAt: null }],
+    })
+    vi.mocked(repository.getAdminDashboard).mockResolvedValue(unrefunded)
+    render(<CommerceAdminPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('tab', { name: '任务' }))
+    const refund = screen.getByRole('button', { name: /人工退款.*generation-1/ })
+    await userEvent.click(refund)
+
+    expect(promptSpy).toHaveBeenCalledWith('请输入人工退款原因（1–500 字）')
+    expect(repository.refundGeneration).toHaveBeenCalledWith('generation-1', '供应商故障人工退款')
+    expect(refund).toBeDisabled()
+    expect(refund).toHaveTextContent('退款中')
+
+    await act(async () => pending.resolve({ status: 'refunded', credits: 4, refundedAt: '2026-08-27T08:02:00.000Z' }))
+    await waitFor(() => expect(repository.getAdminDashboard).toHaveBeenCalledTimes(2))
+  })
+
+  it('keeps already-refunded and uncharged generation refund actions disabled', async () => {
+    const repository = makeRepository({ getAdminDashboard: vi.fn().mockResolvedValue(dashboard({ generations: [
+      dashboard().generations[0],
+      { ...dashboard().generations[0], generationId: 'generation-2', refundedAt: null, creditCharged: false },
+    ] })) })
+    render(<CommerceAdminPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('tab', { name: '任务' }))
+    expect(screen.getByRole('button', { name: /已退款.*generation-1/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /无需退款.*generation-2/ })).toBeDisabled()
+    expect(repository.refundGeneration).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty manual-refund prompt without calling the repository', async () => {
+    const repository = makeRepository({ getAdminDashboard: vi.fn().mockResolvedValue(dashboard({
+      generations: [{ ...dashboard().generations[0], refundedAt: null }],
+    })) })
+    vi.spyOn(window, 'prompt').mockReturnValue('   ')
+    render(<CommerceAdminPage repository={repository} />)
+    await userEvent.click(await screen.findByRole('tab', { name: '任务' }))
+    await userEvent.click(screen.getByRole('button', { name: /人工退款.*generation-1/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('1–500 字人工退款原因')
+    expect(repository.refundGeneration).not.toHaveBeenCalled()
   })
 
   it('marks stacked mobile rows with semantic labels instead of relying on column position', async () => {

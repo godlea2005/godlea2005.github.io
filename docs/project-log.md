@@ -130,3 +130,10 @@
 - 运维文档收口：明确了六个迁移的顺序、三个 Edge Function 的部署顺序、WASM `static_files`/来源/许可证/SHA-256、Supabase 与 GitHub 变量边界、安全错误/可观察性、disposable staging live gates 和禁止回退到直写的策略。
 - RED→GREEN 记录：部署契约首先因运维手册缺少新迁移/函数而失败（1 failed / 3 passed）；文档与契约更新后 focused 4/4 通过，全量 13 个测试文件共 228/228 通过，生产构建通过。构建仍仅有既有 `MusicPage` 527.28 kB 大于 500 kB 的 chunk 警告，本次未修改该模块。
 - 发布状态继续为“待外部操作门槛”：本任务没有 link 远程项目、应用迁移、部署函数、读写 Secrets、触发 workflow 或发布 Pages。原生 Deno 启动/bundle、真实 PostgreSQL 语法/grants/CAS/takeover、Storage signed upload/Blob MIME/删除、第七张、跨用户、响应丢失 finalize、超时退款、cleanup 分页/孤儿清理仍须在 disposable/staging 完成。
+
+## 2026-09-03 — 最终分支审查集中修复
+
+- 新增 append-only `202609030001_commerce_project_validation.sql`：撤销 authenticated 对 `commerce_projects` 的直接写入，create/update/locked 统一走 owner-checked SECURITY DEFINER RPC；十个专业字段采用精确 allowlist、字符串类型、单字段 2000 字符和 32768-byte 总上限。
+- 项目删除改为先执行 `delete_commerce_project` 权威栅栏，再删除已查询的 owned Storage 路径。生成先赢时不触碰对象；删除先赢后即使 Storage 失败，数据库结果仍保持成功并由既有 orphan cleanup 收敛。
+- 新增 admin-only `admin_refund_commerce_generation` 与站长任务表人工退款动作：generation/entitlement 行锁、`refunded_at`、唯一 `generation_refund` 流水和审计原因共同保证重复/并发只加 1 次。
+- 浏览器现在在 reserve 前拒绝零字节图片。发布状态仍为“待外部操作门槛”；未执行远程迁移、函数部署、Secrets、workflow 或 Pages 操作。

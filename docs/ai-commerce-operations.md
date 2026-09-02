@@ -20,6 +20,7 @@ AI 电商迁移必须按时间戳顺序应用：
 4. `202608300002_commerce_cleanup_claim.sql`
 5. `202608300003_commerce_cleanup_recovery.sql`
 6. `202608310001_commerce_upload_security.sql`
+7. `202609030001_commerce_project_validation.sql`
 
 先核对项目引用，再链接和预演：
 
@@ -29,7 +30,7 @@ npx.cmd supabase migration list --linked
 npx.cmd supabase db push --dry-run
 ```
 
-确认预演仅包含上述待应用文件、已完成备份并选定维护窗口后，才由发布负责人执行 `npx.cmd supabase db push`。先在 disposable 库验证 `202608310001` 的迁移语法和 service_role grant：`reserve_commerce_asset` 仅授权 authenticated，claim/release/finalize/fail/reconcile/list/takeover RPC 仅授权 service_role，public/anon 均无权执行；同时确认 authenticated 的资产表 insert/update/delete 权限和 Storage insert policy 已移除。迁移上线后不承诺破坏性 down migration；回滚采用新的、时间戳更晚的前向修复迁移。
+确认预演仅包含上述待应用文件、已完成备份并选定维护窗口后，才由发布负责人执行 `npx.cmd supabase db push`。先在 disposable 库验证 `202608310001` 的迁移语法和 service_role grant：`reserve_commerce_asset` 仅授权 authenticated，claim/release/finalize/fail/reconcile/list/takeover RPC 仅授权 service_role，public/anon 均无权执行；同时确认 authenticated 的资产表 insert/update/delete 权限和 Storage insert policy 已移除。再验证 `202609030001`：authenticated 对 `commerce_projects` 的直接 INSERT / UPDATE / DELETE 已撤销，只能调用 `create_commerce_project`、`update_commerce_project`、`set_commerce_project_locked` 与既有 fenced delete RPC；`admin_refund_commerce_generation` 虽授予 authenticated 调用入口，函数内仍必须通过 `site_is_admin()`。迁移上线后不承诺破坏性 down migration；回滚采用新的、时间戳更晚的前向修复迁移。
 
 ## 3. 站点管理员
 
@@ -85,6 +86,10 @@ npx.cmd supabase functions deploy cleanup-commerce-assets --no-verify-jwt
 
 浏览器的唯一允许流程是 `reserve` → `signed upload` → `finalize`。reserve 在项目行锁下验证用户/项目、MIME/大小和最多 6 张，并在服务端生成 `<user UUID>/<project UUID>/<random UUID>.<jpg|png|webp>` 路径；只有特权 Storage 客户端为该路径签发一次性 token。finalize 用 service-only CAS 认领 validation attempt，下载对象后检查 Blob MIME、预留/实际大小、8 MiB 上限、JPEG/PNG/WebP 容器和真实解码尺寸，再以 attempt-bound CAS 转为 ready。浏览器不能直接写 `commerce_project_assets` 或任意 Storage 路径。校验失败必须先确认 Storage 对象删除成功，再标记 failed；删除失败时释放 claim 供重试。
 
+项目正文也只能通过 authenticated SECURITY DEFINER RPC 写入。`create_commerce_project` / `update_commerce_project` 对 `category`、`specifications`、`priceRange`、`sellingPoints`、`audience`、`brandTone`、`competitorLinks`、`prohibitedWords`、`desiredStyle`、`notes` 做精确 allowlist：每个值必须是字符串、每字段最多 2000 字符、JSON 总存储不超过 32768 bytes；未知键、数组、对象、数字和超限值全部失败关闭。名称、平台、模式和项目归属同样由数据库验证。
+
+删除项目时，客户端可先读取该用户拥有的 Storage 路径，但必须先调用 `delete_commerce_project` 完成事务栅栏，再删除 Storage 对象。生成先赢时 RPC 会在任何 Storage 删除前拒绝；删除先赢时项目行先消失，再移除对象。后置 Storage 删除失败不伪称数据库回滚：项目删除仍视为成功，现有孤儿对象 cleanup 会继续回收。
+
 ## 5. GitHub 配置
 
 Repository Settings → Secrets and variables → Actions：
@@ -135,9 +140,9 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 ## 8. 安全退款与恢复
 
-先查生成记录及相同 `generation_id` 的 `credit_ledger`。模型调用失败的正常路径由 `analyze-commerce` 以 service role 调用 `fail_commerce_generation`；该 RPC 根据 `credit_charged` 与 `refunded_at` 幂等地只退款一次。当前没有面向浏览器管理员的“手工退款”RPC，因此不要伪造 SQL 更新余额，也不要从前端调用 service-role RPC。
+先查生成记录及相同 `generation_id` 的 `credit_ledger`。模型调用失败的正常路径由 `analyze-commerce` 以 service role 调用 `fail_commerce_generation`；该 RPC 根据 `credit_charged` 与 `refunded_at` 幂等地只退款一次。站长任务表的“人工退款”调用 admin-only `admin_refund_commerce_generation`，必须填写 1–500 字原因；函数锁定 generation 与 entitlement，仅当 `credit_charged=true` 且尚未退款时恰好加 1、设置 `refunded_at`、写唯一 generation-scoped `generation_refund` 流水和 `admin_audit_log`。重复或并发调用返回明确的 `already_refunded` 幂等结果，不会双加。
 
-如生产出现卡住的 processing 任务，由服务端运维人员在受控脚本/函数中调用既有 `fail_commerce_generation(<GENERATION_UUID>, <ERROR_CODE>, <SAFE_MESSAGE>)`，再次查询生成记录与账本确认只有一条 `generation_refund`。清理恢复则使用既有 cleanup lease/recovery RPC 链路，不跳过 claim/finalize 状态机。
+如生产出现卡住的 processing 任务，优先让正常 stale recovery 调用既有 `fail_commerce_generation`；人工退款只处理计费，不替代任务状态恢复。再次查询生成记录与账本确认只有一条 `generation_refund`。清理恢复继续使用既有 cleanup lease/recovery RPC 链路，不跳过 claim/finalize 状态机。
 
 ## 9. 保留与清理策略
 
@@ -165,7 +170,9 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 生产专属门槛（本地 mock/unit 只能证明契约，不能替代）：
 
-- [ ] **迁移语法/grants**：六个 AI 电商迁移在新建 disposable PostgreSQL/Supabase 项目完整执行；核对 service_role grant、authenticated 仅能 reserve、public/anon 不可执行新 RPC，且普通用户直接写资产行失败。
+- [ ] **迁移语法/grants**：七个 AI 电商迁移在新建 disposable PostgreSQL/Supabase 项目完整执行；核对 service_role grant、authenticated 仅能 reserve、public/anon 不可执行 service-only RPC，且普通用户直接写资产行失败。
+- [ ] **项目输入 RPC/直写拒绝**：普通 authenticated 令牌直接 INSERT/UPDATE `commerce_projects` 失败；create/update RPC 接受 allowlist 内正常字符串，并拒绝超过 2000 字符、nested JSON、未知键、非字符串、总字节超限、非法 name/platform/mode 和跨用户项目。
+- [ ] **人工退款重复/并发**：对同一已扣次 generation 并发调用管理员退款并与自动 fail/refund 交错，最终额度只增加 1、`refunded_at` 非空、仅一条 `generation_refund`、仅一次成功审计；后续请求返回 `already_refunded`。
 - [ ] **直传孤儿对象拒绝**：不经 reserve 直接向自己前缀或伪造路径上传时 Storage 拒绝，不产生资产行/孤儿对象。
 - [ ] **第七张**：同项目已有 6 个非删除状态时，串行和并发的第七张都在项目行锁下返回 `IMAGE_LIMIT_REACHED`，不生成 token/对象。
 - [ ] **跨用户 RLS/路径**：用户 B 不能 reserve/finalize 用户 A 的项目或 asset，不能读取/删除 A 的行，也不能使用或构造 A 的 path/token。

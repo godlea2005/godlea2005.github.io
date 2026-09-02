@@ -17,6 +17,7 @@ import type {
   CommerceProjectDetails,
   CommerceProjectInput,
   GenerationStartResult,
+  GenerationRefundResult,
   SetUserEntitlementInput,
 } from './types'
 import { validateProductFile, validateProjectInput } from './validation'
@@ -120,6 +121,9 @@ export const mapCommerceError = (error: unknown): CommerceRepositoryError => {
   }
   if (status === 410 || /expired|expires|过期/.test(normalized)) {
     return new CommerceRepositoryError('ASSETS_EXPIRED', '图片已过期，请重新上传后再试。', error)
+  }
+  if (code === '55000' && /project has an active generation|active generation/.test(normalized)) {
+    return new CommerceRepositoryError('VALIDATION', '项目仍在生成中，请等待任务完成或终止后再删除。', error)
   }
   return new CommerceRepositoryError('NETWORK', '网络或服务暂时不可用，请检查连接后重试。', error)
 }
@@ -364,6 +368,7 @@ export interface CommerceRepository {
   setProjectLocked(id: string, locked: boolean): Promise<void>
   getAdminDashboard(query?: CommerceAdminDashboardQuery): Promise<CommerceAdminDashboard>
   setUserEntitlement(input: SetUserEntitlementInput): Promise<void>
+  refundGeneration(generationId: string, reason: string): Promise<GenerationRefundResult>
   updateAdminSettings(settings: CommerceAdminSettings, reason: string): Promise<void>
 }
 
@@ -407,21 +412,17 @@ class SupabaseCommerceRepository implements CommerceRepository {
     const validation = validateProjectInput(input)
     if (!validation.ok) throw validationError(validation.errors)
 
-    const userId = await this.requireAuthenticatedUser()
-    const { data, error } = await this.client
-      .from('commerce_projects')
-      .insert({
-        user_id: userId,
-        name: input.name.trim(),
-        platform: input.platform,
-        mode: input.mode,
-        input_data: projectDetails(input),
-      })
-      .select('id,user_id,name,platform,mode,input_data,locked,created_at,updated_at')
-      .single()
+    await this.requireAuthenticatedUser()
+    const { data, error } = await this.client.rpc('create_commerce_project', {
+      p_name: input.name.trim(),
+      p_platform: input.platform,
+      p_mode: input.mode,
+      p_input_data: projectDetails(input),
+    })
     if (error) throw mapCommerceError(error)
-    if (!data) throw mapCommerceError(new Error('project response missing'))
-    return rowToProject(data)
+    const row = asArray(data)[0] ?? (isRecord(data) ? data : null)
+    if (!row) throw mapCommerceError(new Error('project response missing'))
+    return rowToProject(row)
   }
 
   async uploadAssets(
@@ -580,16 +581,6 @@ class SupabaseCommerceRepository implements CommerceRepository {
 
   async deleteProject(id: string): Promise<void> {
     const userId = await this.requireAuthenticatedUser()
-    const { data: activeGenerations, error: activeError } = await this.client
-      .from('commerce_generations')
-      .select('status')
-      .eq('project_id', id)
-      .eq('user_id', userId)
-      .in('status', ['queued', 'processing'])
-    if (activeError) throw mapCommerceError(activeError)
-    if (asArray(activeGenerations).length > 0) {
-      throw new CommerceRepositoryError('VALIDATION', '项目仍在生成中，请等待任务完成或终止后再删除。')
-    }
     const { data, error } = await this.client
       .from('commerce_project_assets')
       .select('storage_path')
@@ -600,18 +591,24 @@ class SupabaseCommerceRepository implements CommerceRepository {
     const paths = asArray(data)
       .map((asset) => asString(asset.storage_path))
       .filter(Boolean)
-    if (paths.length > 0) {
-      const { error: storageError } = await this.client.storage.from(assetBucket).remove(paths)
-      if (storageError) throw mapCommerceError(storageError)
-    }
-
     const { error: deleteError } = await this.client.rpc('delete_commerce_project', { p_project_id: id })
     if (deleteError && errorDetails(deleteError).code !== 'P0002') throw mapCommerceError(deleteError)
+
+    if (paths.length > 0) {
+      try {
+        await this.client.storage.from(assetBucket).remove(paths)
+      } catch {
+        // The project transaction is already committed. Orphan cleanup owns retry.
+      }
+    }
   }
 
   async setProjectLocked(id: string, locked: boolean): Promise<void> {
     await this.requireAuthenticatedUser()
-    const { error } = await this.client.from('commerce_projects').update({ locked }).eq('id', id)
+    const { error } = await this.client.rpc('set_commerce_project_locked', {
+      p_project_id: id,
+      p_locked: locked,
+    })
     if (error) throw mapCommerceError(error)
   }
 
@@ -650,6 +647,26 @@ class SupabaseCommerceRepository implements CommerceRepository {
       p_reason: input.reason,
     })
     if (error) throw mapCommerceError(error)
+  }
+
+  async refundGeneration(generationId: string, reason: string): Promise<GenerationRefundResult> {
+    await this.requireAuthenticatedUser()
+    const normalizedReason = reason.trim()
+    if (!generationId || normalizedReason.length < 1 || normalizedReason.length > 500) {
+      throw validationError(['请填写有效任务 ID 和 1–500 字退款原因'])
+    }
+    const { data, error } = await this.client.rpc('admin_refund_commerce_generation', {
+      p_generation_id: generationId,
+      p_reason: normalizedReason,
+    })
+    if (error) throw mapCommerceError(error)
+    const result = asRecord(data)
+    const status = asString(result.status)
+    const refundedAt = asString(result.refundedAt)
+    if ((status !== 'refunded' && status !== 'already_refunded') || !refundedAt) {
+      throw mapCommerceError(new Error('refund response missing'))
+    }
+    return { status, credits: asNumber(result.credits), refundedAt }
   }
 
   async updateAdminSettings(settings: CommerceAdminSettings, reason: string): Promise<void> {

@@ -9,8 +9,12 @@ npx.cmd supabase link --project-ref ujwwwqlpwdplulzslgpi
 npx.cmd supabase db push
 ```
 
-`db push` 会按顺序应用 `migrations/` 中的留言板、AI 电商、后台兼容与清理租约迁移。
-其中清理能力由 `202608300001_commerce_cleanup_lease.sql` 提供。执行前应在目标项目确认备份与
+`db push` 会按顺序应用 `migrations/` 中的留言板与以下 AI 电商迁移：`202608210001_ai_commerce.sql`、
+`202608290001_admin_entitlement_daily_limit.sql`、`202608300001_commerce_cleanup_lease.sql`、
+`202608300002_commerce_cleanup_claim.sql`、`202608300003_commerce_cleanup_recovery.sql`、
+`202608310001_commerce_upload_security.sql`、`202609030001_commerce_project_validation.sql`。
+最后一项撤销 authenticated 对项目的直接 INSERT/UPDATE，建立受校验的 create/update/locked RPC
+和 admin-only 人工退款 RPC。执行前应在目标项目确认备份与
 project ref；本仓库不保存数据库密码、service role key 或 OAuth Secret。
 
 AI 电商迁移会自动完成以下工作：
@@ -73,7 +77,7 @@ npx.cmd supabase functions deploy commerce-upload --no-verify-jwt
 
 ## 私有产品图自动清理
 
-`cleanup-commerce-assets` 每天清理超过 7 天的私有产品图；清理前会把超过 15 分钟仍处于
+`cleanup-commerce-assets` 每 15 分钟检查超过 7 天的私有产品图；清理前会把超过 15 分钟仍处于
 `queued` / `processing` 的任务标记失败、幂等退款，并在没有其他活动任务时恢复图片状态。
 过期图片总是优先处理。过期处理后若有效资源仍超过 `storage_soft_limit_bytes`，函数才会按
 上传时间从早到晚删除未锁定的 `ready` 图片，直到预计回落到 `storage_target_bytes`。项目锁定
@@ -99,8 +103,8 @@ GitHub 仓库需要配置两个 Actions Secret：
 - `SUPABASE_CLEANUP_URL`：部署后的 `cleanup-commerce-assets` 函数 URL。
 - `SUPABASE_CLEANUP_SECRET`：与 Supabase `CLEANUP_SECRET` 完全相同的高强度随机值。
 
-`.github/workflows/cleanup-commerce-assets.yml` 在每天 `19:20 UTC` 运行，即上海时间次日
-`03:20`，也支持 `workflow_dispatch` 手工触发。工作流对非 2xx 响应直接失败，不输出 Secret。
+`.github/workflows/cleanup-commerce-assets.yml` 使用 `*/15 * * * *`，也支持 `workflow_dispatch`
+手工触发。工作流对非 2xx 响应直接失败，不输出 Secret。
 本次仓库更改不会设置 Secret、部署函数、触发工作流或修改生产数据。
 
 如需单独核对或修复站长迁移，可在 SQL Editor 运行同一条幂等 SQL：
@@ -113,9 +117,9 @@ on conflict (user_id) do nothing;
 
 产品图片必须先由浏览器调用 `commerce-upload` 预留，再用返回的一次性 token 上传到函数生成的
 `commerce-assets/<当前用户 UUID>/<项目 UUID>/...` 路径，并调用 finalize；普通用户令牌不能直接创建对象。
-删除项目时，客户端先依据 Storage RLS 删除该项目的全部对象；全部成功后再调用
-`delete_commerce_project(uuid)` 删除数据库行。若项目仍有 `queued` / `processing`
-任务，RPC 会拒绝删除；任务进入终态后可重试。项目删除后任务、结果、计费和幂等
+删除项目时，客户端先读取 owned Storage 路径，再调用 `delete_commerce_project(uuid)` 完成
+数据库事务栅栏；RPC 成功后才删除对象。若项目仍有 `queued` / `processing` 任务，RPC 会在
+Storage 删除前拒绝；后置对象删除失败时项目仍已删除，由 orphan cleanup 回收。项目删除后任务、结果、计费和幂等
 历史继续保留，仅把任务的 `project_id` 置空。迁移不会创建公开产品图 bucket，也不会引入额外的删除 Edge Function。
 
 ## 1. 执行数据库迁移

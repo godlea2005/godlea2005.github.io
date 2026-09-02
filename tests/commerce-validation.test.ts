@@ -37,6 +37,12 @@ describe('commerce validation', () => {
     expect(validateProductFile(large).ok).toBe(false)
   })
 
+  it('rejects zero-byte product images before upload reservation', () => {
+    const empty = new File([], 'empty.png', { type: 'image/png' })
+    expect(validateProductFile(empty)).toMatchObject({ ok: false })
+    expect(validateProductFile(empty).errors).toContain('图片文件不能为空')
+  })
+
   it('rejects incomplete AI results', () => {
     expect(isCommerceResult({ productSummary: '杯子' })).toBe(false)
   })

@@ -60,3 +60,7 @@ Task 5 review: first independent pass found 0 Critical / 2 Important deployment-
 Task 5: fix round 1/5 (2 addressed, 0 open — deployment tests now bind exact implementation and fail-closed documentation requirements)
 
 Task 5: complete (commit 3688254; scoped independent re-review APPROVED, 0 Critical / 0 Important / 0 Minor; deployment contract 4/4, full 228/228, build and security scans clean; all live Deno/PostgreSQL/Storage/OAuth/Pages checks remain explicit external gates)
+
+Final branch fix: started from `11acf8b` for the final review's 3 Important + 1 Minor only. RED focused run: 4 files / 83 tests, 12 failed and 71 passed (delete race 3, project validation/repository 5, manual refund repository/UI 3, empty file 1). Documentation RED: 1 failed / 3 passed because the new migration/RPCs and corrected deletion/refund contracts were absent.
+
+Final branch fix: GREEN implementation adds append-only `202609030001_commerce_project_validation.sql`, authoritative delete-before-Storage ordering, validated create/update/locked RPCs, idempotent admin manual refund with UI, and zero-byte client validation. Focused contracts pass 89/89; full Vitest passes 237/237 across 14 files; Edge Node fallback passes 65/65; strict TypeScript and production build pass with only the pre-existing MusicPage chunk warning. Secret scan is clean across all 15 changed/untracked files. Native Deno/PostgreSQL/Supabase/Storage/OAuth/Pages verification remains an external release gate.
