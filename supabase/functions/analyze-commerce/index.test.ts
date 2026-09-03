@@ -8,7 +8,13 @@ import {
   type BackgroundStore,
   type UserClient,
 } from '../_shared/commerce-runtime.ts'
-import { createOpenAiProvider, SafeProviderError } from '../_shared/ai-provider.ts'
+import {
+  createAiProvider,
+  createDeepSeekProvider,
+  createOpenAiProvider,
+  SafeProviderError,
+  type AiProvider,
+} from '../_shared/ai-provider.ts'
 import { buildCommercePrompt } from '../_shared/commerce-prompt.ts'
 import {
   COMMERCE_RESULT_SCHEMA,
@@ -35,6 +41,16 @@ const assertEquals = (actual: unknown, expected: unknown, message = 'values diff
 
 const assertStringIncludes = (actual: string, expected: string) => {
   assert(actual.includes(expected), `expected string to include ${expected}`)
+}
+
+const assertProviderError = async (provider: Pick<AiProvider, 'generate'>, code: string) => {
+  try {
+    await provider.generate({ prompt: 'x', imageUrls: [], schema: {} })
+    throw new Error('provider should reject')
+  } catch (error) {
+    assert(error instanceof SafeProviderError)
+    assertEquals(error.code, code)
+  }
 }
 
 const UUID = '11111111-1111-4111-8111-111111111111'
@@ -197,6 +213,124 @@ test('OpenAI provider sends multimodal strict Responses request and uses default
   assertEquals(output.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60 })
 })
 
+test('DeepSeek provider sends vision input to the fixed Responses endpoint', async () => {
+  let requestUrl = ''
+  let requestBody: Record<string, unknown> = {}
+  let authorization = ''
+  const provider = createDeepSeekProvider({
+    getEnv: (name) => {
+      if (name === 'DEEPSEEK_API_KEY') return 'deepseek-test-key'
+      if (name === 'DEEPSEEK_BASE_URL') return 'https://evil.invalid/responses'
+      return undefined
+    },
+    fetchFn: async (url, init) => {
+      requestUrl = String(url)
+      requestBody = JSON.parse(String(init?.body))
+      authorization = new Headers(init?.headers).get('authorization') ?? ''
+      return Response.json({
+        output_text: JSON.stringify(sampleResult()),
+        model: 'deepseek-v4-flash-vision-exp',
+        usage: { input_tokens: 11, output_tokens: 22, total_tokens: 33, ignored: 'no' },
+      })
+    },
+  })
+
+  const output = await provider.generate({
+    prompt: 'analyze product image',
+    imageUrls: ['https://signed.invalid/product.webp'],
+    schema: COMMERCE_RESULT_SCHEMA as unknown as Record<string, unknown>,
+  })
+
+  assertEquals(requestUrl, 'https://api.deepseek.com/responses')
+  assertEquals(authorization, 'Bearer deepseek-test-key')
+  assertEquals(requestBody.model, 'deepseek-v4-flash-vision-exp')
+  assertEquals(requestBody.reasoning, { effort: 'none' })
+  assert(!Object.hasOwn(requestBody, 'store'))
+  const format = (requestBody.text as { format: Record<string, unknown> }).format
+  assertEquals(format.type, 'json_schema')
+  assertEquals(format.name, 'commerce_result')
+  assertEquals(format.schema, COMMERCE_RESULT_SCHEMA)
+  assert(!Object.hasOwn(format, 'strict'))
+  const input = requestBody.input as Array<{ content: Array<Record<string, unknown>> }>
+  assertEquals(input[0].content[0], { type: 'input_text', text: 'analyze product image' })
+  assertEquals(input[0].content[1], {
+    type: 'input_image',
+    image_url: 'https://signed.invalid/product.webp',
+  })
+  assertEquals(output.usage, { input_tokens: 11, output_tokens: 22, total_tokens: 33 })
+})
+
+test('provider router selects only the explicitly configured provider', async () => {
+  const calls: string[] = []
+  const env: Record<string, string> = {
+    AI_PROVIDER: 'deepseek',
+    DEEPSEEK_API_KEY: 'deepseek-test-key',
+    OPENAI_API_KEY: 'openai-test-key',
+  }
+  const deepseek = createAiProvider({
+    getEnv: (name) => env[name],
+    fetchFn: async (url) => {
+      calls.push(String(url))
+      return Response.json({ output_text: JSON.stringify(sampleResult()) })
+    },
+  })
+  await deepseek.generate({ prompt: 'x', imageUrls: [], schema: {} })
+  assertEquals(calls, ['https://api.deepseek.com/responses'])
+
+  for (const value of [undefined, '', 'other']) {
+    const provider = createAiProvider({
+      getEnv: (name) => name === 'AI_PROVIDER' ? value : undefined,
+    })
+    await assertProviderError(provider, 'PROVIDER_NOT_CONFIGURED')
+  }
+})
+
+test('provider router preserves explicit OpenAI selection', async () => {
+  const calls: string[] = []
+  const env: Record<string, string> = {
+    AI_PROVIDER: 'openai',
+    DEEPSEEK_API_KEY: 'deepseek-test-key',
+    OPENAI_API_KEY: 'openai-test-key',
+  }
+  const openai = createAiProvider({
+    getEnv: (name) => env[name],
+    fetchFn: async (url) => {
+      calls.push(String(url))
+      return Response.json({ output_text: JSON.stringify(sampleResult()) })
+    },
+  })
+  await openai.generate({ prompt: 'x', imageUrls: [], schema: {} })
+  assertEquals(calls, ['https://api.openai.com/v1/responses'])
+})
+
+test('DeepSeek provider rejects missing keys and non-vision model configuration', async () => {
+  for (const env of [
+    { DEEPSEEK_MODEL: 'deepseek-v4-flash-vision-exp' },
+    { DEEPSEEK_API_KEY: 'test-key', DEEPSEEK_MODEL: 'deepseek-v4-flash' },
+  ]) {
+    const provider = createDeepSeekProvider({
+      getEnv: (name) => env[name as keyof typeof env],
+    })
+    await assertProviderError(provider, 'PROVIDER_NOT_CONFIGURED')
+  }
+})
+
+test('DeepSeek provider hides upstream errors and credentials', async () => {
+  const provider = createDeepSeekProvider({
+    getEnv: (name) => name === 'DEEPSEEK_API_KEY' ? 'deepseek-test-key' : undefined,
+    fetchFn: async () => new Response('private upstream detail', { status: 429 }),
+  })
+  try {
+    await provider.generate({ prompt: 'x', imageUrls: [], schema: {} })
+    throw new Error('provider should reject')
+  } catch (error) {
+    assert(error instanceof SafeProviderError)
+    assertEquals(error.code, 'PROVIDER_ERROR')
+    assert(!error.message.includes('private upstream detail'))
+    assert(!JSON.stringify(error).includes('deepseek-test-key'))
+  }
+})
+
 test('OpenAI provider supports configured model and hides provider errors', async () => {
   const provider = createOpenAiProvider({
     getEnv: (name) => name === 'OPENAI_API_KEY' ? 'test-key' : name === 'OPENAI_MODEL' ? 'configured-model' : undefined,
@@ -259,17 +393,18 @@ test('OpenAI provider aborts a hanging request at the configured deadline and cl
   assertEquals(clearedTimer, 42)
 })
 
-test('OpenAI provider defaults invalid deadlines and clamps finite overrides to 5000..90000 ms', async () => {
+test('provider timeout prefers AI_TIMEOUT_MS, preserves legacy fallback, and clamps to 5000..90000 ms', async () => {
   for (const [configured, expected] of [
-    [undefined, 60_000],
-    ['not-a-number', 60_000],
-    ['0', 60_000],
-    ['100', 5_000],
-    ['120000', 90_000],
-  ] as const) {
+    [{}, 60_000],
+    [{ AI_TIMEOUT_MS: '7000', OPENAI_TIMEOUT_MS: '5000' }, 7_000],
+    [{ AI_TIMEOUT_MS: '100' }, 5_000],
+    [{ AI_TIMEOUT_MS: '120000' }, 90_000],
+    [{ AI_TIMEOUT_MS: 'bad', OPENAI_TIMEOUT_MS: '5000' }, 60_000],
+    [{ OPENAI_TIMEOUT_MS: '5000' }, 5_000],
+  ] as Array<[Record<string, string>, number]>) {
     let scheduledDelay = 0
     const provider = createOpenAiProvider({
-      getEnv: (name) => name === 'OPENAI_API_KEY' ? 'test-key' : name === 'OPENAI_TIMEOUT_MS' ? configured : undefined,
+      getEnv: (name) => name === 'OPENAI_API_KEY' ? 'test-key' : configured[name],
       setTimeoutFn: ((_callback: () => void, delay: number) => {
         scheduledDelay = delay
         return 7
