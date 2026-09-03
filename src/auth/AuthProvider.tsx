@@ -51,7 +51,10 @@ let oauthCallbackInitializationPromise: Promise<OAuthCallbackResult> | null = nu
 
 const getRedirectUrl = () => `${window.location.origin}${window.location.pathname}?auth=site`
 const normalizeReturnHash = (value: string | null | undefined) => value?.startsWith('#') ? value : '#ai-commerce'
-const canRetryOAuthAsSignIn = (code: string, intent: OAuthIntent | null) =>
+const canRetryOAuthAsSignIn = (
+  code: string,
+  intent: OAuthIntent | null,
+): intent is OAuthIntent & { mode: 'link' } =>
   intent?.mode === 'link' && oauthAccountConflictCodes.has(code)
 
 const readOAuthIntent = (): OAuthIntent | null => {
