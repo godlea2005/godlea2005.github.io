@@ -3,7 +3,12 @@ export interface AiProvider {
     prompt: string
     imageUrls: string[]
     schema: Record<string, unknown>
-  }): Promise<{ result: unknown; model: string; usage: Record<string, number> }>
+  }): Promise<{
+    result: unknown
+    provider: 'openai' | 'deepseek'
+    model: string
+    usage: Record<string, number>
+  }>
 }
 
 export class SafeProviderError extends Error {
@@ -24,6 +29,7 @@ type ProviderDependencies = {
 }
 
 type ResponsesProviderConfig = {
+  provider: 'openai' | 'deepseek'
   endpoint: string
   apiKeyEnv: 'OPENAI_API_KEY' | 'DEEPSEEK_API_KEY'
   modelEnv: 'OPENAI_MODEL' | 'DEEPSEEK_MODEL'
@@ -178,6 +184,7 @@ const createResponsesProvider = (
 
       return {
         result,
+        provider: config.provider,
         model: typeof body.model === 'string' && body.model.trim() ? body.model : model,
         usage: numericUsage(body.usage),
       }
@@ -189,6 +196,7 @@ const createResponsesProvider = (
 
 export const createOpenAiProvider = (dependencies: ProviderDependencies = {}): AiProvider =>
   createResponsesProvider({
+    provider: 'openai',
     endpoint: OPENAI_RESPONSES_URL,
     apiKeyEnv: 'OPENAI_API_KEY',
     modelEnv: 'OPENAI_MODEL',
@@ -199,6 +207,7 @@ export const createOpenAiProvider = (dependencies: ProviderDependencies = {}): A
 
 export const createDeepSeekProvider = (dependencies: ProviderDependencies = {}): AiProvider =>
   createResponsesProvider({
+    provider: 'deepseek',
     endpoint: DEEPSEEK_RESPONSES_URL,
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     modelEnv: 'DEEPSEEK_MODEL',

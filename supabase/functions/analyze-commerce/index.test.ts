@@ -210,6 +210,7 @@ test('OpenAI provider sends multimodal strict Responses request and uses default
   assertEquals(input[0].content[0].type, 'input_text')
   assertEquals(input[0].content[1], { type: 'input_image', image_url: 'https://signed.invalid/a.jpg' })
   assertEquals(authHeader, 'Bearer test-key-not-a-real-secret')
+  assertEquals(output.provider, 'openai')
   assertEquals(output.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60 })
 })
 
@@ -257,6 +258,7 @@ test('DeepSeek provider sends vision input to the fixed Responses endpoint', asy
     type: 'input_image',
     image_url: 'https://signed.invalid/product.webp',
   })
+  assertEquals(output.provider, 'deepseek')
   assertEquals(output.usage, { input_tokens: 11, output_tokens: 22, total_tokens: 33 })
 })
 
@@ -316,9 +318,17 @@ test('DeepSeek provider rejects missing keys and non-vision model configuration'
 })
 
 test('DeepSeek provider hides upstream errors and credentials', async () => {
-  const provider = createDeepSeekProvider({
-    getEnv: (name) => name === 'DEEPSEEK_API_KEY' ? 'deepseek-test-key' : undefined,
-    fetchFn: async () => new Response('private upstream detail', { status: 429 }),
+  const calls: string[] = []
+  const provider = createAiProvider({
+    getEnv: (name) => ({
+      AI_PROVIDER: 'deepseek',
+      DEEPSEEK_API_KEY: 'deepseek-test-key',
+      OPENAI_API_KEY: 'openai-test-key',
+    })[name],
+    fetchFn: async (url) => {
+      calls.push(String(url))
+      return new Response('private upstream detail', { status: 429 })
+    },
   })
   try {
     await provider.generate({ prompt: 'x', imageUrls: [], schema: {} })
@@ -328,6 +338,44 @@ test('DeepSeek provider hides upstream errors and credentials', async () => {
     assertEquals(error.code, 'PROVIDER_ERROR')
     assert(!error.message.includes('private upstream detail'))
     assert(!JSON.stringify(error).includes('deepseek-test-key'))
+  }
+  assertEquals(calls, ['https://api.deepseek.com/responses'])
+})
+
+test('DeepSeek provider maps network and malformed responses without fallback', async () => {
+  const cases: Array<{
+    expectedCode: string
+    response: () => Promise<Response>
+  }> = [
+    {
+      expectedCode: 'PROVIDER_UNAVAILABLE',
+      response: async () => { throw new Error('private network detail') },
+    },
+    {
+      expectedCode: 'PROVIDER_RESPONSE_INVALID',
+      response: async () => Response.json({ output: [] }),
+    },
+    {
+      expectedCode: 'PROVIDER_RESPONSE_INVALID',
+      response: async () => Response.json({ output_text: 'not-json' }),
+    },
+  ]
+
+  for (const testCase of cases) {
+    const calls: string[] = []
+    const provider = createAiProvider({
+      getEnv: (name) => ({
+        AI_PROVIDER: 'deepseek',
+        DEEPSEEK_API_KEY: 'deepseek-test-key',
+        OPENAI_API_KEY: 'openai-test-key',
+      })[name],
+      fetchFn: async (url) => {
+        calls.push(String(url))
+        return await testCase.response()
+      },
+    })
+    await assertProviderError(provider, testCase.expectedCode)
+    assertEquals(calls, ['https://api.deepseek.com/responses'])
   }
 })
 
@@ -557,7 +605,11 @@ test('idempotent completed and processing generations are reused without duplica
   }
 })
 
-const createBackgroundHarness = (overrides: Partial<BackgroundStore> = {}, generated: unknown[] = [sampleResult()]) => {
+const createBackgroundHarness = (
+  overrides: Partial<BackgroundStore> = {},
+  generated: unknown[] = [sampleResult()],
+  provider: 'openai' | 'deepseek' = 'openai',
+) => {
   const events: string[] = []
   const store: BackgroundStore = {
     loadContext: async () => ({
@@ -579,7 +631,7 @@ const createBackgroundHarness = (overrides: Partial<BackgroundStore> = {}, gener
       const result = generated[Math.min(call, generated.length - 1)]
       call += 1
       if (result instanceof Error) throw result
-      return { result, model: 'gpt-5.4-mini', usage: { total_tokens: 12 } }
+      return { result, provider, model: provider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'gpt-5.4-mini', usage: { total_tokens: 12 } }
     },
   }
   return { events, store, aiProvider }
@@ -590,6 +642,19 @@ test('background success relies on the atomic terminal RPC to restore assets', a
   const process = createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })
   await process({ generationId: GENERATION_ID, userId: USER_ID })
   assertEquals(harness.events, ['signed:600', 'assets:processing', 'ai', 'complete'])
+})
+
+test('background completion persists the selected DeepSeek provider identity', async () => {
+  let completed: Parameters<BackgroundStore['completeGeneration']>[0] | undefined
+  const harness = createBackgroundHarness({
+    completeGeneration: async (input) => { completed = input; harness.events.push('complete') },
+  }, [sampleResult()], 'deepseek')
+  await createProcessGeneration({ store: harness.store, aiProvider: harness.aiProvider })({
+    generationId: GENERATION_ID,
+    userId: USER_ID,
+  })
+  assertEquals(completed?.provider, 'deepseek')
+  assertEquals(completed?.model, 'deepseek-v4-flash-vision-exp')
 })
 
 test('background retries exactly once only for an invalid result', async () => {

@@ -283,7 +283,7 @@ export const createProcessGeneration = (dependencies: {
     await dependencies.store.completeGeneration({
       generationId,
       result: generated.result,
-      provider: 'openai',
+      provider: generated.provider,
       model: generated.model,
       usage: generated.usage,
     })
