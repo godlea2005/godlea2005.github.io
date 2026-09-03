@@ -44,12 +44,18 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 const oauthIntentKey = 'wenhao-site:oauth-intent'
 const returnHashKey = 'wenhao-site:return-hash'
 const oauthParameterNames = ['auth', 'code', 'sb_flow_id', 'error', 'error_code', 'error_description']
+const oauthAccountConflictCodes = new Set(['email_exists', 'identity_already_exists'])
 let anonymousSessionPromise: Promise<Session | null> | null = null
 let oauthCallbackPromise: Promise<Session | null> | null = null
 let oauthCallbackInitializationPromise: Promise<OAuthCallbackResult> | null = null
 
 const getRedirectUrl = () => `${window.location.origin}${window.location.pathname}?auth=site`
 const normalizeReturnHash = (value: string | null | undefined) => value?.startsWith('#') ? value : '#ai-commerce'
+const canRetryOAuthAsSignIn = (
+  code: string,
+  intent: OAuthIntent | null,
+): intent is OAuthIntent & { mode: 'link' } =>
+  intent?.mode === 'link' && oauthAccountConflictCodes.has(code)
 
 const readOAuthIntent = (): OAuthIntent | null => {
   try {
@@ -83,6 +89,7 @@ const normalizeAuthUrl = () => {
 }
 
 const explainOAuthError = (code: string, description: string) => {
+  if (code === 'email_exists') return '该邮箱已绑定其他账号，请重新选择登录方式'
   if (code === 'access_denied') return '登录已取消'
   if (code === 'identity_already_exists') return '这个账号已经绑定，将切换为账号登录'
   if (code === 'flow_state_not_found') return '登录已过期，请重新点击登录'
@@ -156,7 +163,7 @@ async function initializeOAuthCallback(): Promise<OAuthCallbackResult> {
 
   if (callbackErrorCode) {
     const intent = readOAuthIntent()
-    if (callbackErrorCode === 'identity_already_exists' && intent?.mode === 'link') {
+    if (canRetryOAuthAsSignIn(callbackErrorCode, intent)) {
       await beginOAuth(intent.provider, 'sign-in')
       return { handled: true, navigating: true, session: null, error: '' }
     }
