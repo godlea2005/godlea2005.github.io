@@ -3,7 +3,12 @@ export interface AiProvider {
     prompt: string
     imageUrls: string[]
     schema: Record<string, unknown>
-  }): Promise<{ result: unknown; model: string; usage: Record<string, number> }>
+  }): Promise<{
+    result: unknown
+    provider: 'openai' | 'deepseek'
+    model: string
+    usage: Record<string, number>
+  }>
 }
 
 export class SafeProviderError extends Error {
@@ -22,6 +27,23 @@ type ProviderDependencies = {
   setTimeoutFn?: typeof setTimeout
   clearTimeoutFn?: typeof clearTimeout
 }
+
+type ResponsesProviderConfig = {
+  provider: 'openai' | 'deepseek'
+  endpoint: string
+  apiKeyEnv: 'OPENAI_API_KEY' | 'DEEPSEEK_API_KEY'
+  modelEnv: 'OPENAI_MODEL' | 'DEEPSEEK_MODEL'
+  defaultModel: string
+  allowedModels?: ReadonlySet<string>
+  includeStore: boolean
+  strictSchema: boolean
+  reasoning?: { effort: 'none' }
+}
+
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
+const DEEPSEEK_RESPONSES_URL = 'https://api.deepseek.com/responses'
+const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'
+const DEEPSEEK_MODEL_ALLOWLIST = new Set([DEEPSEEK_VISION_MODEL])
 
 const DEFAULT_TIMEOUT_MS = 60_000
 const MIN_TIMEOUT_MS = 5_000
@@ -59,7 +81,9 @@ const numericUsage = (value: unknown): Record<string, number> => {
 }
 
 const providerTimeoutMs = (getEnv: (name: string) => string | undefined) => {
-  const configured = Number(getEnv('OPENAI_TIMEOUT_MS')?.trim())
+  const preferred = getEnv('AI_TIMEOUT_MS')?.trim()
+  const raw = preferred || getEnv('OPENAI_TIMEOUT_MS')?.trim()
+  const configured = Number(raw)
   if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_TIMEOUT_MS
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, configured))
 }
@@ -69,49 +93,59 @@ const timeoutError = () => new SafeProviderError(
   'AI 服务响应超时，请稍后重试。',
 )
 
-export const createOpenAiProvider = ({
-  fetchFn = fetch,
-  getEnv = denoEnv,
-  setTimeoutFn = setTimeout,
-  clearTimeoutFn = clearTimeout,
-}: ProviderDependencies = {}): AiProvider => ({
+const notConfiguredError = () => new SafeProviderError(
+  'PROVIDER_NOT_CONFIGURED',
+  'AI 服务尚未配置。',
+)
+
+const createResponsesProvider = (
+  config: ResponsesProviderConfig,
+  {
+    fetchFn = fetch,
+    getEnv = denoEnv,
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout,
+  }: ProviderDependencies = {},
+): AiProvider => ({
   async generate({ prompt, imageUrls, schema }) {
-    const apiKey = getEnv('OPENAI_API_KEY')?.trim()
-    if (!apiKey) {
-      throw new SafeProviderError('PROVIDER_NOT_CONFIGURED', 'AI 服务尚未配置。')
-    }
-    const configuredModel = getEnv('OPENAI_MODEL')?.trim()
-    const model = configuredModel || 'gpt-5.4-mini'
+    const apiKey = getEnv(config.apiKeyEnv)?.trim()
+    if (!apiKey) throw notConfiguredError()
+
+    const configuredModel = getEnv(config.modelEnv)?.trim()
+    const model = configuredModel || config.defaultModel
+    if (config.allowedModels && !config.allowedModels.has(model)) throw notConfiguredError()
 
     const content: Array<Record<string, unknown>> = [
       { type: 'input_text', text: prompt },
       ...imageUrls.map((imageUrl) => ({ type: 'input_image', image_url: imageUrl })),
     ]
+    const format: Record<string, unknown> = {
+      type: 'json_schema',
+      name: 'commerce_result',
+      schema,
+    }
+    if (config.strictSchema) format.strict = true
+
+    const requestBody: Record<string, unknown> = {
+      model,
+      input: [{ role: 'user', content }],
+      text: { format },
+    }
+    if (config.includeStore) requestBody.store = false
+    if (config.reasoning) requestBody.reasoning = config.reasoning
 
     const controller = new AbortController()
     const timer = setTimeoutFn(() => controller.abort(), providerTimeoutMs(getEnv))
     try {
       let response: Response
       try {
-        response = await fetchFn('https://api.openai.com/v1/responses', {
+        response = await fetchFn(config.endpoint, {
           method: 'POST',
           headers: {
             authorization: `Bearer ${apiKey}`,
             'content-type': 'application/json',
           },
-          body: JSON.stringify({
-            model,
-            store: false,
-            input: [{ role: 'user', content }],
-            text: {
-              format: {
-                type: 'json_schema',
-                name: 'commerce_result',
-                strict: true,
-                schema,
-              },
-            },
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         })
       } catch {
@@ -150,6 +184,7 @@ export const createOpenAiProvider = ({
 
       return {
         result,
+        provider: config.provider,
         model: typeof body.model === 'string' && body.model.trim() ? body.model : model,
         usage: numericUsage(body.usage),
       }
@@ -158,3 +193,41 @@ export const createOpenAiProvider = ({
     }
   },
 })
+
+export const createOpenAiProvider = (dependencies: ProviderDependencies = {}): AiProvider =>
+  createResponsesProvider({
+    provider: 'openai',
+    endpoint: OPENAI_RESPONSES_URL,
+    apiKeyEnv: 'OPENAI_API_KEY',
+    modelEnv: 'OPENAI_MODEL',
+    defaultModel: 'gpt-5.4-mini',
+    includeStore: true,
+    strictSchema: true,
+  }, dependencies)
+
+export const createDeepSeekProvider = (dependencies: ProviderDependencies = {}): AiProvider =>
+  createResponsesProvider({
+    provider: 'deepseek',
+    endpoint: DEEPSEEK_RESPONSES_URL,
+    apiKeyEnv: 'DEEPSEEK_API_KEY',
+    modelEnv: 'DEEPSEEK_MODEL',
+    defaultModel: DEEPSEEK_VISION_MODEL,
+    allowedModels: DEEPSEEK_MODEL_ALLOWLIST,
+    includeStore: false,
+    strictSchema: false,
+    reasoning: { effort: 'none' },
+  }, dependencies)
+
+const createUnconfiguredProvider = (): AiProvider => ({
+  async generate() {
+    throw notConfiguredError()
+  },
+})
+
+export const createAiProvider = (dependencies: ProviderDependencies = {}): AiProvider => {
+  const getEnv = dependencies.getEnv ?? denoEnv
+  const provider = getEnv('AI_PROVIDER')?.trim().toLowerCase()
+  if (provider === 'openai') return createOpenAiProvider({ ...dependencies, getEnv })
+  if (provider === 'deepseek') return createDeepSeekProvider({ ...dependencies, getEnv })
+  return createUnconfiguredProvider()
+}

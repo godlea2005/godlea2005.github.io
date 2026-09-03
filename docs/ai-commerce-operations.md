@@ -1,6 +1,6 @@
 # AI 电商设计工作台运维手册
 
-本手册只记录可公开的名称和占位符。不要把 OpenAI 密钥、Supabase secret/service-role key 或清理共享密钥写入仓库、前端变量、工单或聊天。
+本手册只记录可公开的名称和占位符。不要把 DeepSeek/OpenAI 密钥、Supabase secret/service-role key 或清理共享密钥写入仓库、前端变量、工单或聊天。
 
 ## 1. 发布前准备
 
@@ -9,7 +9,7 @@
 - 使用有权访问目标项目的账号执行 `npx.cmd supabase login`。不要在共享终端记录访问令牌。
 - 确认工作区无意外改动，并记录待发布 Git commit。数据库、函数和 Pages 分开发布，任一步失败都停止后续步骤。
 
-发布顺序不得调换：迁移 → `commerce-upload` / `analyze-commerce` / `cleanup-commerce-assets` 函数 → Supabase 服务端 Secrets/环境 → GitHub Variables/Secrets → 可丢弃账号与项目的 staging live gates → Pages。任一步失败时保持“待外部操作门槛”，不继续后续发布。
+发布顺序不得调换：迁移 → Supabase 服务端 Secrets/环境 → `commerce-upload` / `analyze-commerce` / `cleanup-commerce-assets` 函数 → GitHub Variables/Secrets → 可丢弃账号与项目的 staging live gates → Pages。先配置 Provider 再部署新的 `analyze-commerce`，避免函数已接受请求但 Provider 尚未就绪。任一步失败时保持“待外部操作门槛”，不继续后续发布。
 
 ## 2. 数据库迁移
 
@@ -63,13 +63,16 @@ npx.cmd supabase functions deploy cleanup-commerce-assets --no-verify-jwt
 
 `commerce-upload` 和 `analyze-commerce` 的 `verify_jwt = false` 只是为了兼容 publishable key，不表示放开访问：两者在函数内取 Bearer token，调用 `auth.getUser()` 并拒绝匿名用户。`cleanup-commerce-assets` 不接受用户 JWT，它的鉴权边界是恒时比较 `x-cleanup-secret` 和服务端 `CLEANUP_SECRET`。只在 Supabase Dashboard 的 Edge Function Secrets 配置以下名称：
 
-- `OPENAI_API_KEY`、`OPENAI_MODEL`
-- 可选 `OPENAI_TIMEOUT_MS`：缺失、非数字或非正数时默认 `60 秒`；有限正数 clamp 到 `5 秒..90 秒`（`5000..90000 ms`）。超时映射为 `PROVIDER_TIMEOUT`，走普通 fail RPC 和幂等退款路径。
+- Provider 路由：`AI_PROVIDER` 必须为 `deepseek` 或 `openai`。首次部署计划使用 `AI_PROVIDER=deepseek`；缺失或非法值时 fail-closed，不得自动回退到 OpenAI，也不得在单次请求失败后跨提供商重试。
+- DeepSeek：`DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL=deepseek-v4-flash-vision-exp`。当前代码只允许该视觉模型，因为产品图分析必须真正读取图片内容。
+- OpenAI：`OPENAI_API_KEY`、`OPENAI_MODEL`。只有显式设置 `AI_PROVIDER=openai` 才会读取和调用这一组配置。
+- 通用超时：优先读取 `AI_TIMEOUT_MS`；仅在它缺失时兼容旧的 `OPENAI_TIMEOUT_MS`。缺失、非数字或非正数时默认 `60 秒`；有限正数 clamp 到 `5 秒..90 秒`（`5000..90000 ms`）。超时映射为 `PROVIDER_TIMEOUT`，走普通 fail RPC 和幂等退款路径。
+- DeepSeek endpoint 固定为 `https://api.deepseek.com/responses`，OpenAI endpoint 固定为 `https://api.openai.com/v1/responses`；不得配置自定义 Provider URL。
 - `ALLOWED_ORIGINS`
 - `CLEANUP_SECRET`
 - Supabase 运行时凭据：`SUPABASE_URL`，以及平台提供的 publishable/secret 凭据（当前函数优先识别 `SUPABASE_PUBLISHABLE_KEYS`、`SUPABASE_SECRET_KEYS`，也兼容单数形式与旧版 `SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`）
 
-不要把 secret/service-role 凭据、`OPENAI_API_KEY`、`CLEANUP_SECRET` 或 `OPENAI_TIMEOUT_MS` 放入 GitHub Pages 或任何 `VITE_` 变量。部署后用 `npx.cmd supabase functions list` 与 Dashboard 日志核对版本、启动和静态资源加载错误。
+不要把 secret/service-role 凭据、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`CLEANUP_SECRET`、`AI_PROVIDER` 或超时配置放入 GitHub Pages 或任何 `VITE_` 变量。部署后用 `npx.cmd supabase functions list` 与 Dashboard 日志核对版本、启动和静态资源加载错误。
 
 ### commerce-upload static_files / WASM 供应链
 
@@ -158,6 +161,7 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 - 前端：保留已验证的 Git commit 与 Pages artifact；回退到 known-good commit 后重新运行完整 CI/Pages 发布，不手改线上静态文件。
 - 数据库/函数：发布新的前向修复迁移或已修正的 Edge Function；不删除历史迁移，不承诺恢复已经删除的数据。涉及数据修复时先备份、预演并记录审计原因。
+- AI Provider：需要切回 OpenAI 时，先确认服务端已有 `OPENAI_API_KEY` 和可用的 `OPENAI_MODEL`，再将 `AI_PROVIDER=openai` 并重新部署 `analyze-commerce`。不得用自动回退掩盖 DeepSeek 故障；切换前后的在途请求按原有幂等键、扣次和退款状态处理。
 - 安全下限：如 `commerce-upload` 不可用，暂停产品图上传。不得回退到浏览器直写资产表/直传 Storage，不得恢复 authenticated insert/update/delete grant 或 Storage insert policy。回退目标必须仍使用 reserve → signed upload → finalize 安全协议。
 
 ## 11. 发布检查表
@@ -166,7 +170,7 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 - [ ] `.env.example` 只有两个公开占位符，tracked diff 无真实凭据。
 - [ ] `npm.cmd test` 全量通过，`npm.cmd run build` 通过。
-- [ ] `npm.cmd run check:edge` 通过，三个 Edge Function 的原生 Deno 测试 65/65 通过。
+- [ ] `npm.cmd run check:edge` 通过，三个 Edge Function 的原生 Deno 测试 72/72 通过。
 - [ ] 深浅主题、390px/桌面布局、reduced motion、键盘路径与控制台错误完成本地浏览器审计。
 - [ ] workflow 引用 GitHub Variables/Secrets 名称，未把服务端密钥注入前端。
 
@@ -184,7 +188,8 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 - [ ] **takeover/中断 finalize**：模拟进程中断留下 validating 行；cutoff 之前或活跃 claim 不能被 takeover，超时后 cleanup 在行锁内重查、用新 attempt 接管，对象删除成功后才 failed。
 - [ ] **响应丢失 finalize**：让 signed upload 已在 Storage 成功但浏览器丢失响应，确认使用同一 reservation 调用 finalize，不新建 reserve，最终只有一个 ready asset。
 - [ ] **原子终态恢复**：complete/failed 终态写入与最后一个活跃任务结束后的 processing → ready 在同一事务；仍有另一个 queued/processing 任务时不提前恢复，历史遗留行由 reconciliation 收敛。
-- [ ] **提供商超时/超时退款**：用可控慢/无响应 provider 验证默认 60 秒 AbortSignal 和 `OPENAI_TIMEOUT_MS` 5..90 秒 clamp；返回 `PROVIDER_TIMEOUT`，只写一条 `generation_refund`，资产不留在 processing。
+- [ ] **提供商超时/超时退款**：用可控慢/无响应 provider 验证默认 60 秒 AbortSignal、`AI_TIMEOUT_MS` 优先级、旧 `OPENAI_TIMEOUT_MS` 兼容和 5..90 秒 clamp；返回 `PROVIDER_TIMEOUT`，只写一条 `generation_refund`，资产不留在 processing。
+- [ ] **DeepSeek 真实图片闭环**：使用一张经 signed upload 的真实图片完成一次生成；确认 `model=deepseek-v4-flash-vision-exp`、结果通过 `CommerceResult` 校验、成功时额度只扣一次且不退款，并确认持久化结果与日志没有 signed URL、Bearer token 或 API key。
 - [ ] **cleanup 分页/孤儿清理**：各造超过 100 个放弃上传和孤儿对象，验证游标无重复/无遗漏、每类最多 500，单个删除失败不阻断后续项；孤儿对象被删除，放弃行仅在对象删除后 failed。
 - [ ] **定时/安全错误**：`*/15 * * * *` 与手动 workflow 均能触发；缺失/错误 `x-cleanup-secret` 返回 401，非 2xx 使 workflow 失败，日志和响应不暴露 Secret/provider/Storage 内部值。
 - [ ] 匿名调用 `analyze-commerce` / `commerce-upload` 返回 401；相同幂等键并发/重试只扣费一次，模型失败只退款一次，账本余额闭合。

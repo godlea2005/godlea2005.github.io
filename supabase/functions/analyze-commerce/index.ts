@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.3'
-import { createOpenAiProvider } from '../_shared/ai-provider.ts'
+import { createAiProvider } from '../_shared/ai-provider.ts'
 import {
   createProductionAnalyzeHandler,
   type SupabaseLike,
@@ -21,7 +21,7 @@ if (import.meta.main) {
     getEnv: (name) => runtime.Deno?.env?.get(name),
     createClient: (url, key, options) =>
       createClient(url, key, options) as unknown as SupabaseLike & UserClient,
-    aiProvider: createOpenAiProvider(),
+    aiProvider: createAiProvider(),
     waitUntil: (task) => {
       if (!runtime.EdgeRuntime?.waitUntil) throw new Error('Background tasks unavailable')
       runtime.EdgeRuntime.waitUntil(task)
