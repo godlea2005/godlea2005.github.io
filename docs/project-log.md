@@ -144,3 +144,11 @@
 - 原生 Deno 首轮检查发现并修复 Error 子类 `override`、WASM/Blob 的 owned `ArrayBuffer` 类型兼容，以及测试辅助类型声明；三个 Edge Function 入口 `deno check` 通过，原生 Deno 测试 65/65 通过。
 - Supabase CLI 本地版本检查通过；CLI 缓存目录 `supabase/.temp/` 已加入忽略规则。尚未登录或 link 远程 Supabase，也未应用迁移、部署函数、读写 Secrets、触发 workflow、推送 GitHub 或发布 Pages。
 - 发布状态保持“待外部操作门槛”：本地原生检查不能替代 disposable/staging 中的真实 PostgreSQL/RLS、Storage signed upload、WASM `static_files`、OpenAI、cleanup 与生产 OAuth/Pages 冒烟。
+
+## 2026-09-03 — DeepSeek 可切换视觉分析
+
+- 在既有 `AiProvider` 边界内加入 DeepSeek Responses 适配器，并保留 OpenAI 适配器；生产入口只按服务端 `AI_PROVIDER=deepseek|openai` 显式选择，缺失或非法值 fail-closed，单次失败不会跨提供商自动回退。
+- DeepSeek 调用固定 `https://api.deepseek.com/responses`，当前仅允许视觉模型 `deepseek-v4-flash-vision-exp`；请求支持真实产品图片和 JSON Schema 结构化结果，继续复用原有校验、一次修复重试、幂等扣次与失败退款链路。
+- 安全边界不变：`DEEPSEEK_API_KEY` 只允许保存在 Supabase Edge Function Secrets。本地实现、测试、文档与 Git 历史均未写入或读取密钥值，GitHub Pages 工作流也明确禁止注入 AI Provider 配置。
+- 本地验证：全量 Vitest 为 14 个测试文件、246/246 通过；三个 Edge Function 原生 Deno 测试 72/72 通过；`npm.cmd run check:edge` 与生产构建通过。构建仍只有既有 `MusicPage` 527.28 kB 的 chunk 警告。
+- 发布状态：代码与本地契约已完成，DeepSeek 真实图片生成仍为“待外部操作门槛”。需在 Supabase Dashboard 保存密钥、设置非秘密 Provider 配置、重新部署 `analyze-commerce`，再以已认证账号核对模型、结果、单次扣额、日志和私有图片边界。

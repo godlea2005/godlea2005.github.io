@@ -90,16 +90,28 @@ describe('AI commerce deployment contract', () => {
       'SUPABASE_CLEANUP_URL',
       'SUPABASE_CLEANUP_SECRET',
     ]) expect(guide).toContain(name)
+    for (const name of [
+      'AI_PROVIDER',
+      'DEEPSEEK_API_KEY',
+      'DEEPSEEK_MODEL',
+      'deepseek-v4-flash-vision-exp',
+      'AI_TIMEOUT_MS',
+      'https://api.deepseek.com/responses',
+    ]) expect(guide).toContain(name)
+    expect(guide).toMatch(/AI_PROVIDER=deepseek[\s\S]*DEEPSEEK_API_KEY/)
+    expect(guide).toMatch(/AI_TIMEOUT_MS[\s\S]*OPENAI_TIMEOUT_MS[\s\S]*兼容/)
+    expect(guide).toMatch(/不得[\s\S]{0,100}自动回退[\s\S]{0,100}OpenAI/)
+    expect(guide).toMatch(/DeepSeek[\s\S]*真实图片[\s\S]*额度只扣一次/)
     expect(migrations.map((name) => guide.indexOf(name))).toEqual(
       [...migrations.map((name) => guide.indexOf(name))].sort((left, right) => left - right),
     )
     const releaseOrder = guide.match(/发布顺序不得调换：([^\n]+)/)?.[1] ?? ''
     const releaseSteps = [
       '迁移',
+      'Supabase 服务端',
       'commerce-upload',
       'analyze-commerce',
       'cleanup-commerce-assets',
-      'Supabase 服务端',
       'GitHub Variables/Secrets',
       'staging live gates',
       'Pages',
