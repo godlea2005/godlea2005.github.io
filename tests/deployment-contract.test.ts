@@ -47,7 +47,21 @@ describe('AI commerce deployment contract', () => {
     expect(workflow.indexOf('run: npm test')).toBeLessThan(workflow.indexOf('run: npm run build'))
     expect(workflow.indexOf('run: npm run build')).toBeLessThan(workflow.indexOf('actions/upload-pages-artifact'))
     expect(workflow).toMatch(/deploy:[\s\S]*needs: build/)
-    expect(workflow).not.toMatch(/OPENAI_API_KEY|SUPABASE_(?:SERVICE_ROLE|SECRET)_KEY|CLEANUP_SECRET/)
+    expect(workflow).not.toMatch(/OPENAI_API_KEY|DEEPSEEK_API_KEY|AI_PROVIDER|SUPABASE_(?:SERVICE_ROLE|SECRET)_KEY|CLEANUP_SECRET/)
+  })
+
+  it('routes the production analysis function through an explicit server-side provider', () => {
+    const entry = read('supabase/functions/analyze-commerce/index.ts')
+    const provider = read('supabase/functions/_shared/ai-provider.ts')
+
+    expect(entry).toContain("import { createAiProvider } from '../_shared/ai-provider.ts'")
+    expect(entry).toContain('aiProvider: createAiProvider()')
+    expect(entry).not.toContain('createOpenAiProvider')
+
+    expect(provider).toContain("const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'")
+    expect(provider).toContain("const DEEPSEEK_RESPONSES_URL = 'https://api.deepseek.com/responses'")
+    expect(provider).toContain("const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'")
+    expect(provider).not.toMatch(/OPENAI_BASE_URL|DEEPSEEK_BASE_URL|AI_BASE_URL/)
   })
 
   it('documents the exact production surface and external gates', () => {
@@ -175,7 +189,8 @@ describe('AI commerce deployment contract', () => {
     expect(provider).toMatch(/DEFAULT_TIMEOUT_MS = 60_000/)
     expect(provider).toMatch(/MIN_TIMEOUT_MS = 5_000/)
     expect(provider).toMatch(/MAX_TIMEOUT_MS = 90_000/)
-    expect(provider).toMatch(/Number\(getEnv\('OPENAI_TIMEOUT_MS'\)\?\.trim\(\)\)/)
+    expect(provider).toMatch(/getEnv\('AI_TIMEOUT_MS'\)\?\.trim\(\)/)
+    expect(provider).toMatch(/getEnv\('OPENAI_TIMEOUT_MS'\)\?\.trim\(\)/)
     expect(provider).toMatch(/!Number\.isFinite\(configured\) \|\| configured <= 0\) return DEFAULT_TIMEOUT_MS/)
     expect(provider).toMatch(/Math\.min\(MAX_TIMEOUT_MS, Math\.max\(MIN_TIMEOUT_MS, configured\)\)/)
 

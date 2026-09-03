@@ -1,4 +1,4 @@
-import { createOpenAiProvider, SafeProviderError, type AiProvider } from './ai-provider.ts'
+import { SafeProviderError, type AiProvider } from './ai-provider.ts'
 import { buildCommercePrompt, type PlatformPreset, type PromptProject } from './commerce-prompt.ts'
 import { corsForRequest, parseAllowedOrigins } from './cors.ts'
 import { COMMERCE_RESULT_SCHEMA, validateCommerceResult } from './result-schema.ts'
