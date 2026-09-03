@@ -152,3 +152,11 @@
 - 安全边界不变：`DEEPSEEK_API_KEY` 只允许保存在 Supabase Edge Function Secrets。本地实现、测试、文档与 Git 历史均未写入或读取密钥值，GitHub Pages 工作流也明确禁止注入 AI Provider 配置。
 - 本地验证：全量 Vitest 为 14 个测试文件、246/246 通过；三个 Edge Function 原生 Deno 测试 72/72 通过；`npm.cmd run check:edge` 与生产构建通过。构建仍只有既有 `MusicPage` 527.28 kB 的 chunk 警告。
 - 发布状态：代码与本地契约已完成，DeepSeek 真实图片生成仍为“待外部操作门槛”。需在 Supabase Dashboard 保存密钥、设置非秘密 Provider 配置、重新部署 `analyze-commerce`，再以已认证账号核对模型、结果、单次扣额、日志和私有图片边界。
+
+## 2026-09-03 — OAuth 已有账号恢复与线上验证
+
+- 修正 GitHub OAuth Provider 配置：GitHub Client ID 与新生成的 Client Secret 已保存到 Supabase；Secret 未进入源码、构建产物或维护日志。
+- 匿名访客继续优先使用 `linkIdentity()` 继承匿名数据；当 Supabase 返回 `email_exists` 或 `identity_already_exists` 时，只从 `link` 状态自动切换一次普通 OAuth 登录，`sign-in` 状态不会再次重试。
+- 认证模块增加已有账号冲突和防循环回归覆盖；主项目 Vitest 14 个测试文件共 248/248 通过，Edge Function 类型检查与生产构建通过。构建仍仅保留已有 `MusicPage` 527.28 kB chunk 提醒。
+- 独立代码审查结果为 Critical 0、Important 0、Minor 0。源码合并提交为 `24993f1`，GitHub Pages 发布提交为 `5efe0ae`，Pages workflow `33762017717` 成功完成。
+- Playwright 已在 `https://geniusli.cn/#ai-commerce` 完成真实 GitHub OAuth 回归：已有账号自动进入 AI 电商工作台，额度可读取，“我的”菜单显示“管理后台”，证明正式会话与站长身份均生效；浏览器控制台 error/warning 为 0/0。
