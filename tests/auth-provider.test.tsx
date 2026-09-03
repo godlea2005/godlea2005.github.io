@@ -232,17 +232,33 @@ describe('site authentication provider', () => {
     expect(window.sessionStorage.getItem('wenhao-site:return-hash')).toBeNull()
   })
 
-  it('retries identity-already-exists callbacks as a sign-in without losing the return hash', async () => {
-    window.history.replaceState({}, '', '/?auth=site&error_code=identity_already_exists#ignored')
+  it.each(['identity_already_exists', 'email_exists'])(
+    'retries %s link callbacks as a sign-in without losing provider or return hash',
+    async (errorCode) => {
+      window.history.replaceState({}, '', `/?auth=site&error_code=${errorCode}#ignored`)
+      window.sessionStorage.setItem('wenhao-site:return-hash', '#guestbook')
+      window.sessionStorage.setItem('wenhao-site:oauth-intent', JSON.stringify({ provider: 'github', mode: 'link' }))
+      render(<AuthProvider><OAuthProbe /></AuthProvider>)
+
+      await waitFor(() => expect(mocks.auth.signInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({ provider: 'github' })))
+
+      expect(mocks.auth.linkIdentity).not.toHaveBeenCalled()
+      expect(window.sessionStorage.getItem('wenhao-site:oauth-intent')).toContain('"mode":"sign-in"')
+      expect(window.sessionStorage.getItem('wenhao-site:return-hash')).toBe('#guestbook')
+    },
+  )
+
+  it('does not retry an account conflict that already came from normal sign-in', async () => {
+    window.history.replaceState({}, '', '/?auth=site&error_code=email_exists#ignored')
     window.sessionStorage.setItem('wenhao-site:return-hash', '#guestbook')
-    window.sessionStorage.setItem('wenhao-site:oauth-intent', JSON.stringify({ provider: 'github', mode: 'link' }))
+    window.sessionStorage.setItem('wenhao-site:oauth-intent', JSON.stringify({ provider: 'github', mode: 'sign-in' }))
     render(<AuthProvider><OAuthProbe /></AuthProvider>)
 
-    await waitFor(() => expect(mocks.auth.signInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({ provider: 'github' })))
+    await waitFor(() => expect(window.location.search).toBe(''))
 
-    expect(mocks.auth.linkIdentity).not.toHaveBeenCalled()
-    expect(window.sessionStorage.getItem('wenhao-site:oauth-intent')).toContain('"mode":"sign-in"')
-    expect(window.sessionStorage.getItem('wenhao-site:return-hash')).toBe('#guestbook')
+    expect(mocks.auth.signInWithOAuth).not.toHaveBeenCalled()
+    expect(window.location.hash).toBe('#guestbook')
+    expect(window.sessionStorage.getItem('wenhao-site:oauth-intent')).toBeNull()
   })
 
   it('keeps the guestbook adapter on the single site authentication listener', async () => {
