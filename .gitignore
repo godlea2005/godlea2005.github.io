@@ -6,6 +6,7 @@ dist/
 .superpowers/
 .worktrees/
 .deploy-worktree/
+.deploy-backups/
 supabase/.temp/
 vite-preview.log
 vite-preview-error.log
