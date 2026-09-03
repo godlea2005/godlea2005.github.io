@@ -49,7 +49,7 @@ export type BackgroundStore = {
 export type ProcessGenerationInput = { generationId: string; userId: string }
 
 class BackgroundError extends Error {
-  readonly name = 'BackgroundError'
+  override readonly name = 'BackgroundError'
   readonly code: string
 
   constructor(code: string, message: string) {

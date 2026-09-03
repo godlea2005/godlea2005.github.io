@@ -7,7 +7,7 @@ export interface AiProvider {
 }
 
 export class SafeProviderError extends Error {
-  readonly name = 'SafeProviderError'
+  override readonly name = 'SafeProviderError'
   readonly code: string
 
   constructor(code: string, message: string) {

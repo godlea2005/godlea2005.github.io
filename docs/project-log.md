@@ -137,3 +137,10 @@
 - 项目删除改为先执行 `delete_commerce_project` 权威栅栏，再删除已查询的 owned Storage 路径。生成先赢时不触碰对象；删除先赢后即使 Storage 失败，数据库结果仍保持成功并由既有 orphan cleanup 收敛。
 - 新增 admin-only `admin_refund_commerce_generation` 与站长任务表人工退款动作：generation/entitlement 行锁、`refunded_at`、唯一 `generation_refund` 流水和审计原因共同保证重复/并发只加 1 次。
 - 浏览器现在在 reserve 前拒绝零字节图片。发布状态仍为“待外部操作门槛”；未执行远程迁移、函数部署、Secrets、workflow 或 Pages 操作。
+
+## 2026-09-03 — Edge 本地原生验证补齐
+
+- 仓库固定 `deno@2.9.6`、`supabase@2.116.0` 与匹配 Node 24 的 `@types/node@24.13.3`，新增 `npm.cmd run check:edge`，避免只依赖 Vitest 的 Node fallback。
+- 原生 Deno 首轮检查发现并修复 Error 子类 `override`、WASM/Blob 的 owned `ArrayBuffer` 类型兼容，以及测试辅助类型声明；三个 Edge Function 入口 `deno check` 通过，原生 Deno 测试 65/65 通过。
+- Supabase CLI 本地版本检查通过；CLI 缓存目录 `supabase/.temp/` 已加入忽略规则。尚未登录或 link 远程 Supabase，也未应用迁移、部署函数、读写 Secrets、触发 workflow、推送 GitHub 或发布 Pages。
+- 发布状态保持“待外部操作门槛”：本地原生检查不能替代 disposable/staging 中的真实 PostgreSQL/RLS、Storage signed upload、WASM `static_files`、OpenAI、cleanup 与生产 OAuth/Pages 冒烟。

@@ -5,5 +5,7 @@ dist/
 .playwright-cli/
 .superpowers/
 .worktrees/
+.deploy-worktree/
+supabase/.temp/
 vite-preview.log
 vite-preview-error.log

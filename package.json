@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "check:edge": "deno check supabase/functions/analyze-commerce/index.ts supabase/functions/commerce-upload/index.ts supabase/functions/cleanup-commerce-assets/index.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -27,9 +28,12 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.5",
+    "@types/node": "24.13.3",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "deno": "2.9.6",
     "jsdom": "^30.0.1",
+    "supabase": "2.116.0",
     "typescript": "latest",
     "vitest": "^4.1.11"
   }

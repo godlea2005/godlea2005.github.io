@@ -4,7 +4,8 @@
 
 ## 1. 发布前准备
 
-- 本地安装 Node.js 22、npm、Git 与 Supabase CLI；先运行 `node --version`、`npm --version`、`git status --short`、`npx.cmd supabase --version`。
+- 仓库已固定 `deno@2.9.6`、`supabase@2.116.0` 与 `@types/node@24.13.3`；先运行 `node --version`、`npm --version`、`git status --short`、`npx.cmd deno --version`、`npx.cmd supabase --version`。
+- 部署前必须运行 `npm.cmd run check:edge`，再运行 `npx.cmd deno test supabase/functions/analyze-commerce/index.test.ts supabase/functions/commerce-upload/index.test.ts supabase/functions/cleanup-commerce-assets/index.test.ts`。本地 Deno 检查通过只证明源码和单元契约，不替代 Supabase 部署后的 `static_files`、数据库、Storage 与网络行为验证。
 - 使用有权访问目标项目的账号执行 `npx.cmd supabase login`。不要在共享终端记录访问令牌。
 - 确认工作区无意外改动，并记录待发布 Git commit。数据库、函数和 Pages 分开发布，任一步失败都停止后续步骤。
 
@@ -165,6 +166,7 @@ Storage bucket `commerce-assets` 是私有桶；在 Dashboard 核对对象路径
 
 - [ ] `.env.example` 只有两个公开占位符，tracked diff 无真实凭据。
 - [ ] `npm.cmd test` 全量通过，`npm.cmd run build` 通过。
+- [ ] `npm.cmd run check:edge` 通过，三个 Edge Function 的原生 Deno 测试 65/65 通过。
 - [ ] 深浅主题、390px/桌面布局、reduced motion、键盘路径与控制台错误完成本地浏览器审计。
 - [ ] workflow 引用 GitHub Variables/Secrets 名称，未把服务端密钥注入前端。
 

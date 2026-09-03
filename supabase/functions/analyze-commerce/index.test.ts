@@ -21,7 +21,7 @@ const test: TestFunction = typeof Deno !== 'undefined'
   ? Deno.test
   : ((import.meta as ImportMeta & { vitest?: { test: TestFunction } }).vitest?.test ?? nodeTest)
 
-const assert = (condition: unknown, message = 'assertion failed'): asserts condition => {
+const assert: (condition: unknown, message?: string) => asserts condition = (condition, message = 'assertion failed') => {
   if (!condition) throw new Error(message)
 }
 
@@ -231,8 +231,8 @@ test('OpenAI provider aborts a hanging request at the configured deadline and cl
       timeoutCallback = callback
       timeoutDelay = delay
       return 42
-    }) as typeof setTimeout,
-    clearTimeoutFn: ((timer: unknown) => { clearedTimer = timer }) as typeof clearTimeout,
+    }) as unknown as typeof setTimeout,
+    clearTimeoutFn: ((timer: unknown) => { clearedTimer = timer }) as unknown as typeof clearTimeout,
     fetchFn: async (_url, init) => {
       requestSignal = init?.signal ?? undefined
       return await new Promise<Response>((_resolve, reject) => {
@@ -273,8 +273,8 @@ test('OpenAI provider defaults invalid deadlines and clamps finite overrides to 
       setTimeoutFn: ((_callback: () => void, delay: number) => {
         scheduledDelay = delay
         return 7
-      }) as typeof setTimeout,
-      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      }) as unknown as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as unknown as typeof clearTimeout,
       fetchFn: async () => Response.json({ output_text: JSON.stringify(sampleResult()) }),
     })
     await provider.generate({ prompt: 'x', imageUrls: [], schema: {} })

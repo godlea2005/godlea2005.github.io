@@ -14,7 +14,7 @@ const test: TestFunction = typeof Deno !== 'undefined'
   ? Deno.test
   : ((import.meta as ImportMeta & { vitest?: { test: TestFunction } }).vitest?.test ?? nodeTest)
 
-const assert = (condition: unknown, message = 'assertion failed'): asserts condition => {
+const assert: (condition: unknown, message?: string) => asserts condition = (condition, message = 'assertion failed') => {
   if (!condition) throw new Error(message)
 }
 
@@ -773,9 +773,9 @@ test('production bootstrap uses new-key priority and fails closed without a secr
     getEnv: (name) => env[name],
     createClient: (_url, key) => {
       keys.push(key)
-      return key.startsWith('secret')
+      return (key.startsWith('secret')
         ? ({} as CommerceUploadServiceClient)
-        : ({} as CommerceUploadUserClient)
+        : ({} as CommerceUploadUserClient)) as CommerceUploadUserClient & CommerceUploadServiceClient
     },
     decodeImage: async () => ({ width: 1, height: 1 }),
   })

@@ -9,6 +9,22 @@ const sha256 = (path: string) => createHash('sha256')
   .digest('hex')
 
 describe('AI commerce deployment contract', () => {
+  it('pins the local Edge validation toolchain and command', () => {
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+
+    expect(packageJson.scripts?.['check:edge']).toBe(
+      'deno check supabase/functions/analyze-commerce/index.ts supabase/functions/commerce-upload/index.ts supabase/functions/cleanup-commerce-assets/index.ts',
+    )
+    expect(packageJson.devDependencies).toMatchObject({
+      '@types/node': '24.13.3',
+      deno: '2.9.6',
+      supabase: '2.116.0',
+    })
+  })
+
   it('keeps the frontend environment example public and placeholder-only', () => {
     expect(read('.env.example').trim().split(/\r?\n/)).toEqual([
       'VITE_SUPABASE_URL=https://your-project-ref.supabase.co',

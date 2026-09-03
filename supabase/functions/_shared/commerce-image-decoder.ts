@@ -12,9 +12,16 @@ const runtime = globalThis as unknown as {
   ) => Promise<{ width: number; height: number; close(): void }>
 }
 
+const ownedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
+}
+
 const compileBundledWasm = async (relativePath: string) => {
   if (!runtime.Deno?.readFile) throw new Error('Edge WASM loader is unavailable')
-  return await WebAssembly.compile(await runtime.Deno.readFile(new URL(relativePath, import.meta.url)))
+  const bytes = await runtime.Deno.readFile(new URL(relativePath, import.meta.url))
+  return await WebAssembly.compile(ownedArrayBuffer(bytes))
 }
 
 let jpegReady: Promise<void> | undefined
@@ -46,7 +53,7 @@ const webp = async (buffer: ArrayBuffer) => {
 const native = async (bytes: Uint8Array, mimeType: 'image/jpeg' | 'image/png'): Promise<TrustedImageDimensions> => {
   if (!runtime.createImageBitmap) throw new Error('native image decoder unavailable')
   const bitmap = await runtime.createImageBitmap(
-    new Blob([bytes], { type: mimeType }),
+    new Blob([ownedArrayBuffer(bytes)], { type: mimeType }),
     { imageOrientation: 'none' },
   )
   try {
