@@ -21,6 +21,19 @@ import type {
   SetUserEntitlementInput,
 } from './types'
 import { validateProductFile, validateProjectInput } from './validation'
+import {
+  CommerceRepositoryError,
+  mapCommerceError,
+  mapFunctionInvokeError,
+} from './commerceErrors'
+
+export {
+  CommerceRepositoryError,
+  isCommerceAuthError,
+  mapCommerceError,
+  mapFunctionInvokeError,
+} from './commerceErrors'
+export type { CommerceErrorCode } from './commerceErrors'
 
 const assetBucket = 'commerce-assets'
 const adminPageSize = 50
@@ -28,26 +41,6 @@ const adminPageSize = 50
 type CommerceSupabaseClient = SupabaseClient<any>
 type DatabaseRow = Record<string, unknown>
 type UploadReservation = { asset: CommerceAsset; path: string; token: string }
-
-export type CommerceErrorCode =
-  | 'AUTH_REQUIRED'
-  | 'CREDITS_EXHAUSTED'
-  | 'RATE_LIMITED'
-  | 'ASSETS_EXPIRED'
-  | 'NETWORK'
-  | 'VALIDATION'
-
-export class CommerceRepositoryError extends Error {
-  readonly name = 'CommerceRepositoryError'
-
-  constructor(
-    readonly code: CommerceErrorCode,
-    message: string,
-    readonly cause?: unknown,
-  ) {
-    super(message)
-  }
-}
 
 const isRecord = (value: unknown): value is DatabaseRow =>
   typeof value === 'object' && value !== null
@@ -58,80 +51,6 @@ const asString = (value: unknown): string => typeof value === 'string' ? value :
 const asNullableString = (value: unknown): string | null => typeof value === 'string' ? value : null
 const asNumber = (value: unknown): number => typeof value === 'number' ? value : 0
 const asBoolean = (value: unknown): boolean => value === true
-
-const errorDetails = (error: unknown) => {
-  const record = asRecord(error)
-  const context = asRecord(record.context)
-  return {
-    code: asString(record.code),
-    message: asString(record.message),
-    status: asNumber(record.status) || asNumber(context.status),
-  }
-}
-
-const responseErrorDetails = async (error: unknown) => {
-  const record = asRecord(error)
-  const context = record.context
-  let status = asNumber(record.status)
-  let body: DatabaseRow = {}
-
-  if (isRecord(context)) {
-    status ||= asNumber(context.status)
-    const clone = context.clone
-    const text = context.text
-    if (typeof text === 'function') {
-      try {
-        const readable = typeof clone === 'function' ? clone.call(context) : context
-        const rawBody = await (readable as { text: () => Promise<string> }).text()
-        if (rawBody) {
-          try {
-            body = asRecord(JSON.parse(rawBody))
-          } catch {
-            body = { message: rawBody }
-          }
-        }
-      } catch {
-        // The status still gives actionable meaning if a consumed body cannot be cloned.
-      }
-    }
-  }
-
-  return {
-    code: asString(body.code) || asString(record.code),
-    message: asString(body.message) || asString(body.error) || asString(record.message),
-    status,
-  }
-}
-
-/** Converts backend and transport failures to copy that tells a workspace user what to do next. */
-export const mapCommerceError = (error: unknown): CommerceRepositoryError => {
-  if (error instanceof CommerceRepositoryError) return error
-
-  const { code, message, status } = errorDetails(error)
-  const normalized = `${code} ${message}`.toLowerCase()
-
-  if (code === '28000' || status === 401 || status === 403 || /auth|jwt|session|anonymous|login/.test(normalized)) {
-    return new CommerceRepositoryError('AUTH_REQUIRED', '登录已失效，请重新登录后继续。', error)
-  }
-  if (status === 402 || /insufficient[ _-]credits|credits?[ _-]exhausted|次数不足|余额不足/.test(normalized)) {
-    return new CommerceRepositoryError('CREDITS_EXHAUSTED', '可用次数不足，请稍后获取额度后再试。', error)
-  }
-  if (/daily generation limit|rate limit|too many|频率|限流/.test(normalized) || status === 429) {
-    return new CommerceRepositoryError('RATE_LIMITED', '请求过于频繁，请稍后再试。', error)
-  }
-  if (status === 410 || /expired|expires|过期/.test(normalized)) {
-    return new CommerceRepositoryError('ASSETS_EXPIRED', '图片已过期，请重新上传后再试。', error)
-  }
-  if (code === '55000' && /project has an active generation|active generation/.test(normalized)) {
-    return new CommerceRepositoryError('VALIDATION', '项目仍在生成中，请等待任务完成或终止后再删除。', error)
-  }
-  return new CommerceRepositoryError('NETWORK', '网络或服务暂时不可用，请检查连接后重试。', error)
-}
-
-const mapFunctionInvokeError = async (error: unknown): Promise<CommerceRepositoryError> => {
-  const mapped = mapCommerceError(await responseErrorDetails(error))
-  return new CommerceRepositoryError(mapped.code, mapped.message, error)
-}
 
 const isStorageTransportError = (error: unknown): boolean => {
   if (error instanceof TypeError) return true
@@ -592,7 +511,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
       .map((asset) => asString(asset.storage_path))
       .filter(Boolean)
     const { error: deleteError } = await this.client.rpc('delete_commerce_project', { p_project_id: id })
-    if (deleteError && errorDetails(deleteError).code !== 'P0002') throw mapCommerceError(deleteError)
+    if (deleteError && asString(asRecord(deleteError).code) !== 'P0002') throw mapCommerceError(deleteError)
 
     if (paths.length > 0) {
       try {

@@ -223,7 +223,7 @@ describe('commerce repository', () => {
     const progress = vi.fn()
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(mock.client.functions.invoke).toHaveBeenCalledTimes(1)
     expect(progress).toHaveBeenLastCalledWith({
@@ -303,7 +303,7 @@ describe('commerce repository', () => {
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(mock.storage.uploadToSignedUrl).not.toHaveBeenCalled()
   })
@@ -320,7 +320,7 @@ describe('commerce repository', () => {
     const progress = vi.fn()
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(progress).toHaveBeenLastCalledWith({
       completedFiles: 0, totalFiles: 1, currentFile: { name: 'a.png', state: 'failed' },
@@ -373,7 +373,7 @@ describe('commerce repository', () => {
       new File(['png'], 'c.png', { type: 'image/png' }),
     ]
 
-    await expect(repository.uploadAssets('project-1', files, progress)).rejects.toThrow('网络或服务暂时不可用')
+    await expect(repository.uploadAssets('project-1', files, progress)).rejects.toThrow('服务权限或配置异常')
 
     expect(progress).toHaveBeenNthCalledWith(2, {
       completedFiles: 1, totalFiles: 3, currentFile: { name: 'a.png', state: 'ready' },
@@ -475,7 +475,7 @@ describe('commerce repository', () => {
     [410, { code: 'ASSETS_EXPIRED', message: 'assets expired' }, 'ASSETS_EXPIRED'],
     [429, { code: 'RATE_LIMITED', message: 'too many requests' }, 'RATE_LIMITED'],
     [401, { code: 'AUTH_REQUIRED', message: 'login required' }, 'AUTH_REQUIRED'],
-    [403, { code: 'FORBIDDEN', message: 'forbidden' }, 'AUTH_REQUIRED'],
+    [403, { code: 'FORBIDDEN', message: 'forbidden' }, 'SERVICE_ERROR'],
   ])('decodes FunctionsHttpError Response bodies for HTTP %s', async (status, body, expectedCode) => {
     const error = {
       name: 'FunctionsHttpError',
@@ -493,7 +493,7 @@ describe('commerce repository', () => {
   })
 
   it.each([
-    [{ code: '28000', message: 'commerce authentication required' }, '登录已失效'],
+    [{ code: '28000', message: 'commerce authentication required' }, '登录状态需要恢复'],
     [{ code: 'P0001', message: 'insufficient credits' }, '可用次数不足'],
     [{ code: 'P0001', message: 'daily generation limit reached' }, '请求过于频繁'],
     [{ message: 'asset expired' }, '图片已过期'],
