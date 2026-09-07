@@ -76,7 +76,7 @@ const responseErrorDetails = async (error: unknown) => {
 }
 
 const messages: Record<CommerceErrorCode, string> = {
-  AUTH_REQUIRED: '登录状态需要恢复，请重新连接账户后继续。',
+  AUTH_REQUIRED: '登录状态需要恢复，请重新连接账号后继续。',
   ORIGIN_FORBIDDEN: '站点来源配置不允许此请求，请检查部署配置后重试。',
   CREDITS_EXHAUSTED: '可用次数不足，请稍后获取额度后再试。',
   RATE_LIMITED: '请求过于频繁，请稍后再试。',

@@ -13,7 +13,7 @@ describe('commerce error taxonomy', () => {
   it('maps a real 401 to an actionable authentication error', () => {
     expect(mapCommerceError({ status: 401, code: 'AUTH_REQUIRED' })).toMatchObject({
       code: 'AUTH_REQUIRED',
-      message: '登录状态需要恢复，请重新连接账户后继续。',
+      message: '登录状态需要恢复，请重新连接账号后继续。',
     })
   })
 
