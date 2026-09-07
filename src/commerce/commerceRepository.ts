@@ -24,8 +24,8 @@ import { validateProductFile, validateProjectInput } from './validation'
 import {
   CommerceRepositoryError,
   mapCommerceError,
-  mapFunctionInvokeError,
 } from './commerceErrors'
+import { getFreshAuthenticatedSession, invokeAuthenticatedFunction } from './commerceSession'
 
 export {
   CommerceRepositoryError,
@@ -309,13 +309,7 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   private async requireAuthenticatedUser(): Promise<string> {
-    const { data, error } = await this.client.auth.getUser()
-    if (error) throw mapCommerceError(error)
-    const user = data.user
-    if (!user?.id || user.is_anonymous === true) {
-      throw new CommerceRepositoryError('AUTH_REQUIRED', '登录已失效，请重新登录后继续。')
-    }
-    return user.id
+    return (await getFreshAuthenticatedSession(this.client)).userId
   }
 
   async getEntitlement(): Promise<CommerceEntitlement> {
@@ -403,16 +397,13 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   private async reserveUpload(projectId: string, file: File): Promise<UploadReservation> {
-    const { data, error } = await this.client.functions.invoke('commerce-upload', {
-      body: {
+    const data = await invokeAuthenticatedFunction(this.client, 'commerce-upload', {
         action: 'reserve',
         projectId,
         fileName: file.name,
         mimeType: file.type,
         sizeBytes: file.size,
-      },
     })
-    if (error) throw await mapFunctionInvokeError(error)
 
     const response = asRecord(data)
     const assetValue = response.asset
@@ -430,10 +421,9 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   private async finalizeUpload(assetId: string): Promise<CommerceAsset> {
-    const { data, error } = await this.client.functions.invoke('commerce-upload', {
-      body: { action: 'finalize', assetId },
+    const data = await invokeAuthenticatedFunction(this.client, 'commerce-upload', {
+      action: 'finalize', assetId,
     })
-    if (error) throw await mapFunctionInvokeError(error)
 
     const assetValue = asRecord(data).asset
     if (!isRecord(assetValue)) throw mapCommerceError(new Error('upload finalize response missing'))
@@ -454,11 +444,9 @@ class SupabaseCommerceRepository implements CommerceRepository {
   }
 
   async startGeneration(projectId: string, idempotencyKey: string): Promise<GenerationStartResult> {
-    await this.requireAuthenticatedUser()
-    const { data, error } = await this.client.functions.invoke('analyze-commerce', {
-      body: { projectId, idempotencyKey },
+    const data = await invokeAuthenticatedFunction(this.client, 'analyze-commerce', {
+      projectId, idempotencyKey,
     })
-    if (error) throw await mapFunctionInvokeError(error)
     const response = asRecord(data)
     const generationId = asString(response.generationId)
     const status = asString(response.status) as CommerceGenerationStatus
