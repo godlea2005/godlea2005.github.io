@@ -319,7 +319,7 @@ describe('AI commerce submission workflow', () => {
     expect(saved).not.toMatch(/files|cup\.png|base64|token/i)
   })
 
-  it('rejects direct hook submission while auth recovery remains unresolved', async () => {
+  it('rejects a stale editing-phase submit callback after auth recovery begins', async () => {
     const auth = signedInAuth()
     const repository = makeRepository({ createProject: vi.fn().mockRejectedValue(new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。')) })
     const input = { mode: 'quick' as const, name: '保温杯', platform: 'ozon' as const, files: [image()] }
@@ -333,11 +333,13 @@ describe('AI commerce submission workflow', () => {
       createIdempotencyKey,
       onRefreshEntitlement,
     }))
-    await act(async () => { await result.current.submit(input) })
+    const staleEditingSubmit = result.current.submit
+    await act(async () => { await staleEditingSubmit(input) })
     expect(result.current.state.phase).toBe('auth-recovery')
 
-    await act(async () => { await result.current.submit(input) })
+    await act(async () => { await staleEditingSubmit(input) })
 
+    expect(auth.requireLogin).toHaveBeenCalledTimes(1)
     expect(repository.createProject).toHaveBeenCalledTimes(1)
     expect(repository.uploadAssets).not.toHaveBeenCalled()
     expect(repository.startGeneration).not.toHaveBeenCalled()

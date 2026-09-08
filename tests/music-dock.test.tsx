@@ -12,6 +12,7 @@ vi.mock('../src/music/MusicProvider', () => ({
 vi.mock('../src/music/PlaylistOverlay', () => ({ PlaylistOverlay: () => null }))
 
 import { COMMERCE_MUSIC_ACTION_CLEARANCE_PX, GlobalMusicDock } from '../src/music/GlobalMusicDock'
+import musicExperienceCss from '../src/music/music-experience.css?raw'
 
 describe('mobile commerce music launcher', () => {
   beforeEach(() => {
@@ -50,5 +51,10 @@ describe('mobile commerce music launcher', () => {
   it('does not reserve fixed clearance for a disabled action', () => {
     const view = render(<><form className="commerce-workspace"><button className="commerce-submit" disabled>提交</button></form><GlobalMusicDock commerceMode /></>)
     expect(view.container.querySelector('.music-dock')).not.toHaveClass('has-visible-commerce-action')
+  })
+
+  it('applies commerce sticky-action clearance through the 640px mobile breakpoint', () => {
+    expect(musicExperienceCss).toMatch(/@media \(max-width:\s*640px\)[\s\S]*\.music-dock\.is-commerce\.has-visible-commerce-action/)
+    expect(musicExperienceCss).toContain('var(--commerce-action-clearance,78px)')
   })
 })

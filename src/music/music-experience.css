@@ -489,7 +489,7 @@
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .music-launcher,.music-popover { background: #070c0e; } }
 
-@media (max-width: 520px) {
+@media (max-width: 640px) {
   .music-dock { right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); }
   .music-dock.is-commerce.has-visible-commerce-action { bottom: calc(max(12px,env(safe-area-inset-bottom)) + var(--commerce-action-clearance,78px)); }
   .music-dock.is-commerce .music-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
