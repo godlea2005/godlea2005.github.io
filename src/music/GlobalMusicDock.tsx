@@ -10,6 +10,7 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
   const dockRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [playlistOpen, setPlaylistOpen] = useState(false)
+  const [commerceActionVisible, setCommerceActionVisible] = useState(false)
   const progress = music.duration ? music.currentTime / music.duration * 100 : 0
 
   useEffect(() => {
@@ -28,8 +29,44 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
     }
   }, [open, playlistOpen])
 
+  useEffect(() => {
+    if (!commerceMode || typeof IntersectionObserver === 'undefined') {
+      setCommerceActionVisible(false)
+      return
+    }
+    let action: HTMLButtonElement | null = null
+    let intersects = false
+    const update = () => setCommerceActionVisible(Boolean(action && intersects && !action.disabled))
+    const intersection = new IntersectionObserver(([entry]) => {
+      intersects = entry.isIntersecting
+      update()
+    })
+    const actionMutation = new MutationObserver(update)
+    const bindAction = () => {
+      const next = document.querySelector<HTMLButtonElement>('.commerce-workspace .commerce-submit')
+      if (next === action) return
+      if (action) intersection.unobserve(action)
+      actionMutation.disconnect()
+      action = next
+      intersects = false
+      update()
+      if (action) {
+        intersection.observe(action)
+        actionMutation.observe(action, { attributes: true, attributeFilter: ['disabled'] })
+      }
+    }
+    const documentMutation = new MutationObserver(bindAction)
+    bindAction()
+    documentMutation.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      intersection.disconnect()
+      actionMutation.disconnect()
+      documentMutation.disconnect()
+    }
+  }, [commerceMode])
+
   return <>
-    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
+    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}${commerceActionVisible ? ' has-visible-commerce-action' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
       <aside className="music-popover" id="global-music-player" aria-label="全站音乐播放器" aria-hidden={!open} inert={open ? undefined : true}>
         <header className="music-popover-header">
           <div className="music-popover-cover" aria-hidden="true"><i /></div>

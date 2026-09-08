@@ -4,6 +4,7 @@ import { validateProductFile, validateProjectInput } from './validation'
 import { CommerceRunPanel } from './CommerceRunPanel'
 import { CommerceStepRail, type CommerceStep } from './CommerceStepRail'
 import { initialCommerceRunState, type CommerceRunState } from './commerceRunMachine'
+import { CommerceRepositoryError } from './commerceErrors'
 
 type PreviewFile = {
   id: string
@@ -15,13 +16,20 @@ export type CommerceProjectFormProps = {
   onSubmitted: (input: CommerceProjectInput) => void | Promise<void>
   busy?: boolean
   runState?: CommerceRunState
+  status?: CommerceFormStatus
+  progress?: AssetUploadProgress | null
+  error?: string
   creditsLabel?: string
   onRetry?: () => void
   onRecoverAuthentication?: () => void
   onMaterialChange?: () => void
+  onDraftChange?: (input: CommerceProjectInput) => void
   initialDraft?: Partial<CommerceProjectInput>
+  initialFileNotice?: string
   draftKey?: string | number
 }
+
+export type CommerceFormStatus = 'idle' | 'creating' | 'uploading' | 'starting' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
 
 type TextValues = Omit<CommerceProjectInput, 'files'>
 
@@ -70,15 +78,33 @@ const initialValues: TextValues = {
 const uniqueId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 const fileFingerprint = (file: File) => `${file.name}\u0000${file.size}\u0000${file.type}\u0000${file.lastModified}`
 
+const legacyRunState = (status: CommerceFormStatus, progress: AssetUploadProgress | null, error: string): CommerceRunState => {
+  const phase = {
+    idle: 'editing', creating: 'creating-project', uploading: 'uploading', starting: 'starting-generation',
+    queued: 'generating', processing: 'generating', completed: 'completed', failed: 'recoverable-error', cancelled: 'terminal-error',
+  }[status] as CommerceRunState['phase']
+  return {
+    ...initialCommerceRunState,
+    phase,
+    progress,
+    error: error ? new CommerceRepositoryError('SERVICE_ERROR', error) : null,
+  }
+}
+
 export function CommerceProjectForm({
   onSubmitted,
   busy = false,
-  runState = initialCommerceRunState,
+  runState,
+  status = 'idle',
+  progress = null,
+  error = '',
   creditsLabel = '登录后查看',
   onRetry,
   onRecoverAuthentication,
   onMaterialChange,
+  onDraftChange,
   initialDraft,
+  initialFileNotice = '',
   draftKey = 0,
 }: CommerceProjectFormProps) {
   const [values, setValues] = useState<TextValues>(initialValues)
@@ -113,16 +139,19 @@ export function CommerceProjectForm({
     setPreviews(nextPreviews)
     setConsented(false)
     setFileError('')
-    setFileNotice('')
+    setFileNotice(initialFileNotice)
     setCurrentStep(1)
     setFurthestStep(1)
     setStepError('')
-  }, [draftKey])
+  }, [draftKey, initialFileNotice])
 
   const input = useMemo<CommerceProjectInput>(() => ({
     ...values,
     files: previews.map((preview) => preview.file),
   }), [previews, values])
+  useEffect(() => { onDraftChange?.(input) }, [input, onDraftChange])
+  const effectiveRunState = runState ?? legacyRunState(status, progress, error)
+  const authRecovery = effectiveRunState.phase === 'auth-recovery'
   const validation = useMemo(() => validateProjectInput(input), [input])
   const canSubmit = validation.ok && consented && !busy
   const missingRequirements = [
@@ -267,7 +296,7 @@ export function CommerceProjectForm({
           <div className="commerce-upload-field">
             <div><span>产品图片</span><small>JPEG / PNG / WebP，单张不超过 8 MB，最多 6 张</small></div>
             <label className="commerce-upload-trigger">
-              <input aria-label="上传产品图" aria-describedby={fileError ? 'commerce-file-error' : fileNotice ? 'commerce-file-notice' : undefined} aria-invalid={fileError ? true : undefined} disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addFiles} />
+              <input aria-label="上传产品图" aria-describedby={fileError ? 'commerce-file-error' : fileNotice ? 'commerce-file-notice' : undefined} aria-invalid={fileError ? true : undefined} disabled={busy || authRecovery} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addFiles} />
               <span>选择图片</span><i>{previews.length} / 6</i>
             </label>
           </div>
@@ -277,7 +306,7 @@ export function CommerceProjectForm({
             {previews.map((preview, index) => <li key={preview.id}>
               <img src={preview.url} alt={`${preview.file.name} 预览`} />
               <span><b>0{index + 1}</b>{preview.file.name}<small>{(preview.file.size / 1024 / 1024).toFixed(2)} MB</small></span>
-              <button type="button" disabled={busy} onClick={() => removeFile(preview.id)} aria-label={`移除 ${preview.file.name}`}>×</button>
+              <button type="button" disabled={busy || authRecovery} onClick={() => removeFile(preview.id)} aria-label={`移除 ${preview.file.name}`}>×</button>
             </li>)}
           </ul>}
           {values.mode === 'professional' && renderProfessionalFields(1)}
@@ -302,7 +331,7 @@ export function CommerceProjectForm({
             <div><dt>产品</dt><dd>{values.name || '尚未命名'}</dd></div><div><dt>目标平台</dt><dd>{selectedPlatform.name}</dd></div><div><dt>分析模式</dt><dd>{values.mode === 'quick' ? '快速模式' : '专业模式'}</dd></div><div><dt>图片</dt><dd>{previews.length} 张</dd></div>
           </dl>
           <label className="commerce-consent">
-            <input disabled={busy} type="checkbox" checked={consented} aria-describedby="commerce-consent-requirement" onChange={(event) => setConsented(event.target.checked)} required />
+            <input disabled={busy || authRecovery} type="checkbox" checked={consented} aria-describedby="commerce-consent-requirement" onChange={(event) => setConsented(event.target.checked)} required />
             <span><strong>我确认拥有这些素材的使用权，并同意本次 AI 处理。</strong>图片会通过短期签名地址发送给当前 AI 服务商进行分析；原图默认保留 7 天，之后自动清理。</span>
           </label>
           <small id="commerce-consent-requirement" className="commerce-required-note">此项为提交分析前的必要确认。</small>
@@ -313,7 +342,7 @@ export function CommerceProjectForm({
         </div>
       </div>
 
-      <CommerceRunPanel step={currentStep} productName={values.name} platformName={selectedPlatform.name} modeName={values.mode === 'quick' ? '快速' : '专业'} imageCount={previews.length} creditsLabel={creditsLabel} state={runState} formValidity={validation.ok && consented} requirements={missingRequirements} onNext={nextStep} onRetry={onRetry} onRecoverAuthentication={onRecoverAuthentication} onRecovery={() => selectStep(1)} />
+      <CommerceRunPanel step={currentStep} productName={values.name} platformName={selectedPlatform.name} modeName={values.mode === 'quick' ? '快速' : '专业'} imageCount={previews.length} creditsLabel={creditsLabel} state={effectiveRunState} formValidity={validation.ok && consented} requirements={missingRequirements} onNext={nextStep} onRetry={onRetry} onRecoverAuthentication={onRecoverAuthentication} onRecovery={() => selectStep(1)} />
     </form>
   )
 }

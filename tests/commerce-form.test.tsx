@@ -22,6 +22,7 @@ import App from '../src/App'
 import { CommerceProjectForm } from '../src/commerce/CommerceProjectForm'
 import { CommerceStudioPage } from '../src/commerce/CommerceStudioPage'
 import { CommerceHistoryDrawer } from '../src/commerce/CommerceHistoryDrawer'
+import { COMMERCE_AUTH_DRAFT_KEY, saveCommerceAuthDraft } from '../src/commerce/commerceAuthDraft'
 import { FloatingHeader } from '../src/components/FloatingHeader'
 
 const image = (name = 'cup.png', type = 'image/png', size = 1) =>
@@ -105,6 +106,7 @@ describe('AI commerce project form', () => {
 
   afterEach(() => {
     cleanup()
+    window.sessionStorage.clear()
     vi.useRealTimers()
     vi.clearAllMocks()
   })
@@ -194,6 +196,7 @@ describe('AI commerce project form', () => {
     expect(stepper).toHaveAttribute('aria-label', '填写步骤')
     expect(stepper).toHaveAttribute('data-current-step', '1')
     expect(stepButtons?.[0]).toHaveAttribute('aria-current', 'step')
+    expect(stepButtons?.[1]).toBeDisabled()
     fireEvent.click(stepButtons![1])
     expect(stepper).toHaveAttribute('data-current-step', '1')
     fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
@@ -213,6 +216,17 @@ describe('AI commerce project form', () => {
     expect(product.querySelector('[data-professional-step="1"]')).toBeInTheDocument()
     expect(market.querySelector('[data-professional-step="2"]')).toBeInTheDocument()
     expect(screen.getByText('01 / PRODUCT')).toBeInTheDocument()
+  })
+
+  it('normalizes legacy status, progress and error props when runState is omitted', () => {
+    const progress = { completedFiles: 0, totalFiles: 1, currentFile: { name: 'cup.png', state: 'uploading' as const } }
+    const { rerender } = render(<CommerceProjectForm onSubmitted={vi.fn()} status="uploading" progress={progress} />)
+    expect(screen.getByRole('button', { name: '正在上传图片' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('0 / 1 张 · cup.png · 正在上传')
+
+    rerender(<CommerceProjectForm onSubmitted={vi.fn()} status="failed" error="旧调用仍可显示错误" onRetry={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('旧调用仍可显示错误')
+    expect(screen.getByRole('button', { name: '重试本次生成' })).toBeInTheDocument()
   })
 })
 
@@ -266,8 +280,71 @@ describe('AI commerce submission workflow', () => {
     expect(screen.getByRole('button', { name: '重新连接账号' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('上传产品图')).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('产品名称'), ' Pro')
+    expect(screen.getByRole('button', { name: '重新连接账号' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '重新连接账号' }))
     expect(auth.requireLogin).toHaveBeenLastCalledWith('#ai-commerce', { force: true })
+    const saved = window.sessionStorage.getItem(COMMERCE_AUTH_DRAFT_KEY)
+    expect(JSON.parse(saved!)).toMatchObject({ ownerId: 'user-1', input: { name: '保温杯 Pro' } })
+    expect(saved).not.toMatch(/files|cup\.png|base64|token/i)
+  })
+
+  it('restores a same-user OAuth text draft once with no files and a clear reselection notice', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    saveCommerceAuthDraft({ ownerId: 'user-1', input: { mode: 'quick', name: '回站草稿', platform: 'ozon', files: [image()] } })
+
+    render(<CommerceStudioPage repository={makeRepository()} />)
+
+    expect(await screen.findByDisplayValue('回站草稿')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '文件提示' })).toHaveTextContent('文字资料已恢复，请重新选择本地图片')
+    expect(screen.queryAllByRole('img', { name: /预览/ })).toHaveLength(0)
+    expect(window.sessionStorage.getItem(COMMERCE_AUTH_DRAFT_KEY)).toBeNull()
+  })
+
+  it('retries AUTH_REQUIRED cleanup after OAuth before allowing another upload and refreshes history', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const order: string[] = []
+    const restoredCleanup = deferred<void>()
+    const repository = makeRepository({
+      createProject: vi.fn(async () => { order.push('create'); return project }),
+      uploadAssets: vi.fn()
+        .mockImplementationOnce(async () => { order.push('upload:first'); throw new Error('上传中断') })
+        .mockImplementationOnce(async () => { order.push('upload:second'); return [] }),
+      deleteProject: vi.fn()
+        .mockImplementationOnce(async () => { order.push('delete:auth'); throw new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。') })
+        .mockImplementationOnce(() => { order.push('delete:restored'); return restoredCleanup.promise }),
+      listProjects: vi.fn(async () => { order.push('history'); return [] }),
+      startGeneration: vi.fn(async () => { order.push('start'); return { generationId: 'generation-1', status: 'queued' } }),
+    })
+    const first = render(<CommerceStudioPage repository={repository} />)
+    await completeQuickForm()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('清理未完成项目需要重新连接账号')
+    expect(screen.getByRole('button', { name: '重新连接账号' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: '重新连接账号' }))
+    first.unmount()
+
+    render(<CommerceStudioPage repository={repository} />)
+    await waitFor(() => expect(repository.deleteProject).toHaveBeenCalledTimes(2))
+    expect(await screen.findByDisplayValue('保温杯')).toBeInTheDocument()
+    expect(screen.getByLabelText('上传产品图')).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: /历史项目/ }))
+    await waitFor(() => expect(repository.listProjects).toHaveBeenCalledTimes(1))
+    await act(async () => { restoredCleanup.resolve(); await restoredCleanup.promise })
+    expect(screen.getByRole('status', { name: '文件提示' })).toHaveTextContent('文字资料已恢复，请重新选择本地图片')
+    await waitFor(() => expect(repository.listProjects).toHaveBeenCalledTimes(2))
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await userEvent.upload(screen.getByLabelText('上传产品图'), image('again.png'))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await waitFor(() => expect(repository.uploadAssets).toHaveBeenCalledTimes(2))
+    expect(order.indexOf('delete:restored')).toBeLessThan(order.indexOf('upload:second'))
+    expect(repository.startGeneration).toHaveBeenCalledTimes(1)
   })
 
   it('coalesces synchronous double submission before the first project request settles', async () => {

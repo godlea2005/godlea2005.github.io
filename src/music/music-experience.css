@@ -491,7 +491,8 @@
 
 @media (max-width: 520px) {
   .music-dock { right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); }
-  .music-dock.is-commerce { bottom: calc(max(12px,env(safe-area-inset-bottom)) + 82px); }
+  .music-dock.is-commerce.has-visible-commerce-action { bottom: calc(max(12px,env(safe-area-inset-bottom)) + 66px); }
+  .music-dock.is-commerce .music-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   .music-launcher { width: 44px; height: 44px; border-radius: 14px; }
   .site-shell.is-commerce:has(.commerce-workspace input:focus, .commerce-workspace textarea:focus) .music-dock:not(.is-open) { visibility: hidden; }
   .music-note { font-size: 24px; }

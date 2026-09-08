@@ -28,7 +28,7 @@ export function CommerceStepRail({
           type="button"
           key={step}
           aria-current={currentStep === step ? "step" : undefined}
-          aria-disabled={step > furthestStep}
+          disabled={step > furthestStep}
           onClick={() => onSelect(step)}
         >
           <span>0{step}</span>

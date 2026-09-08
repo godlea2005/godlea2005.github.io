@@ -5,6 +5,7 @@ import type { CommerceRepository } from './commerceRepository'
 import { commerceRunReducer, initialCommerceRunState, isCommerceRunBusy } from './commerceRunMachine'
 import type { CommerceGeneration, CommerceGenerationStatus, CommerceProject, CommerceProjectInput, CommerceResult, HeroDirection } from './types'
 import { isCommerceResult } from './validation'
+import { consumeCommerceAuthDraft, saveCommerceAuthDraft } from './commerceAuthDraft'
 
 type Attempt = {
   signature: string
@@ -18,7 +19,7 @@ type Attempt = {
 
 type GenerationGuard = { scope: number; userId: string; generationId: string; sequence: number }
 type RerunBase = { sourceId: string; input: Partial<CommerceProjectInput> }
-export type CommerceDraftSeed = { key: number; ownerId: string; input: Partial<CommerceProjectInput> }
+export type CommerceDraftSeed = { key: number; ownerId: string; input: Partial<CommerceProjectInput>; fileNotice?: string }
 
 type UseCommerceRunOptions = {
   repository: CommerceRepository
@@ -51,6 +52,8 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
   const [draftSeed, setDraftSeed] = useState<CommerceDraftSeed | null>(null)
   const [directionNote, setDirectionNote] = useState('')
   const attemptRef = useRef<Attempt | null>(null)
+  const latestInputRef = useRef<CommerceProjectInput | null>(null)
+  const pendingCleanupProjectIdRef = useRef<string | null>(null)
   const rerunBaseRef = useRef<RerunBase | null>(null)
   const mountedRef = useRef(true)
   const runningRef = useRef<symbol | null>(null)
@@ -83,15 +86,60 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
     generationSequenceRef.current += 1
     generationIdRef.current = null
     attemptRef.current = null
+    latestInputRef.current = null
+    pendingCleanupProjectIdRef.current = null
     rerunBaseRef.current = null
     runningRef.current = null
     setCurrentProjectId(null)
     setLiveGeneration(null)
-    setDraftSeed(null)
+    const restored = authenticatedUserId ? consumeCommerceAuthDraft(authenticatedUserId) : null
+    if (restored) {
+      latestInputRef.current = restored.input
+      setDraftSeed((current) => ({ key: (current?.key ?? 0) + 1, ownerId: authenticatedUserId!, input: restored.input, fileNotice: '文字资料已恢复，请重新选择本地图片。' }))
+    } else {
+      setDraftSeed(null)
+    }
     setDirectionNote('')
     dispatch({ type: 'reset' })
     setHistoryRefreshKey((value) => value + 1)
-  }, [authenticatedUserId])
+    if (!restored?.pendingCleanupProjectId || !authenticatedUserId) return
+
+    const cleanupProjectId = restored.pendingCleanupProjectId
+    const scope = scopeVersionRef.current
+    let cancelled = false
+    pendingCleanupProjectIdRef.current = cleanupProjectId
+    setCurrentProjectId(cleanupProjectId)
+    stateOwnerRef.current = authenticatedUserId
+    attemptRef.current = {
+      signature: signatureFor(restored.input),
+      idempotencyKey: createIdempotencyKey(),
+      input: restored.input,
+      projectId: cleanupProjectId,
+      retryBlocked: true,
+    }
+    dispatch({ type: 'begin' })
+    void repository.deleteProject(cleanupProjectId)
+      .then(() => {
+        if (cancelled || !mountedRef.current || scopeVersionRef.current !== scope || authenticatedUserIdRef.current !== authenticatedUserId) return
+        pendingCleanupProjectIdRef.current = null
+        attemptRef.current = null
+        setCurrentProjectId(null)
+        setHistoryRefreshKey((value) => value + 1)
+        dispatch({ type: 'reset' })
+      })
+      .catch((failure) => {
+        if (cancelled || !mountedRef.current || scopeVersionRef.current !== scope || authenticatedUserIdRef.current !== authenticatedUserId) return
+        const error = errorFor(failure)
+        dispatch({
+          type: 'failed',
+          error: error.code === 'AUTH_REQUIRED'
+            ? new CommerceRepositoryError('AUTH_REQUIRED', '清理未完成项目需要重新连接账号。文字资料仍会保留。', error)
+            : new CommerceRepositoryError(error.code, `未完成项目仍未清理，为避免重复图片已停止重传。${error.message}`, error),
+          recovery: error.code === 'AUTH_REQUIRED' ? 'reauthenticate' : 'restart',
+        })
+      })
+    return () => { cancelled = true }
+  }, [authenticatedUserId, createIdempotencyKey, repository])
 
   const complete = useCallback((generation: CommerceGeneration, guard?: GenerationGuard) => {
     if (!mountedRef.current || (guard && !guardIsCurrent(guard))) return
@@ -198,7 +246,12 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
             if (!scopeIsCurrent()) return
             attempt.retryBlocked = true
             const cleanupError = errorFor(cleanupFailure)
-            dispatch({ type: 'failed', error: new CommerceRepositoryError(uploadError.code, `${uploadError.message} 临时项目清理失败，为避免重复图片已停止重传。请刷新页面后重试。${cleanupError.message}`, uploadError), recovery: failureRecovery(uploadError, true) })
+            if (cleanupError.code === 'AUTH_REQUIRED') {
+              pendingCleanupProjectIdRef.current = failedProjectId ?? null
+              dispatch({ type: 'failed', error: new CommerceRepositoryError('AUTH_REQUIRED', '清理未完成项目需要重新连接账号。重新连接后会先完成清理，再允许重新上传。', cleanupError), recovery: 'reauthenticate' })
+            } else {
+              dispatch({ type: 'failed', error: new CommerceRepositoryError(uploadError.code, `${uploadError.message} 临时项目清理失败，为避免重复图片已停止重传。请刷新页面后重试。${cleanupError.message}`, uploadError), recovery: failureRecovery(uploadError, true) })
+            }
           }
           return
         }
@@ -239,9 +292,24 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
   }, [auth, authenticatedUserId, createIdempotencyKey, complete, onRefreshEntitlement, repository, setActiveGenerationId, state.phase])
 
   const retry = useCallback(() => { if (attemptRef.current && !attemptRef.current.retryBlocked) void submit(attemptRef.current.input) }, [submit])
-  const recoverAuthentication = useCallback(() => { auth.requireLogin('#ai-commerce', { force: true }) }, [auth])
+  const captureDraft = useCallback((input: CommerceProjectInput) => {
+    latestInputRef.current = input
+    if (attemptRef.current && state.phase === 'auth-recovery') attemptRef.current.input = input
+  }, [state.phase])
+  const recoverAuthentication = useCallback(() => {
+    const ownerId = authenticatedUserIdRef.current
+    const input = latestInputRef.current ?? attemptRef.current?.input
+    if (ownerId && input) {
+      try {
+        saveCommerceAuthDraft({ ownerId, input, pendingCleanupProjectId: pendingCleanupProjectIdRef.current ?? undefined })
+      } catch {
+        // Login remains available when browser storage is unavailable; files are never serialized as a fallback.
+      }
+    }
+    auth.requireLogin('#ai-commerce', { force: true })
+  }, [auth])
   const resetForMaterialChange = useCallback(() => {
-    if (isCommerceRunBusy(state.phase)) return
+    if (isCommerceRunBusy(state.phase) || state.phase === 'auth-recovery') return
     attemptRef.current = null
     generationSequenceRef.current += 1
     setActiveGenerationId(null)
@@ -274,5 +342,5 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
   }, [setActiveGenerationId, state.phase])
 
   const visibleState = stateOwnerRef.current === authenticatedUserId ? state : initialCommerceRunState
-  return { state: visibleState, busy: isCommerceRunBusy(visibleState.phase), submit, retry, recoverAuthentication, resetForMaterialChange, closeResult, selectHistoryResult, rerunDirection, historyRefreshKey, currentProjectId, liveGeneration, draftSeed, directionNote }
+  return { state: visibleState, busy: isCommerceRunBusy(visibleState.phase), submit, retry, recoverAuthentication, resetForMaterialChange, captureDraft, closeResult, selectHistoryResult, rerunDirection, historyRefreshKey, currentProjectId, liveGeneration, draftSeed, directionNote }
 }
