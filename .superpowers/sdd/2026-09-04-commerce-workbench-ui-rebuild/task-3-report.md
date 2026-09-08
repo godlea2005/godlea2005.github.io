@@ -50,3 +50,20 @@ Verification:
 - `npm.cmd test -- tests/commerce-form.test.tsx tests/music-dock.test.tsx` — 2 files, 38 tests passed.
 - `npm.cmd test` — 19 files, 292 tests passed.
 - `npm.cmd run build` — passed; only the pre-existing Vite large-chunk warnings remain.
+
+## Fix round 3 — stale callback and breakpoint review
+
+Status: complete.
+
+Commit: `12ce5c7` (`fix: guard stale commerce submissions`).
+
+Changes:
+
+- Added a live phase ref that is synchronously updated by failure dispatches. Even a caller holding the original editing-phase `submit` callback is blocked after `auth-recovery` begins, before any login check or repository mutation.
+- Aligned the collapsible music dock's mobile rules with the commerce sticky-action breakpoint at `max-width: 640px`; the existing 78px clearance and focus behavior now apply at 600px as well.
+
+Verification:
+
+- `npm.cmd test -- tests/commerce-form.test.tsx tests/music-dock.test.tsx` — 2 files, 39 tests passed.
+- `npm.cmd test` — 19 files, 293 tests passed.
+- `npm.cmd run build` — passed; only the pre-existing Vite large-chunk warnings remain.
