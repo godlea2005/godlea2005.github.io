@@ -11,7 +11,7 @@ vi.mock('../src/music/MusicProvider', () => ({
 }))
 vi.mock('../src/music/PlaylistOverlay', () => ({ PlaylistOverlay: () => null }))
 
-import { GlobalMusicDock } from '../src/music/GlobalMusicDock'
+import { COMMERCE_MUSIC_ACTION_CLEARANCE_PX, GlobalMusicDock } from '../src/music/GlobalMusicDock'
 
 describe('mobile commerce music launcher', () => {
   beforeEach(() => {
@@ -38,6 +38,8 @@ describe('mobile commerce music launcher', () => {
   it('only enables submit clearance for an actually visible enabled action and keeps the launcher keyboard-focusable', async () => {
     const view = render(<><form className="commerce-workspace"><button className="commerce-submit">提交</button></form><GlobalMusicDock commerceMode /></>)
     await waitFor(() => expect(view.container.querySelector('.music-dock')).toHaveClass('has-visible-commerce-action'))
+    expect(COMMERCE_MUSIC_ACTION_CLEARANCE_PX).toBeGreaterThanOrEqual(54 + 12 + 12)
+    expect(view.container.querySelector('.music-dock')).toHaveStyle(`--commerce-action-clearance: ${COMMERCE_MUSIC_ACTION_CLEARANCE_PX}px`)
 
     const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
     await userEvent.tab()

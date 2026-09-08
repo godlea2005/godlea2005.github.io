@@ -5,6 +5,8 @@ import { CloseIcon, ListIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, Previous
 import { PlaylistOverlay } from './PlaylistOverlay'
 import { formatTime } from './TransportControls'
 
+export const COMMERCE_MUSIC_ACTION_CLEARANCE_PX = 78
+
 export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boolean }) {
   const music = useMusic()
   const dockRef = useRef<HTMLDivElement>(null)
@@ -66,7 +68,7 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
   }, [commerceMode])
 
   return <>
-    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}${commerceActionVisible ? ' has-visible-commerce-action' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
+    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}${commerceActionVisible ? ' has-visible-commerce-action' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent, '--commerce-action-clearance': `${COMMERCE_MUSIC_ACTION_CLEARANCE_PX}px` } as React.CSSProperties}>
       <aside className="music-popover" id="global-music-player" aria-label="全站音乐播放器" aria-hidden={!open} inert={open ? undefined : true}>
         <header className="music-popover-header">
           <div className="music-popover-cover" aria-hidden="true"><i /></div>

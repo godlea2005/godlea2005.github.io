@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
@@ -24,6 +24,7 @@ import { CommerceStudioPage } from '../src/commerce/CommerceStudioPage'
 import { CommerceHistoryDrawer } from '../src/commerce/CommerceHistoryDrawer'
 import { COMMERCE_AUTH_DRAFT_KEY, saveCommerceAuthDraft } from '../src/commerce/commerceAuthDraft'
 import { FloatingHeader } from '../src/components/FloatingHeader'
+import { useCommerceRun } from '../src/commerce/useCommerceRun'
 
 const image = (name = 'cup.png', type = 'image/png', size = 1) =>
   new File([new Uint8Array(size)], name, { type })
@@ -228,6 +229,33 @@ describe('AI commerce project form', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('旧调用仍可显示错误')
     expect(screen.getByRole('button', { name: '重试本次生成' })).toBeInTheDocument()
   })
+
+  it('rejects a synthetic form submit while account recovery is the only action', async () => {
+    const onSubmitted = vi.fn()
+    const runState = {
+      phase: 'auth-recovery' as const,
+      progress: null,
+      error: new CommerceRepositoryError('AUTH_REQUIRED', '请重新连接账号。'),
+      result: null,
+      resultNotice: '',
+      resultUnavailable: '',
+      generation: null,
+      pollWarning: '',
+    }
+    const draft = { mode: 'quick' as const, name: '保温杯', platform: 'ozon' as const, files: [image()] }
+    const onRecoverAuthentication = vi.fn()
+    const view = render(<CommerceProjectForm onSubmitted={onSubmitted} initialDraft={draft} onRecoverAuthentication={onRecoverAuthentication} />)
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    view.rerender(<CommerceProjectForm onSubmitted={onSubmitted} runState={runState} initialDraft={draft} onRecoverAuthentication={onRecoverAuthentication} />)
+
+    fireEvent.submit(view.container.querySelector('form')!)
+
+    expect(onSubmitted).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '重新连接账号' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
+  })
 })
 
 describe('AI commerce submission workflow', () => {
@@ -289,6 +317,31 @@ describe('AI commerce submission workflow', () => {
     const saved = window.sessionStorage.getItem(COMMERCE_AUTH_DRAFT_KEY)
     expect(JSON.parse(saved!)).toMatchObject({ ownerId: 'user-1', input: { name: '保温杯 Pro' } })
     expect(saved).not.toMatch(/files|cup\.png|base64|token/i)
+  })
+
+  it('rejects direct hook submission while auth recovery remains unresolved', async () => {
+    const auth = signedInAuth()
+    const repository = makeRepository({ createProject: vi.fn().mockRejectedValue(new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。')) })
+    const input = { mode: 'quick' as const, name: '保温杯', platform: 'ozon' as const, files: [image()] }
+    const createIdempotencyKey = () => 'request-1'
+    const onRefreshEntitlement = vi.fn()
+    const { result } = renderHook(() => useCommerceRun({
+      repository,
+      auth,
+      authenticatedUserId: 'user-1',
+      pollIntervalMs: 2_000,
+      createIdempotencyKey,
+      onRefreshEntitlement,
+    }))
+    await act(async () => { await result.current.submit(input) })
+    expect(result.current.state.phase).toBe('auth-recovery')
+
+    await act(async () => { await result.current.submit(input) })
+
+    expect(repository.createProject).toHaveBeenCalledTimes(1)
+    expect(repository.uploadAssets).not.toHaveBeenCalled()
+    expect(repository.startGeneration).not.toHaveBeenCalled()
+    expect(result.current.state.phase).toBe('auth-recovery')
   })
 
   it('restores a same-user OAuth text draft once with no files and a clear reselection notice', async () => {

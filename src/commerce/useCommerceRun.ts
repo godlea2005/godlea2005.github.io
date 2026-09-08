@@ -192,7 +192,7 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
   }, [authenticatedUserId, complete, guardIsCurrent, pollIntervalMs, repository, state.generation, state.phase])
 
   const submit = useCallback(async (input: CommerceProjectInput) => {
-    if (runningRef.current || isCommerceRunBusy(state.phase)) return
+    if (runningRef.current || isCommerceRunBusy(state.phase) || state.phase === 'auth-recovery') return
     const runToken = Symbol('commerce-run')
     runningRef.current = runToken
     let scopeIsCurrent = () => false

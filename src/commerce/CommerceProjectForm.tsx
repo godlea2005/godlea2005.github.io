@@ -243,7 +243,7 @@ export function CommerceProjectForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!canSubmit) return
+    if (!canSubmit || effectiveRunState.phase !== 'editing') return
     void onSubmitted(input)
   }
 
