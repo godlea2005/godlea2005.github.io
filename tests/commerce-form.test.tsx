@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
 import type { CommerceRepository } from '../src/commerce/commerceRepository'
-import type { CommerceGeneration, CommerceProject } from '../src/commerce/types'
+import { CommerceRepositoryError } from '../src/commerce/commerceErrors'
+import type { CommerceGeneration, CommerceProject, CommerceResult } from '../src/commerce/types'
 
 const authMock = vi.hoisted(() => ({ useAuth: vi.fn() }))
 
@@ -20,6 +21,7 @@ vi.mock('../src/components/ProjectArchive', () => ({ ProjectArchive: () => null 
 import App from '../src/App'
 import { CommerceProjectForm } from '../src/commerce/CommerceProjectForm'
 import { CommerceStudioPage } from '../src/commerce/CommerceStudioPage'
+import { CommerceHistoryDrawer } from '../src/commerce/CommerceHistoryDrawer'
 import { FloatingHeader } from '../src/components/FloatingHeader'
 
 const image = (name = 'cup.png', type = 'image/png', size = 1) =>
@@ -78,7 +80,14 @@ const signedInAuth = (overrides: Partial<AuthContextValue> = {}): AuthContextVal
 async function completeQuickForm() {
   await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
   await userEvent.upload(screen.getByLabelText('上传产品图'), image())
+  await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+  await userEvent.click(screen.getByRole('button', { name: '下一步' }))
   await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+}
+
+function advanceToConfirmation() {
+  fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+  fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 }
 
 describe('AI commerce project form', () => {
@@ -102,10 +111,14 @@ describe('AI commerce project form', () => {
 
   it('keeps analysis disabled until quick fields and processing consent are complete', async () => {
     render(<CommerceProjectForm onSubmitted={vi.fn()} />)
-    const submit = screen.getByRole('button', { name: '生成视觉方案' })
-    expect(submit).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请先填写产品名称并上传至少 1 张产品图')
     await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
     await userEvent.upload(screen.getByLabelText('上传产品图'), image())
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    const submit = screen.getByRole('button', { name: '生成视觉方案' })
     expect(submit).toBeDisabled()
     await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     expect(submit).toBeEnabled()
@@ -125,6 +138,9 @@ describe('AI commerce project form', () => {
 
   it('uses exact supported platform values and names Russian-market context explicitly', () => {
     render(<CommerceProjectForm onSubmitted={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     expect(screen.getByRole('radio', { name: /Ozon/ })).toHaveAttribute('value', 'ozon')
     expect(screen.getByRole('radio', { name: /Wildberries/ })).toHaveAttribute('value', 'wildberries')
     expect(screen.getByRole('radio', { name: /抖音电商/ })).toHaveAttribute('value', 'douyin')
@@ -166,41 +182,37 @@ describe('AI commerce project form', () => {
     render(<CommerceProjectForm onSubmitted={vi.fn()} />)
     expect(screen.getByText(/提交前还需要：产品名称、至少 1 张产品图、素材权利与 AI 处理确认/)).toBeInTheDocument()
     expect(screen.getByLabelText('产品名称')).toBeRequired()
-    expect(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ })).toBeRequired()
+    expect(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/, hidden: true })).toBeRequired()
     expect(screen.getByRole('button', { name: '快速模式' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
-  it('exposes product, market and confirmation mobile step semantics', async () => {
+  it('exposes product, market and confirmation step semantics with validated progression', async () => {
     const view = render(<CommerceProjectForm onSubmitted={vi.fn()} />)
-    const stepper = view.container.querySelector<HTMLElement>('.commerce-mobile-steps')
+    const stepper = view.container.querySelector<HTMLElement>('.commerce-step-rail')
     const stepButtons = stepper?.querySelectorAll('button')
     expect(stepper).toHaveAttribute('aria-label', '填写步骤')
     expect(stepper).toHaveAttribute('data-current-step', '1')
     expect(stepButtons?.[0]).toHaveAttribute('aria-current', 'step')
     fireEvent.click(stepButtons![1])
+    expect(stepper).toHaveAttribute('data-current-step', '1')
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     expect(stepper).toHaveAttribute('data-current-step', '2')
     expect(screen.getByTestId('market-step')).toHaveAttribute('data-step', '2')
-    fireEvent.click(stepButtons![2])
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     expect(screen.getByTestId('confirm-step')).toHaveAttribute('data-step', '3')
   })
 
-  it('keeps desktop content in mode, market, product, professional and consent order', async () => {
+  it('keeps professional product and market fields grouped in their matching steps', async () => {
     const view = render(<CommerceProjectForm onSubmitted={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: '专业模式' }))
-    const column = view.container.querySelector('.commerce-form-column')!
-    const ordered = Array.from(column.children).filter((node) =>
-      node.matches('.commerce-mode-block, [data-step="2"], [data-step="1"], .commerce-professional-section, [data-step="3"]'))
-    expect(ordered.map((node) => node.className)).toEqual([
-      'commerce-mode-block',
-      'commerce-form-section commerce-market-section',
-      'commerce-form-section commerce-product-section',
-      'commerce-professional-section',
-      'commerce-form-section commerce-confirm-section',
-    ])
-    expect(screen.getByText('01 / MODE')).toBeInTheDocument()
-    expect(screen.getByText('03 / PRODUCT')).toBeInTheDocument()
-    expect(screen.getByText('04 / PROFESSIONAL BRIEF')).toBeInTheDocument()
+    const product = view.container.querySelector('[data-step="1"]')!
+    const market = view.container.querySelector('[data-step="2"]')!
+    expect(product.querySelector('[data-professional-step="1"]')).toBeInTheDocument()
+    expect(market.querySelector('[data-professional-step="2"]')).toBeInTheDocument()
+    expect(screen.getByText('01 / PRODUCT')).toBeInTheDocument()
   })
 })
 
@@ -223,7 +235,7 @@ describe('AI commerce submission workflow', () => {
     render(<CommerceStudioPage repository={repository} />)
     expect(screen.queryByLabelText('上传产品图')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('产品名称')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /登录并进入工作台/ }))
+    await userEvent.click(screen.getByRole('button', { name: /登录进入工作台/ }))
     expect(auth.requireLogin).toHaveBeenCalledWith('#ai-commerce')
     expect(repository.createProject).not.toHaveBeenCalled()
     expect(repository.uploadAssets).not.toHaveBeenCalled()
@@ -240,6 +252,34 @@ describe('AI commerce submission workflow', () => {
     expect(auth.requireLogin).toHaveBeenCalledWith('#ai-commerce')
     expect(repository.createProject).not.toHaveBeenCalled()
     expect(repository.uploadAssets).not.toHaveBeenCalled()
+    expect(repository.startGeneration).not.toHaveBeenCalled()
+  })
+
+  it('offers forced account recovery, and never a normal submit, after AUTH_REQUIRED', async () => {
+    const auth = signedInAuth()
+    authMock.useAuth.mockReturnValue(auth)
+    const repository = makeRepository({ createProject: vi.fn().mockRejectedValue(new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。')) })
+    render(<CommerceStudioPage repository={repository} />)
+    await completeQuickForm()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('登录状态需要恢复')
+    expect(screen.getByRole('button', { name: '重新连接账号' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '重新连接账号' }))
+    expect(auth.requireLogin).toHaveBeenLastCalledWith('#ai-commerce', { force: true })
+  })
+
+  it('coalesces synchronous double submission before the first project request settles', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const creating = deferred<CommerceProject>()
+    const repository = makeRepository({ createProject: vi.fn(() => creating.promise) })
+    render(<CommerceStudioPage repository={repository} />)
+    await completeQuickForm()
+    const submit = screen.getByRole('button', { name: '生成视觉方案' })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    await waitFor(() => expect(repository.createProject).toHaveBeenCalledTimes(1))
     expect(repository.startGeneration).not.toHaveBeenCalled()
   })
 
@@ -337,6 +377,8 @@ describe('AI commerce submission workflow', () => {
     render(<CommerceStudioPage repository={repository} createIdempotencyKey={createKey} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
     await userEvent.upload(screen.getByLabelText('上传产品图'), [image('first.png'), image('second.png')])
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
     await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('临时项目已安全清理')
@@ -362,6 +404,8 @@ describe('AI commerce submission workflow', () => {
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('为避免重复图片已停止重传')
     expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '返回修改资料' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '生成视觉方案' })).not.toBeInTheDocument()
     expect(repository.uploadAssets).toHaveBeenCalledTimes(1)
   })
 
@@ -408,16 +452,17 @@ describe('AI commerce submission workflow', () => {
     render(<CommerceStudioPage repository={repository} />)
     fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
     fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    advanceToConfirmation()
     fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
       for (let index = 0; index < 10; index += 1) await Promise.resolve()
     })
-    expect(screen.getByText('2 次')).toBeInTheDocument()
+    expect(screen.getAllByText('2 次').length).toBeGreaterThan(0)
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     expect(screen.getByRole('alert')).toHaveTextContent('模型暂时不可用')
     await act(async () => { for (let index = 0; index < 5; index += 1) await Promise.resolve() })
-    expect(screen.getByText('3 次')).toBeInTheDocument()
+    expect(screen.getAllByText('3 次').length).toBeGreaterThan(0)
     expect(repository.getEntitlement).toHaveBeenCalledTimes(3)
   })
 
@@ -441,6 +486,7 @@ describe('AI commerce submission workflow', () => {
     render(<CommerceStudioPage repository={repository} />)
     fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
     fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    advanceToConfirmation()
     fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
@@ -451,13 +497,13 @@ describe('AI commerce submission workflow', () => {
     expect(repository.getEntitlement).toHaveBeenCalledTimes(3)
 
     await act(async () => { refunded.resolve(entitlement(3)); await Promise.resolve() })
-    expect(screen.getByText('3 次')).toBeInTheDocument()
+    expect(screen.getAllByText('3 次').length).toBeGreaterThan(0)
     await act(async () => {
       charged.resolve(entitlement(2))
       initial.resolve(entitlement(4))
       await Promise.resolve()
     })
-    expect(screen.getByText('3 次')).toBeInTheDocument()
+    expect(screen.getAllByText('3 次').length).toBeGreaterThan(0)
   })
 
   it('polls every two seconds, stops at a terminal status and clears the timer on unmount', async () => {
@@ -473,6 +519,7 @@ describe('AI commerce submission workflow', () => {
 
     fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
     fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    advanceToConfirmation()
     fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
@@ -498,6 +545,7 @@ describe('AI commerce submission workflow', () => {
     const view = render(<CommerceStudioPage repository={repository} />)
     fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
     fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    advanceToConfirmation()
     fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
@@ -519,13 +567,56 @@ describe('AI commerce route and navigation', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   })
 
-  afterEach(() => cleanup())
+  afterEach(() => { cleanup(); vi.useRealTimers() })
 
   it('marks the first-level AI commerce navigation entry as current', () => {
     render(<FloatingHeader theme="dark" pageHash="#ai-commerce" onToggleTheme={vi.fn()} />)
-    const link = screen.getByRole('link', { name: 'AI 电商设计' })
+    const link = screen.getByRole('link', { name: 'AI 电商' })
     expect(link).toHaveAttribute('href', '#ai-commerce')
     expect(link).toHaveClass('is-current')
+  })
+
+  it('keeps an accepted generation busy when a transient poll fails', async () => {
+    vi.useFakeTimers()
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const repository = makeRepository({ getGeneration: vi.fn().mockRejectedValue(new Error('轮询暂断')) })
+    render(<CommerceStudioPage repository={repository} />)
+    fireEvent.change(screen.getByLabelText('产品名称'), { target: { value: '保温杯' } })
+    fireEvent.change(screen.getByLabelText('上传产品图'), { target: { files: [image()] } })
+    advanceToConfirmation()
+    fireEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '生成视觉方案' })); for (let index = 0; index < 8; index += 1) await Promise.resolve() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(screen.getByText(/轮询暂断.*任务仍在后台/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI 正在生成方案' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '重试本次生成' })).not.toBeInTheDocument()
+    expect(repository.startGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens useful local search from the keyboard and restores focus on close', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    const search = screen.getByRole('button', { name: '打开搜索' })
+    search.focus()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    const input = screen.getByRole('textbox', { name: '搜索作品、笔记或标签' })
+    expect(input).toHaveFocus()
+    await userEvent.type(input, '音乐')
+    expect(screen.getByRole('link', { name: /音乐/ })).toHaveAttribute('href', '#music')
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: '搜索本站' })).not.toBeInTheDocument()
+    expect(search).toHaveFocus()
+  })
+
+  it('keeps a pointer-opened dropdown open through the first click and closes it with Escape', () => {
+    const view = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    const group = view.container.querySelectorAll<HTMLElement>('.floating-nav-group')[0]
+    const trigger = screen.getByRole('button', { name: '文章' })
+    fireEvent.pointerEnter(group, { pointerType: 'mouse' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('resolves the ai-commerce hash to the lazy workspace instead of the homepage', async () => {
@@ -534,5 +625,50 @@ describe('AI commerce route and navigation', () => {
     expect(await screen.findByRole('heading', { name: 'AI 电商视觉工作台' })).toBeInTheDocument()
     expect(screen.queryByText('HOME')).not.toBeInTheDocument()
     expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'commerce')
+  })
+})
+
+const result = (): CommerceResult => ({
+  productSummary: '历史保温杯方案', facts: [], audiences: [], sellingPoints: [],
+  platformStrategy: { overview: '', contentDensity: '', tone: '', complianceNotes: [] },
+  heroDirections: Array.from({ length: 3 }, (_, index) => ({ title: `方向 ${index + 1}`, rationale: '', composition: '', background: '', palette: [], lighting: '', props: [], copyPlacement: '', visualFocus: '', imagePrompt: '', negativePrompt: '' })) as CommerceResult['heroDirections'],
+  detailFrames: Array.from({ length: 8 }, (_, index) => ({ order: index + 1, purpose: '', visual: '', copy: '', copyTranslation: null, transition: '' })),
+  recommendedCanvas: [], fidelityRules: [], pendingConfirmations: [],
+})
+
+describe('commerce history drawer', () => {
+  beforeEach(() => authMock.useAuth.mockReturnValue(signedInAuth()))
+  afterEach(() => { cleanup(); vi.useRealTimers() })
+
+  it('focuses its title, filters project states and preserves confirmed deletion', async () => {
+    const completedProject = { ...project, id: 'completed-project', name: '完成项目' }
+    const processingProject = { ...project, id: 'processing-project', name: '进行项目' }
+    const draftProject = { ...project, id: 'draft-project', name: '草稿项目', assets: [] }
+    const completedGeneration = { ...generation('completed'), id: 'completed-generation', projectId: completedProject.id }
+    const processingGeneration = { ...generation('processing'), id: 'processing-generation', projectId: processingProject.id }
+    const repository = makeRepository({
+      listProjects: vi.fn().mockResolvedValue([completedProject, processingProject, draftProject]),
+      listGenerations: vi.fn().mockResolvedValue([completedGeneration, processingGeneration]),
+    })
+    const onClose = vi.fn()
+    const onCountChange = vi.fn()
+    render(<CommerceHistoryDrawer open onClose={onClose} repository={repository} onSelectResult={vi.fn()} onCountChange={onCountChange} />)
+
+    const title = screen.getByRole('heading', { name: '历史项目' })
+    expect(title).toHaveFocus()
+    expect(await screen.findByLabelText('草稿项目 历史项目')).toHaveTextContent('未完成草稿')
+    expect(screen.getByLabelText('草稿项目 历史项目')).not.toHaveTextContent('原始图片已自动清理')
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(3))
+
+    await userEvent.click(screen.getByRole('button', { name: '已完成' }))
+    expect(screen.getByLabelText('完成项目 历史项目')).toBeInTheDocument()
+    expect(screen.queryByLabelText('进行项目 历史项目')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '未完成' }))
+    await userEvent.click(screen.getByRole('button', { name: '删除 草稿项目' }))
+    await userEvent.click(screen.getByRole('button', { name: '确认删除 草稿项目' }))
+    await waitFor(() => expect(repository.deleteProject).toHaveBeenCalledWith('draft-project'))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalled()
   })
 })

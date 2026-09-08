@@ -1,0 +1,182 @@
+.commerce-page .commerce-form-column {
+  display: block;
+}
+.commerce-page .commerce-field > span,
+.commerce-page .commerce-upload-field > div > span,
+.commerce-page .commerce-platforms legend {
+  font-size: 12px;
+}
+.commerce-page .commerce-field input,
+.commerce-page .commerce-field textarea {
+  font-size: 14px;
+  border-radius: 6px;
+}
+.commerce-page .commerce-mode-tabs small,
+.commerce-page .commerce-upload-field small {
+  font-size: 11px;
+}
+.commerce-page .commerce-field > small,
+.commerce-page .commerce-required-note {
+  font-size: 11px;
+}
+.commerce-page .commerce-step-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 32px;
+  border-block: 1px solid var(--commerce-rule);
+}
+.commerce-step-rail button {
+  min-height: 68px;
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: 24px auto;
+  gap: 2px 9px;
+  align-content: center;
+  border: 0;
+  border-right: 1px solid var(--commerce-rule);
+  color: var(--quiet);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.commerce-step-rail button:last-child {
+  border-right: 0;
+}
+.commerce-step-rail button > span {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--quiet);
+  font: 9px/1 monospace;
+}
+.commerce-step-rail button strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.commerce-step-rail button small {
+  font-size: 9px;
+}
+.commerce-step-rail button[aria-current="step"] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent2) 8%, transparent);
+  box-shadow: inset 0 -2px var(--accent);
+}
+.commerce-step-rail button[aria-current="step"] > span {
+  color: var(--accent);
+}
+.commerce-step-rail button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.commerce-page .commerce-form-section {
+  min-height: 560px;
+  padding-top: 34px;
+}
+.commerce-page .commerce-form-section[hidden] {
+  display: none !important;
+}
+.commerce-page .commerce-mode-block {
+  margin-bottom: 26px;
+  padding: 0;
+  border: 0;
+}
+.commerce-mode-block h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font:
+    600 10px/1.4 "SFMono-Regular",
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+}
+.commerce-page .commerce-professional-fields {
+  margin-top: 26px;
+  padding-top: 10px;
+  border-top: 1px solid var(--commerce-rule);
+}
+.commerce-confirm-summary {
+  margin: 0 0 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--commerce-rule);
+}
+.commerce-confirm-summary > div {
+  min-height: 62px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 3px;
+  border-right: 1px solid var(--commerce-rule);
+  border-bottom: 1px solid var(--commerce-rule);
+}
+.commerce-confirm-summary > div:nth-child(2n) {
+  border-right: 0;
+}
+.commerce-confirm-summary > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+.commerce-confirm-summary dt {
+  color: var(--quiet);
+  font-size: 9px;
+}
+.commerce-confirm-summary dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+.commerce-page .commerce-step-actions {
+  min-height: 48px;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.commerce-step-actions button {
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid var(--commerce-rule);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.commerce-step-actions p {
+  margin: 0;
+  color: var(--commerce-error);
+  font-size: 10px;
+}
+.commerce-step-error {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--commerce-error);
+  color: var(--commerce-error);
+  background: color-mix(in srgb, var(--commerce-error) 7%, transparent);
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .commerce-page .commerce-step-rail {
+    margin-top: 22px;
+  }
+  .commerce-step-rail button {
+    min-height: 58px;
+    padding: 8px;
+    grid-template-columns: 18px auto;
+    gap: 2px 5px;
+  }
+  .commerce-step-rail button small {
+    display: none;
+  }
+  .commerce-page .commerce-form-section {
+    min-height: 0;
+    padding-top: 26px;
+  }
+  .commerce-page .commerce-professional-group {
+    display: grid;
+  }
+  .commerce-confirm-summary {
+    grid-template-columns: 1fr;
+  }
+  .commerce-confirm-summary > div {
+    border-right: 0;
+  }
+  .commerce-confirm-summary > div:nth-last-child(2) {
+    border-bottom: 1px solid var(--commerce-rule);
+  }
+}

@@ -38,7 +38,8 @@ const signedInSession = {
 
 function ProtectedProbe() {
   const auth = useAuth()
-  return <button type="button" onClick={() => void auth.requireLogin('#ai-commerce')}>开始分析</button>
+  return <><button type="button" onClick={() => void auth.requireLogin('#ai-commerce')}>开始分析</button>
+    <button type="button" onClick={() => void auth.requireLogin('#ai-commerce', { force: true })}>恢复账号</button></>
 }
 
 function AdminProbe() {
@@ -113,6 +114,27 @@ describe('site authentication provider', () => {
 
     expect(await screen.findByText('就绪:member-user:普通用户:无错误')).toBeInTheDocument()
     expect(mocks.rpc).toHaveBeenCalledWith('site_is_admin')
+  })
+
+  it('can explicitly reconnect when the cached account still looks signed in', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession } })
+    render(<AuthProvider><ProtectedProbe /><AdminProbe /></AuthProvider>)
+    await screen.findByText('就绪:member-user:普通用户:无错误')
+    await userEvent.click(screen.getByRole('button', { name: '恢复账号' }))
+    expect(await screen.findByRole('dialog', { name: '登录后继续' })).toBeInTheDocument()
+  })
+
+  it('keeps the same signed-in identity ready while refreshing its token', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: signedInSession } })
+    render(<AuthProvider><AdminProbe /></AuthProvider>)
+    await screen.findByText('就绪:member-user:普通用户:无错误')
+    let resolveAdmin!: (value: { data: boolean; error: null }) => void
+    mocks.rpc.mockReturnValueOnce(new Promise(resolve => { resolveAdmin = resolve }))
+    await act(async () => { mocks.authEvents.callback?.('TOKEN_REFRESHED', signedInSession) })
+    expect(screen.getByText('就绪:member-user:普通用户:无错误')).toBeInTheDocument()
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+    await act(async () => { resolveAdmin({ data: false, error: null }) })
+    expect(screen.getByText('就绪:member-user:普通用户:无错误')).toBeInTheDocument()
   })
 
   it('publishes a neutral state on every auth event and ignores an older administrator check', async () => {

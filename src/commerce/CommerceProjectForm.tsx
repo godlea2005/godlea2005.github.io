@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { AssetUploadProgress, CommercePlatform, CommerceProjectInput, ProjectMode } from './types'
 import { validateProductFile, validateProjectInput } from './validation'
+import { CommerceRunPanel } from './CommerceRunPanel'
+import { CommerceStepRail, type CommerceStep } from './CommerceStepRail'
+import { initialCommerceRunState, type CommerceRunState } from './commerceRunMachine'
 
 type PreviewFile = {
   id: string
@@ -8,16 +11,13 @@ type PreviewFile = {
   url: string
 }
 
-export type CommerceFormStatus = 'idle' | 'creating' | 'uploading' | 'starting' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
-
 export type CommerceProjectFormProps = {
   onSubmitted: (input: CommerceProjectInput) => void | Promise<void>
   busy?: boolean
-  status?: CommerceFormStatus
-  progress?: AssetUploadProgress | null
-  error?: string
+  runState?: CommerceRunState
   creditsLabel?: string
   onRetry?: () => void
+  onRecoverAuthentication?: () => void
   onMaterialChange?: () => void
   initialDraft?: Partial<CommerceProjectInput>
   draftKey?: string | number
@@ -67,29 +67,16 @@ const initialValues: TextValues = {
   notes: '',
 }
 
-const statusCopy: Record<CommerceFormStatus, string> = {
-  idle: '等待输入',
-  creating: '正在建立项目',
-  uploading: '正在安全上传',
-  starting: '正在启动分析',
-  queued: '已进入分析队列',
-  processing: 'AI 正在分析产品',
-  completed: '方案生成完成',
-  failed: '本次生成失败',
-  cancelled: '本次生成已取消',
-}
-
 const uniqueId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 const fileFingerprint = (file: File) => `${file.name}\u0000${file.size}\u0000${file.type}\u0000${file.lastModified}`
 
 export function CommerceProjectForm({
   onSubmitted,
   busy = false,
-  status = 'idle',
-  progress = null,
-  error = '',
+  runState = initialCommerceRunState,
   creditsLabel = '登录后查看',
   onRetry,
+  onRecoverAuthentication,
   onMaterialChange,
   initialDraft,
   draftKey = 0,
@@ -99,7 +86,9 @@ export function CommerceProjectForm({
   const [consented, setConsented] = useState(false)
   const [fileError, setFileError] = useState('')
   const [fileNotice, setFileNotice] = useState('')
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
+  const [currentStep, setCurrentStep] = useState<CommerceStep>(1)
+  const [furthestStep, setFurthestStep] = useState<CommerceStep>(1)
+  const [stepError, setStepError] = useState('')
   const livePreviews = useRef(new Map<string, string>())
   const draftRef = useRef(initialDraft)
   draftRef.current = initialDraft
@@ -126,6 +115,8 @@ export function CommerceProjectForm({
     setFileError('')
     setFileNotice('')
     setCurrentStep(1)
+    setFurthestStep(1)
+    setStepError('')
   }, [draftKey])
 
   const input = useMemo<CommerceProjectInput>(() => ({
@@ -140,6 +131,24 @@ export function CommerceProjectForm({
     consented ? '' : '素材权利与 AI 处理确认',
   ].filter(Boolean)
   const selectedPlatform = platforms.find((platform) => platform.value === values.platform) ?? platforms[0]
+  const productStepReady = Boolean(values.name.trim()) && previews.length > 0
+
+  const selectStep = (step: CommerceStep) => {
+    if (step > furthestStep) return
+    setStepError('')
+    setCurrentStep(step)
+  }
+
+  const nextStep = () => {
+    if (currentStep === 1 && !productStepReady) {
+      setStepError('请先填写产品名称并上传至少 1 张产品图。')
+      return
+    }
+    const next = Math.min(3, currentStep + 1) as CommerceStep
+    setStepError('')
+    setFurthestStep((current) => Math.max(current, next) as CommerceStep)
+    setCurrentStep(next)
+  }
 
   const updateValue = (key: keyof TextValues, value: string) => {
     onMaterialChange?.()
@@ -240,46 +249,16 @@ export function CommerceProjectForm({
   return (
     <form className="commerce-workspace" data-current-step={currentStep} onSubmit={submit} noValidate>
       <div className="commerce-form-column">
-        <section className="commerce-mode-block" aria-labelledby="commerce-mode-heading">
-          <header className="commerce-sequence-heading"><span>01 / MODE</span><h2 id="commerce-mode-heading">选择分析深度</h2></header>
-          <div className="commerce-mode-tabs" role="group" aria-label="分析模式">
-            {(['quick', 'professional'] as const).map((mode) => (
-              <button
-                type="button"
-                aria-pressed={values.mode === mode}
-                aria-label={mode === 'quick' ? '快速模式' : '专业模式'}
-                disabled={busy}
-                className={values.mode === mode ? 'is-active' : ''}
-                onClick={() => setMode(mode)}
-                key={mode}
-              >
-                {mode === 'quick' ? '快速模式' : '专业模式'}
-                <small>{mode === 'quick' ? '只填必要信息' : '补充完整营销语境'}</small>
-              </button>
-            ))}
+        <CommerceStepRail currentStep={currentStep} furthestStep={furthestStep} onSelect={selectStep} />
+
+        <section className="commerce-form-section commerce-product-section" data-step="1" hidden={currentStep !== 1} aria-labelledby="commerce-product-heading">
+          <header><span>01 / PRODUCT</span><h2 id="commerce-product-heading">先看产品本身</h2></header>
+          <div className="commerce-mode-block" aria-labelledby="commerce-mode-heading">
+            <h3 id="commerce-mode-heading">分析深度</h3>
+            <div className="commerce-mode-tabs" role="group" aria-label="分析模式">
+              {(['quick', 'professional'] as const).map((mode) => <button type="button" aria-pressed={values.mode === mode} aria-label={mode === 'quick' ? '快速模式' : '专业模式'} disabled={busy} className={values.mode === mode ? 'is-active' : ''} onClick={() => setMode(mode)} key={mode}>{mode === 'quick' ? '快速模式' : '专业模式'}<small>{mode === 'quick' ? '只填必要信息' : '补充完整营销语境'}</small></button>)}
+            </div>
           </div>
-        </section>
-
-        <div className="commerce-mobile-steps" role="group" aria-label="填写步骤" data-current-step={currentStep}>
-          {(['产品', '市场', '确认'] as const).map((label, index) => {
-            const step = (index + 1) as 1 | 2 | 3
-            return <button type="button" key={label} onClick={() => setCurrentStep(step)} aria-current={currentStep === step ? 'step' : undefined}><span>0{step}</span>{label}</button>
-          })}
-        </div>
-
-        <section className="commerce-form-section commerce-market-section" data-step="2" data-active={currentStep === 2} data-testid="market-step" aria-labelledby="commerce-market-heading">
-          <header><span>02 / MARKET</span><h2 id="commerce-market-heading">选择销售语境</h2></header>
-          <fieldset className="commerce-platforms">
-            <legend>目标平台</legend>
-            {platforms.map((platform) => <label key={platform.value} className={values.platform === platform.value ? 'is-selected' : ''}>
-              <input disabled={busy} type="radio" name="platform" value={platform.value} checked={values.platform === platform.value} onChange={() => updateValue('platform', platform.value)} />
-              <span><strong>{platform.name}</strong><small>{platform.context}</small></span><i aria-hidden="true" />
-            </label>)}
-          </fieldset>
-        </section>
-
-        <section className="commerce-form-section commerce-product-section" data-step="1" data-active={currentStep === 1} aria-labelledby="commerce-product-heading">
-          <header><span><b className="commerce-desktop-label">03 / PRODUCT</b><b className="commerce-mobile-label">01 / PRODUCT</b></span><h2 id="commerce-product-heading">先看产品本身</h2></header>
           <label className="commerce-field">
             <span>产品名称</span>
             <input disabled={busy} value={values.name} onChange={(event) => updateValue('name', event.target.value)} aria-label="产品名称" aria-describedby="commerce-name-requirement" maxLength={80} placeholder="例如：真空不锈钢保温杯" required />
@@ -301,16 +280,27 @@ export function CommerceProjectForm({
               <button type="button" disabled={busy} onClick={() => removeFile(preview.id)} aria-label={`移除 ${preview.file.name}`}>×</button>
             </li>)}
           </ul>}
+          {values.mode === 'professional' && renderProfessionalFields(1)}
+          {stepError && <p className="commerce-step-error" role="alert">{stepError}</p>}
         </section>
 
-        {values.mode === 'professional' && <section className="commerce-professional-section" aria-labelledby="commerce-professional-heading">
-          <header className="commerce-sequence-heading"><span>04 / PROFESSIONAL BRIEF</span><h2 id="commerce-professional-heading">补充产品与市场语境</h2></header>
-          {renderProfessionalFields(1)}
-          {renderProfessionalFields(2)}
-        </section>}
+        <section className="commerce-form-section commerce-market-section" data-step="2" hidden={currentStep !== 2} data-testid="market-step" aria-labelledby="commerce-market-heading">
+          <header><span>02 / MARKET</span><h2 id="commerce-market-heading">选择销售语境</h2></header>
+          <fieldset className="commerce-platforms">
+            <legend>目标平台</legend>
+            {platforms.map((platform) => <label key={platform.value} className={values.platform === platform.value ? 'is-selected' : ''}>
+              <input disabled={busy} type="radio" name="platform" value={platform.value} checked={values.platform === platform.value} onChange={() => updateValue('platform', platform.value)} />
+              <span><strong>{platform.name}</strong><small>{platform.context}</small></span><i aria-hidden="true" />
+            </label>)}
+          </fieldset>
+          {values.mode === 'professional' && renderProfessionalFields(2)}
+        </section>
 
-        <section className="commerce-form-section commerce-confirm-section" data-step="3" data-active={currentStep === 3} data-testid="confirm-step" aria-labelledby="commerce-confirm-heading">
-          <header><span><b className="commerce-desktop-label">05 / CONFIRM</b><b className="commerce-mobile-label">03 / CONFIRM</b></span><h2 id="commerce-confirm-heading">确认素材处理</h2></header>
+        <section className="commerce-form-section commerce-confirm-section" data-step="3" hidden={currentStep !== 3} data-testid="confirm-step" aria-labelledby="commerce-confirm-heading">
+          <header><span>03 / CONFIRM</span><h2 id="commerce-confirm-heading">核对并确认</h2></header>
+          <dl className="commerce-confirm-summary">
+            <div><dt>产品</dt><dd>{values.name || '尚未命名'}</dd></div><div><dt>目标平台</dt><dd>{selectedPlatform.name}</dd></div><div><dt>分析模式</dt><dd>{values.mode === 'quick' ? '快速模式' : '专业模式'}</dd></div><div><dt>图片</dt><dd>{previews.length} 张</dd></div>
+          </dl>
           <label className="commerce-consent">
             <input disabled={busy} type="checkbox" checked={consented} aria-describedby="commerce-consent-requirement" onChange={(event) => setConsented(event.target.checked)} required />
             <span><strong>我确认拥有这些素材的使用权，并同意本次 AI 处理。</strong>图片会通过短期签名地址发送给当前 AI 服务商进行分析；原图默认保留 7 天，之后自动清理。</span>
@@ -319,33 +309,11 @@ export function CommerceProjectForm({
         </section>
 
         <div className="commerce-step-actions" aria-label="步骤操作">
-          <button type="button" disabled={currentStep === 1} onClick={() => setCurrentStep((step) => Math.max(1, step - 1) as 1 | 2 | 3)}>上一步</button>
-          {currentStep < 3 && <button type="button" className="is-primary" onClick={() => setCurrentStep((step) => Math.min(3, step + 1) as 1 | 2 | 3)}>下一步</button>}
+          {currentStep > 1 && <button type="button" onClick={() => selectStep((currentStep - 1) as CommerceStep)}>上一步</button>}
         </div>
       </div>
 
-      <aside className="commerce-summary" aria-label="当前分析摘要">
-        <div className="commerce-summary-status"><i data-status={status} /><span>WORKSPACE STATUS</span><strong>{statusCopy[status]}</strong></div>
-        <dl>
-          <div><dt>平台</dt><dd>{selectedPlatform.name}</dd></div>
-          <div><dt>模式</dt><dd>{values.mode === 'quick' ? '快速' : '专业'}</dd></div>
-          <div><dt>图片</dt><dd>{previews.length} / 6</dd></div>
-          <div><dt>剩余额度</dt><dd>{creditsLabel}</dd></div>
-        </dl>
-        <div className="commerce-output-contract"><span>OUTPUT CONTRACT</span><strong>将生成 3 套主图<br />+ 8–12 屏详情页</strong><p>包含平台策略、卖点排序、画面分镜、AI 作图提示词与保真规则。</p></div>
-        {progress && <p className="commerce-progress" role="status">
-          {progress.completedFiles} / {progress.totalFiles} 张 · {progress.currentFile.name} · {progress.currentFile.state === 'uploading' ? '正在上传' : progress.currentFile.state === 'ready' ? '上传完成' : '上传失败'}
-        </p>}
-        {error && <div className="commerce-submit-error" role="alert"><strong>这一步没有完成</strong><p>{error}</p>{onRetry && <button type="button" onClick={onRetry}>重试本次生成</button>}</div>}
-        {status === 'completed' && <p className="commerce-complete-note" role="status">结果已安全写入，可进入方案页查看。</p>}
-        <p className="commerce-requirements" id="commerce-submit-requirements" role="status">
-          {missingRequirements.length > 0 ? `提交前还需要：${missingRequirements.join('、')}。` : '资料与授权已齐，可以提交分析。'}
-        </p>
-        <button className="commerce-submit" type="submit" disabled={!canSubmit} aria-describedby="commerce-submit-requirements commerce-submit-hint">
-          <span>{busy ? statusCopy[status] : '生成视觉方案'}</span><i aria-hidden="true">↗</i>
-        </button>
-        <small id="commerce-submit-hint">每次成功提交消耗 1 次；服务失败会自动退款。</small>
-      </aside>
+      <CommerceRunPanel step={currentStep} productName={values.name} platformName={selectedPlatform.name} modeName={values.mode === 'quick' ? '快速' : '专业'} imageCount={previews.length} creditsLabel={creditsLabel} state={runState} formValidity={validation.ok && consented} requirements={missingRequirements} onNext={nextStep} onRetry={onRetry} onRecoverAuthentication={onRecoverAuthentication} onRecovery={() => selectStep(1)} />
     </form>
   )
 }

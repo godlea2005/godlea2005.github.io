@@ -18,7 +18,7 @@ export type AuthState = {
 export type AuthContextValue = AuthState & {
   signIn: (provider: SocialProvider, returnHash?: string) => Promise<void>
   signOut: () => Promise<void>
-  requireLogin: (returnHash?: string) => boolean
+  requireLogin: (returnHash?: string, options?: { force?: boolean }) => boolean
 }
 
 type OAuthIntent = { provider: SocialProvider; mode: 'link' | 'sign-in' }
@@ -194,6 +194,8 @@ function getOAuthCallbackInitialization() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [dialogOpen, setDialogOpen] = useState(false)
   const sessionEpochRef = useRef(0)
 
@@ -291,14 +293,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState((value) => ({ ...value, ready: true, error: message }))
       })
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const epoch = enterResolvingState()
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      // A token refresh is not an account switch: keep forms and uploads mounted.
+      const sameAccountRefresh = event === 'TOKEN_REFRESHED' && stateRef.current.ready
+        && Boolean(session?.user.id) && session?.user.id === stateRef.current.user?.id
+        && session?.user.is_anonymous === stateRef.current.user?.is_anonymous
+      const epoch = sameAccountRefresh ? ++sessionEpochRef.current : enterResolvingState()
+      if (sameAccountRefresh) setState((value) => ({ ...value, isAdmin: false }))
       window.setTimeout(() => {
         if (!active || sessionEpochRef.current !== epoch) return
         void (async () => {
           const resolvedSession = session ?? await ensureAnonymousSession()
           if (active && sessionEpochRef.current === epoch) await applySession(resolvedSession, epoch)
-        })()
+        })().catch(() => {
+          if (active && sessionEpochRef.current === epoch) {
+            setState((value) => ({ ...value, ready: true, isAdmin: false, error: '身份验证暂时失败，请刷新后重试' }))
+          }
+        })
       }, 0)
     })
     return () => { active = false; sessionEpochRef.current += 1; listener.subscription.unsubscribe() }
@@ -355,8 +366,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [applySession, enterResolvingState])
 
-  const requireLogin = useCallback((returnHash = '#ai-commerce') => {
-    if (state.user && !state.isAnonymous) return true
+  const requireLogin = useCallback((returnHash = '#ai-commerce', options?: { force?: boolean }) => {
+    if (!options?.force && state.user && !state.isAnonymous) return true
     saveReturnHash(returnHash)
     setDialogOpen(true)
     return false
