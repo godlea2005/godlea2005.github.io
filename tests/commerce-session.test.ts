@@ -70,6 +70,19 @@ describe('authenticated commerce requests', () => {
     expect(client.functions.invoke).toHaveBeenCalledTimes(2)
     expect(client.auth.refreshSession).toHaveBeenCalledTimes(1)
   })
+  it('preserves a directly thrown function transport error as NETWORK without replaying', async () => {
+    const { client, session } = fixture()
+    session.expires_at = Date.now() / 1000 + 3600
+    client.functions.invoke.mockRejectedValue(Object.assign(new Error('Failed to send a request to the Edge Function'), {
+      name: 'FunctionsFetchError',
+    }))
+
+    await expect(invokeAuthenticatedFunction(client as never, 'commerce-upload', { action: 'reserve' }))
+      .rejects.toMatchObject({ code: 'NETWORK' })
+
+    expect(client.functions.invoke).toHaveBeenCalledTimes(1)
+    expect(client.auth.refreshSession).not.toHaveBeenCalled()
+  })
   it('never replays a write under a different account after refresh', async () => {
     const { client, session } = fixture()
     session.expires_at = Date.now() / 1000 + 3600

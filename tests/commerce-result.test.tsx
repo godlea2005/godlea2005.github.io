@@ -332,6 +332,29 @@ describe('completed generation integration', () => {
     expect(repository.getGeneration).toHaveBeenCalledTimes(1)
   })
 
+  it.each([
+    ['invalid result data', vi.fn().mockResolvedValue(generation({ resultData: { productSummary: 'incomplete' } as CommerceResultData }))],
+    ['failed persisted read', vi.fn().mockRejectedValue(new Error('读取暂时失败'))],
+  ])('shows one truthful recovery action for %s without success copy or a phantom view action', async (_case, getGeneration) => {
+    const repository = makeRepository({
+      startGeneration: vi.fn().mockResolvedValue({ generationId: 'generation-1', status: 'completed' }),
+      getGeneration,
+      listProjects: vi.fn().mockResolvedValue([]),
+      listGenerations: vi.fn().mockResolvedValue([]),
+    })
+    render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'cup.png', { type: 'image/png' }))
+    await advanceToConfirmation()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/不可用|无法读取/)
+    expect(screen.getByRole('button', { name: '返回修改资料' })).toBeVisible()
+    expect(screen.queryByText('结果已安全写入，可进入方案页查看。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看方案' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button').filter((button) => button.hasAttribute('data-commerce-primary-action'))).toHaveLength(1)
+  })
+
   it('keeps the 390px result structure single-column-ready and marks actions/history as print-hidden', async () => {
     const view = render(<CommerceResult result={result} />)
     expect(view.container.querySelector('.commerce-hero-directions')).toBeInTheDocument()

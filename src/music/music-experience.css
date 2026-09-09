@@ -447,8 +447,8 @@
 /* Collapsible global music dock */
 .music-dock { position: fixed; z-index: 95; right: clamp(16px, 2.2vw, 34px); bottom: max(clamp(16px, 2.2vw, 30px), env(safe-area-inset-bottom)); display: grid; justify-items: end; gap: 10px; color: #eff8f7; pointer-events: none; }
 .music-dock .music-launcher, .music-dock .music-popover { pointer-events: auto; }
-.music-launcher { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; position: relative; overflow: hidden; color: #fff; border: 1px solid rgba(230,255,250,.18); border-radius: 14px; background: rgba(5,10,12,.84); box-shadow: 0 14px 38px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.05); backdrop-filter: blur(20px) saturate(1.2); cursor: pointer; transition: transform .2s ease, border-color .2s ease, background .2s ease; }
-.music-launcher:hover,.music-launcher:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: rgba(8,15,16,.94); }
+.music-launcher { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; position: relative; overflow: hidden; color: #fff; border: 1px solid rgba(230,255,250,.18); border-radius: 14px; background: rgba(5,10,12,.84); box-shadow: 0 14px 38px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.05); backdrop-filter: blur(20px) saturate(1.2); cursor: pointer; transform: translate(var(--commerce-launcher-shift-x, 0px), calc(-1 * var(--commerce-launcher-shift-y, 0px))); transition: border-color .2s ease, background .2s ease; }
+.music-launcher:hover,.music-launcher:focus-visible { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: rgba(8,15,16,.94); }
 .music-launcher:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 .music-note { font: 700 27px/1 Georgia,serif; transform: translateY(-1px); transition: opacity .2s ease, transform .2s ease; }
 .music-equalizer { height: 18px; display: flex; align-items: end; gap: 3px; position: absolute; opacity: 0; }
@@ -491,7 +491,6 @@
 
 @media (max-width: 640px) {
   .music-dock { right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); }
-  .music-dock.is-commerce.has-visible-commerce-action { bottom: calc(max(12px,env(safe-area-inset-bottom)) + var(--commerce-action-clearance,78px)); }
   .music-dock.is-commerce .music-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   .music-launcher { width: 44px; height: 44px; border-radius: 14px; }
   .site-shell.is-commerce:has(.commerce-workspace input:focus, .commerce-workspace textarea:focus) .music-dock:not(.is-open) { visibility: hidden; }

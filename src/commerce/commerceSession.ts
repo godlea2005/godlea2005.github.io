@@ -50,7 +50,9 @@ export async function invokeAuthenticatedFunction(
       if (response.error) throw await mapFunctionInvokeError(response.error)
       return response.data
     } catch (error) {
-      const mapped = error instanceof CommerceRepositoryError ? error : await mapFunctionInvokeError(error)
+      // `response.error` was normalized above so its response body remains available.
+      // A direct SDK throw must retain its transport class for NETWORK mapping.
+      const mapped = error instanceof CommerceRepositoryError ? error : mapCommerceError(error)
       if (attempt !== 0 || !isCommerceAuthError(mapped)) throw mapped
       session = await getFreshAuthenticatedSession(client, { forceRefresh: true })
       // Account changes must never transfer an in-flight write to the new identity.

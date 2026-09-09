@@ -32,4 +32,21 @@ describe('commerce run presentation', () => {
     expect(next).toMatchObject({ phase: 'validating-session', error: null, progress: null })
     expect(deriveRunPresentation(next, true).primaryAction).toBe('progress')
   })
+  it('offers a real recovery action instead of a view action when completed data is unavailable', () => {
+    const generating = { ...initialCommerceRunState, phase: 'generating' as const }
+    const completed = commerceRunReducer(generating, {
+      type: 'completed',
+      result: null,
+      unavailable: '返回的方案数据不可用。',
+    })
+
+    expect(deriveRunPresentation(completed, true)).toMatchObject({
+      primaryAction: 'recover-result',
+      primaryLabel: '返回修改资料',
+      showReadyCopy: false,
+      showSubmit: false,
+    })
+    expect(completed.resultNotice).toBe('方案暂时不可用')
+    expect(completed.resultNotice).not.toBe('方案生成完成')
+  })
 })

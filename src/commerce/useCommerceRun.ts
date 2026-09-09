@@ -137,6 +137,11 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
       .catch((failure) => {
         if (cancelled || !mountedRef.current || scopeVersionRef.current !== scope || authenticatedUserIdRef.current !== authenticatedUserId) return
         const error = errorFor(failure)
+        try {
+          saveCommerceAuthDraft({ ownerId: authenticatedUserId, input: restored.input, pendingCleanupProjectId: cleanupProjectId })
+        } catch {
+          // The in-memory cleanup lock remains authoritative when storage is unavailable.
+        }
         fail(
           error.code === 'AUTH_REQUIRED'
             ? new CommerceRepositoryError('AUTH_REQUIRED', '清理未完成项目需要重新连接账号。文字资料仍会保留。', error)
@@ -252,8 +257,15 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
             if (!scopeIsCurrent()) return
             attempt.retryBlocked = true
             const cleanupError = errorFor(cleanupFailure)
+            pendingCleanupProjectIdRef.current = failedProjectId ?? null
+            if (failedProjectId) {
+              try {
+                saveCommerceAuthDraft({ ownerId: userId, input: attempt.input, pendingCleanupProjectId: failedProjectId })
+              } catch {
+                // Keep the in-memory lock even when browser storage is unavailable.
+              }
+            }
             if (cleanupError.code === 'AUTH_REQUIRED') {
-              pendingCleanupProjectIdRef.current = failedProjectId ?? null
               fail(new CommerceRepositoryError('AUTH_REQUIRED', '清理未完成项目需要重新连接账号。重新连接后会先完成清理，再允许重新上传。', cleanupError), 'reauthenticate')
             } else {
               fail(new CommerceRepositoryError(uploadError.code, `${uploadError.message} 临时项目清理失败，为避免重复图片已停止重传。请刷新页面后重试。${cleanupError.message}`, uploadError), failureRecovery(uploadError, true))
@@ -291,7 +303,21 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
       }
     } catch (failure) {
       const error = errorFor(failure)
-      if (scopeIsCurrent()) fail(error, failureRecovery(error, attemptRef.current?.retryBlocked))
+      if (scopeIsCurrent()) {
+        const attempt = attemptRef.current
+        const uploadedProjectNeedsCleanup = error.code === 'AUTH_REQUIRED'
+          && Boolean(attempt?.projectId && attempt.uploaded && !attempt.generationId)
+        if (uploadedProjectNeedsCleanup && attempt?.projectId) {
+          // The uploaded objects already exist, but generation was not accepted. A full
+          // OAuth redirect loses File objects, so return through the existing text-only
+          // draft and delete this exact project before unlocking another upload.
+          attempt.retryBlocked = true
+          pendingCleanupProjectIdRef.current = attempt.projectId
+        }
+        fail(uploadedProjectNeedsCleanup
+          ? new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。重新连接后会先清理已上传项目，再允许重新选择图片。', error)
+          : error, failureRecovery(error, attempt?.retryBlocked))
+      }
     } finally {
       if (runningRef.current === runToken) runningRef.current = null
     }
@@ -348,5 +374,6 @@ export function useCommerceRun({ repository, auth, authenticatedUserId, pollInte
   }, [setActiveGenerationId, state.phase])
 
   const visibleState = stateOwnerRef.current === authenticatedUserId ? state : initialCommerceRunState
-  return { state: visibleState, busy: isCommerceRunBusy(visibleState.phase), submit, retry, recoverAuthentication, resetForMaterialChange, captureDraft, closeResult, selectHistoryResult, rerunDirection, historyRefreshKey, currentProjectId, liveGeneration, draftSeed, directionNote }
+  const cleanupLocked = Boolean(pendingCleanupProjectIdRef.current && attemptRef.current?.retryBlocked)
+  return { state: visibleState, busy: isCommerceRunBusy(visibleState.phase) || cleanupLocked, submit, retry, recoverAuthentication, resetForMaterialChange, captureDraft, closeResult, selectHistoryResult, rerunDirection, historyRefreshKey, currentProjectId, liveGeneration, draftSeed, directionNote }
 }

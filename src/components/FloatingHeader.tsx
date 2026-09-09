@@ -31,6 +31,7 @@ export function FloatingHeader({
 }: FloatingHeaderProps) {
   const { isAdmin } = useAuth();
   const rootRef = useRef<HTMLElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -88,11 +89,12 @@ export function FloatingHeader({
         setSearchOpen(true);
       }
       if (event.key === "Escape") {
-        rootRef.current
-          ?.querySelector<HTMLButtonElement>(
-            ".floating-nav-group.is-open > button",
-          )
-          ?.focus();
+        const menuTrigger = rootRef.current?.querySelector<HTMLButtonElement>(
+          ".floating-nav-group.is-open > button",
+        );
+        if (rootRef.current?.querySelector(".floating-nav.is-mobile-open"))
+          mobileToggleRef.current?.focus();
+        else menuTrigger?.focus();
         setActiveMenu(null);
         setMobileOpen(false);
       }
@@ -186,7 +188,11 @@ export function FloatingHeader({
                   }
                   aria-expanded={activeMenu === group.label}
                   aria-controls={"menu-" + group.label}
-                  onClick={() => setActiveMenu(group.label)}
+                  onClick={() =>
+                    setActiveMenu((current) =>
+                      current === group.label ? null : group.label,
+                    )
+                  }
                 >
                   {group.label}
                   <i aria-hidden="true">⌄</i>
@@ -229,6 +235,7 @@ export function FloatingHeader({
             <span aria-hidden="true">{theme === "dark" ? "☼" : "◐"}</span>
           </button>
           <button
+            ref={mobileToggleRef}
             className="floating-menu-toggle"
             type="button"
             onClick={() => setMobileOpen((open) => !open)}

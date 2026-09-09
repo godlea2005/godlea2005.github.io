@@ -11,24 +11,23 @@ vi.mock('../src/music/MusicProvider', () => ({
 }))
 vi.mock('../src/music/PlaylistOverlay', () => ({ PlaylistOverlay: () => null }))
 
-import { COMMERCE_MUSIC_ACTION_CLEARANCE_PX, GlobalMusicDock } from '../src/music/GlobalMusicDock'
-import musicExperienceCss from '../src/music/music-experience.css?raw'
+import { calculateCommerceLauncherPlacement, GlobalMusicDock } from '../src/music/GlobalMusicDock'
+
+const rect = (left: number, top: number, right: number, bottom: number): DOMRect => ({
+  left, top, right, bottom, width: right - left, height: bottom - top,
+  x: left, y: top, toJSON: () => ({}),
+})
 
 describe('mobile commerce music launcher', () => {
   beforeEach(() => {
-    class IntersectionObserverMock {
-      constructor(private callback: IntersectionObserverCallback) {}
-      observe(target: Element) {
-        this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver)
-      }
+    class ResizeObserverMock {
+      observe() {}
       disconnect() {}
       unobserve() {}
-      takeRecords() { return [] }
-      root = null
-      rootMargin = ''
-      thresholds = []
     }
-    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0))
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
   })
 
   afterEach(() => {
@@ -36,25 +35,55 @@ describe('mobile commerce music launcher', () => {
     vi.unstubAllGlobals()
   })
 
-  it('only enables submit clearance for an actually visible enabled action and keeps the launcher keyboard-focusable', async () => {
-    const view = render(<><form className="commerce-workspace"><button className="commerce-submit">提交</button></form><GlobalMusicDock commerceMode /></>)
-    await waitFor(() => expect(view.container.querySelector('.music-dock')).toHaveClass('has-visible-commerce-action'))
-    expect(COMMERCE_MUSIC_ACTION_CLEARANCE_PX).toBeGreaterThanOrEqual(54 + 12 + 12)
-    expect(view.container.querySelector('.music-dock')).toHaveStyle(`--commerce-action-clearance: ${COMMERCE_MUSIC_ACTION_CLEARANCE_PX}px`)
+  it.each([
+    { width: 600, action: rect(319, 649.984, 569, 703.984), launcher: rect(544, 710, 588, 754) },
+    { width: 640, action: rect(348, 716, 608, 770), launcher: rect(584, 776, 628, 820) },
+  ])('moves the launcher to a measured 12px vertical gap at $width px', ({ width, action, launcher }) => {
+    const placement = calculateCommerceLauncherPlacement({
+      actionRect: action,
+      launcherRect: launcher,
+      viewportWidth: width,
+      viewportHeight: 844,
+      currentShiftY: 0,
+    })
+    const movedTop = launcher.top - placement.shiftY
+    const movedBottom = launcher.bottom - placement.shiftY
 
+    expect(placement.side).toBe('above')
+    expect(action.left < launcher.right && action.right > launcher.left).toBe(true)
+    expect(action.top - movedBottom).toBeCloseTo(12, 5)
+    expect(movedTop).toBeGreaterThanOrEqual(12)
+  })
+
+  it('reads actual primary-action and launcher rectangles and applies the calculated shift', async () => {
+    const view = render(<><form className="commerce-workspace"><button data-commerce-primary-action>提交</button></form><GlobalMusicDock commerceMode /></>)
+    const action = screen.getByRole('button', { name: '提交' })
     const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
+    const dock = view.container.querySelector<HTMLElement>('.music-dock')!
+    action.getBoundingClientRect = vi.fn(() => rect(319, 649.984, 569, 703.984))
+    launcher.getBoundingClientRect = vi.fn(() => {
+      const shift = Number.parseFloat(dock.style.getPropertyValue('--commerce-launcher-shift-y')) || 0
+      return rect(544, 710 - shift, 588, 754 - shift)
+    })
+    window.dispatchEvent(new Event('resize'))
+
+    await waitFor(() => expect(dock).toHaveAttribute('data-commerce-placement', 'above'))
+    expect(Number.parseFloat(dock.style.getPropertyValue('--commerce-launcher-shift-y'))).toBeCloseTo(116.016, 5)
+    expect(action.getBoundingClientRect).toHaveBeenCalled()
+    expect(launcher.getBoundingClientRect).toHaveBeenCalled()
+  })
+
+  it('does not shift when horizontal ranges do not intersect and keeps the launcher keyboard-focusable', async () => {
+    const view = render(<><form className="commerce-workspace"><button data-commerce-primary-action>提交</button></form><GlobalMusicDock commerceMode /></>)
+    const action = screen.getByRole('button', { name: '提交' })
+    const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
+    action.getBoundingClientRect = vi.fn(() => rect(20, 650, 280, 704))
+    launcher.getBoundingClientRect = vi.fn(() => rect(544, 710, 588, 754))
+    window.dispatchEvent(new Event('resize'))
+
+    await waitFor(() => expect(view.container.querySelector('.music-dock')).toHaveStyle('--commerce-launcher-shift-y: 0px'))
     await userEvent.tab()
     await userEvent.tab()
     expect(launcher).toHaveFocus()
-  })
-
-  it('does not reserve fixed clearance for a disabled action', () => {
-    const view = render(<><form className="commerce-workspace"><button className="commerce-submit" disabled>提交</button></form><GlobalMusicDock commerceMode /></>)
-    expect(view.container.querySelector('.music-dock')).not.toHaveClass('has-visible-commerce-action')
-  })
-
-  it('applies commerce sticky-action clearance through the 640px mobile breakpoint', () => {
-    expect(musicExperienceCss).toMatch(/@media \(max-width:\s*640px\)[\s\S]*\.music-dock\.is-commerce\.has-visible-commerce-action/)
-    expect(musicExperienceCss).toContain('var(--commerce-action-clearance,78px)')
   })
 })

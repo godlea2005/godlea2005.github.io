@@ -402,6 +402,57 @@ describe('AI commerce submission workflow', () => {
     expect(repository.startGeneration).toHaveBeenCalledTimes(1)
   })
 
+  it('cleans an uploaded project after startGeneration requires OAuth before accepting a new file or upload', async () => {
+    authMock.useAuth.mockReturnValue(signedInAuth())
+    const order: string[] = []
+    const restoredCleanup = deferred<void>()
+    const repository = makeRepository({
+      createProject: vi.fn()
+        .mockImplementationOnce(async () => { order.push('create:orphan'); return { ...project, id: 'project-orphan' } })
+        .mockImplementationOnce(async () => { order.push('create:new'); return { ...project, id: 'project-new' } }),
+      uploadAssets: vi.fn(async (projectId) => { order.push(`upload:${projectId}`); return [] }),
+      startGeneration: vi.fn()
+        .mockImplementationOnce(async () => { order.push('start:auth'); throw new CommerceRepositoryError('AUTH_REQUIRED', '登录状态需要恢复。') })
+        .mockImplementationOnce(async () => { order.push('start:new'); return { generationId: 'generation-new', status: 'queued' } }),
+      deleteProject: vi.fn(() => { order.push('delete:orphan'); return restoredCleanup.promise }),
+      listProjects: vi.fn(async () => { order.push('history'); return [] }),
+    })
+
+    const first = render(<CommerceStudioPage repository={repository} />)
+    await completeQuickForm()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('登录状态需要恢复')
+    expect(repository.uploadAssets).toHaveBeenCalledTimes(1)
+    expect(repository.startGeneration).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: '重新连接账号' }))
+    const saved = JSON.parse(window.sessionStorage.getItem(COMMERCE_AUTH_DRAFT_KEY)!)
+    expect(saved).toMatchObject({ ownerId: 'user-1', pendingCleanupProjectId: 'project-orphan' })
+    expect(JSON.stringify(saved)).not.toMatch(/files|cup\.png|base64|token/i)
+    first.unmount()
+
+    render(<CommerceStudioPage repository={repository} />)
+    await waitFor(() => expect(repository.deleteProject).toHaveBeenCalledWith('project-orphan'))
+    expect(screen.getByLabelText('上传产品图')).toBeDisabled()
+    expect(repository.uploadAssets).toHaveBeenCalledTimes(1)
+    expect(repository.startGeneration).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: /历史项目/ }))
+    await waitFor(() => expect(repository.listProjects).toHaveBeenCalledTimes(1))
+
+    await act(async () => { restoredCleanup.resolve(); await restoredCleanup.promise })
+    await waitFor(() => expect(repository.listProjects).toHaveBeenCalledTimes(2))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByLabelText('上传产品图')).toBeEnabled()
+    await userEvent.upload(screen.getByLabelText('上传产品图'), image('new.png'))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+    await waitFor(() => expect(repository.startGeneration).toHaveBeenCalledTimes(2))
+
+    expect(order.indexOf('delete:orphan')).toBeLessThan(order.indexOf('upload:project-new'))
+    expect(order).toContain('start:new')
+  })
+
   it('coalesces synchronous double submission before the first project request settles', async () => {
     authMock.useAuth.mockReturnValue(signedInAuth())
     const creating = deferred<CommerceProject>()
@@ -542,7 +593,7 @@ describe('AI commerce submission workflow', () => {
   })
 
   it.each([
-    ['completed', '方案生成完成'],
+    ['completed', '方案暂时不可用'],
     ['failed', 'AI 服务未能完成分析'],
     ['cancelled', '任务已取消'],
   ] as const)('handles a direct %s response from startGeneration as terminal', async (terminalStatus, expectedCopy) => {
@@ -739,16 +790,35 @@ describe('AI commerce route and navigation', () => {
     expect(search).toHaveFocus()
   })
 
-  it('keeps a pointer-opened dropdown open through the first click and closes it with Escape', () => {
+  it('toggles a pointer-opened dropdown closed on click and restores its trigger focus on Escape', () => {
     const view = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
     const group = view.container.querySelectorAll<HTMLElement>('.floating-nav-group')[0]
     const trigger = screen.getByRole('button', { name: '文章' })
     fireEvent.pointerEnter(group, { pointerType: 'mouse' })
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).toHaveFocus()
+  })
+
+  it('returns focus to the mobile directory button after Escape closes navigation', async () => {
+    const view = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    const directory = view.container.querySelector<HTMLButtonElement>('.floating-menu-toggle')!
+    fireEvent.click(directory)
+    expect(directory).toHaveTextContent('关闭')
+    expect(directory).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '我的' }))
+    expect(screen.getByRole('button', { name: '我的' })).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(directory).toHaveTextContent('目录')
+    expect(directory).toHaveFocus()
+    expect(directory).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('resolves the ai-commerce hash to the lazy workspace instead of the homepage', async () => {

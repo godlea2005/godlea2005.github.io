@@ -59,7 +59,7 @@ export function commerceRunReducer(state: CommerceRunState, event: CommerceRunEv
     // A failure is deliberately terminal for the current phase. Later async callbacks
     // therefore cannot turn an error screen back into an uploading/generating screen.
     case 'failed': return { ...state, phase: event.recovery === 'reauthenticate' ? 'auth-recovery' : event.recovery === 'retry' ? 'recoverable-error' : 'terminal-error', error: event.error, pollWarning: '' }
-    case 'completed': return isCommerceRunBusy(state.phase) ? { ...state, phase: 'completed', error: null, result: event.result, resultNotice: '方案生成完成', resultUnavailable: event.unavailable ?? '', generation: event.generation ?? state.generation, pollWarning: '' } : state
+    case 'completed': return isCommerceRunBusy(state.phase) ? { ...state, phase: 'completed', error: null, result: event.result, resultNotice: event.result ? '方案生成完成' : '方案暂时不可用', resultUnavailable: event.unavailable ?? '', generation: event.generation ?? state.generation, pollWarning: '' } : state
     case 'history-result-selected': return { ...state, result: event.result, resultNotice: '已打开历史方案', resultUnavailable: '' }
     case 'presentation': return { ...state, ...event.value }
     case 'reset': return initialCommerceRunState
@@ -77,7 +77,7 @@ export function deriveRunPresentation(state: CommerceRunState, formValidity: boo
   const progressLabel = progressLabels[state.phase as keyof typeof progressLabels]
   const action = progressLabel ? 'progress' : state.phase === 'recoverable-error' ? 'retry'
     : state.phase === 'auth-recovery' ? 'reauthenticate' : state.phase === 'terminal-error' ? 'restart'
-      : state.phase === 'completed' ? 'view-result' : 'submit'
-  const label = progressLabel ?? { retry: '重试本次生成', reauthenticate: '重新连接账号', restart: '新建一次分析', 'view-result': '查看方案', submit: '生成视觉方案' }[action as 'retry' | 'reauthenticate' | 'restart' | 'view-result' | 'submit']
+      : state.phase === 'completed' ? state.result ? 'view-result' : 'recover-result' : 'submit'
+  const label = progressLabel ?? { retry: '重试本次生成', reauthenticate: '重新连接账号', restart: '新建一次分析', 'view-result': '查看方案', 'recover-result': '返回修改资料', submit: '生成视觉方案' }[action as 'retry' | 'reauthenticate' | 'restart' | 'view-result' | 'recover-result' | 'submit']
   return { primaryAction: action, primaryLabel: label, disabled: Boolean(progressLabel) || (action === 'submit' && !formValidity), showReadyCopy: state.phase === 'editing' && formValidity, showSubmit: state.phase === 'editing' }
 }
