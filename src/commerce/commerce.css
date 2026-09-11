@@ -1,3 +1,9 @@
+@import './styles/tokens.css';
+@import './styles/studio-layout.css';
+@import './styles/form.css';
+@import './styles/status.css';
+@import './styles/history.css';
+
 .commerce-page {
   --commerce-panel: color-mix(in srgb, var(--panel) 82%, transparent);
   --commerce-rule: color-mix(in srgb, var(--line) 88%, transparent);
@@ -522,11 +528,10 @@
   .commerce-mobile-steps button { min-height: 52px; padding: 0 5px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-bottom: 2px solid transparent; color: var(--quiet); background: transparent; font-size: 11px; cursor: pointer; }
   .commerce-mobile-steps button[aria-current="step"] { border-bottom-color: var(--accent); color: var(--ink); }
   .commerce-mobile-steps span { color: var(--accent); font: 8px/1 monospace; }
-  .commerce-form-section { display: none; padding: 28px 0 32px; }
+  .commerce-form-section { padding: 28px 0 32px; }
   .commerce-form-section[data-step="1"] { order: 1; }
   .commerce-form-section[data-step="2"] { order: 3; }
   .commerce-form-section[data-step="3"] { order: 5; }
-  .commerce-form-section[data-active="true"] { display: block; }
   .commerce-form-section header { grid-template-columns: 90px 1fr; margin-bottom: 22px; }
   .commerce-form-section h2 { font-size: 20px; }
   .commerce-desktop-label { display: none; }

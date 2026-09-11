@@ -5,11 +5,87 @@ import { CloseIcon, ListIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, Previous
 import { PlaylistOverlay } from './PlaylistOverlay'
 import { formatTime } from './TransportControls'
 
+const COMMERCE_CONTROL_GAP_PX = 12
+const COMMERCE_VIEWPORT_INSET_PX = 12
+/** @deprecated The launcher now uses measured geometry; retained for import compatibility only. */
+export const COMMERCE_MUSIC_ACTION_CLEARANCE_PX = 78
+
+type RectLike = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
+type CommerceLauncherPlacement = {
+  shiftX: number
+  shiftY: number
+  side: 'unchanged' | 'above' | 'below' | 'left' | 'right'
+}
+
+const rangesOverlap = (firstStart: number, firstEnd: number, secondStart: number, secondEnd: number) =>
+  firstStart < secondEnd && firstEnd > secondStart
+
+/** Resolve against the launcher's unshifted fixed position, even after a prior measurement moved it. */
+export function calculateCommerceLauncherPlacement({
+  actionRect,
+  launcherRect,
+  viewportWidth,
+  viewportHeight,
+  currentShiftX = 0,
+  currentShiftY = 0,
+}: {
+  actionRect: RectLike
+  launcherRect: RectLike
+  viewportWidth: number
+  viewportHeight: number
+  currentShiftX?: number
+  currentShiftY?: number
+}): CommerceLauncherPlacement {
+  const base = {
+    left: launcherRect.left - currentShiftX,
+    right: launcherRect.right - currentShiftX,
+    top: launcherRect.top + currentShiftY,
+    bottom: launcherRect.bottom + currentShiftY,
+    width: launcherRect.width,
+    height: launcherRect.height,
+  }
+  if (!rangesOverlap(actionRect.left, actionRect.right, base.left, base.right)) {
+    return { shiftX: 0, shiftY: 0, side: 'unchanged' }
+  }
+  const verticalGap = base.top >= actionRect.bottom
+    ? base.top - actionRect.bottom
+    : actionRect.top >= base.bottom ? actionRect.top - base.bottom : -1
+  if (verticalGap >= COMMERCE_CONTROL_GAP_PX) {
+    return { shiftX: 0, shiftY: 0, side: 'unchanged' }
+  }
+
+  const aboveShift = base.bottom - (actionRect.top - COMMERCE_CONTROL_GAP_PX)
+  const belowShift = base.top - (actionRect.bottom + COMMERCE_CONTROL_GAP_PX)
+  const aboveFits = base.top - aboveShift >= COMMERCE_VIEWPORT_INSET_PX
+  const belowFits = base.bottom - belowShift <= viewportHeight - COMMERCE_VIEWPORT_INSET_PX
+  const preferAbove = (actionRect.top + actionRect.bottom) / 2 >= viewportHeight / 2
+  if (preferAbove && aboveFits) return { shiftX: 0, shiftY: aboveShift, side: 'above' }
+  if (!preferAbove && belowFits) return { shiftX: 0, shiftY: belowShift, side: 'below' }
+  if (aboveFits) return { shiftX: 0, shiftY: aboveShift, side: 'above' }
+  if (belowFits) return { shiftX: 0, shiftY: belowShift, side: 'below' }
+
+  const leftShift = actionRect.left - COMMERCE_CONTROL_GAP_PX - base.right
+  const rightShift = actionRect.right + COMMERCE_CONTROL_GAP_PX - base.left
+  const leftFits = base.left + leftShift >= COMMERCE_VIEWPORT_INSET_PX
+  const rightFits = base.right + rightShift <= viewportWidth - COMMERCE_VIEWPORT_INSET_PX
+  if (leftFits || rightFits) {
+    if (leftFits && (!rightFits || Math.abs(leftShift) <= Math.abs(rightShift))) {
+      return { shiftX: leftShift, shiftY: 0, side: 'left' }
+    }
+    return { shiftX: rightShift, shiftY: 0, side: 'right' }
+  }
+  return { shiftX: 0, shiftY: 0, side: 'unchanged' }
+}
+
 export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boolean }) {
   const music = useMusic()
   const dockRef = useRef<HTMLDivElement>(null)
+  const launcherRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [playlistOpen, setPlaylistOpen] = useState(false)
+  const [commercePlacement, setCommercePlacement] = useState<CommerceLauncherPlacement>({ shiftX: 0, shiftY: 0, side: 'unchanged' })
+  const commercePlacementRef = useRef(commercePlacement)
+  commercePlacementRef.current = commercePlacement
   const progress = music.duration ? music.currentTime / music.duration * 100 : 0
 
   useEffect(() => {
@@ -28,8 +104,76 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
     }
   }, [open, playlistOpen])
 
+  useEffect(() => {
+    if (!commerceMode) {
+      setCommercePlacement({ shiftX: 0, shiftY: 0, side: 'unchanged' })
+      return
+    }
+    let frame: number | null = null
+    let observedAction: HTMLElement | null = null
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => schedule())
+    const visiblePrimaryAction = () => Array.from(document.querySelectorAll<HTMLElement>('[data-commerce-primary-action]'))
+      .find((candidate) => {
+        const candidateRect = candidate.getBoundingClientRect()
+        const style = window.getComputedStyle(candidate)
+        return candidateRect.width > 0 && candidateRect.height > 0
+          && candidateRect.bottom > 0 && candidateRect.top < window.innerHeight
+          && style.display !== 'none' && style.visibility !== 'hidden'
+      }) ?? null
+    const measure = () => {
+      const launcher = launcherRef.current
+      const action = visiblePrimaryAction()
+      if (observedAction !== action) {
+        if (observedAction) resizeObserver?.unobserve(observedAction)
+        observedAction = action
+        if (action) resizeObserver?.observe(action)
+      }
+      if (!launcher || !action) {
+        setCommercePlacement((current) => current.shiftX || current.shiftY
+          ? { shiftX: 0, shiftY: 0, side: 'unchanged' }
+          : current)
+        return
+      }
+      const current = commercePlacementRef.current
+      const next = calculateCommerceLauncherPlacement({
+        actionRect: action.getBoundingClientRect(),
+        launcherRect: launcher.getBoundingClientRect(),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        currentShiftX: current.shiftX,
+        currentShiftY: current.shiftY,
+      })
+      setCommercePlacement((value) => value.shiftX === next.shiftX && value.shiftY === next.shiftY && value.side === next.side ? value : next)
+    }
+    function schedule() {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        measure()
+      })
+    }
+    resizeObserver?.observe(launcherRef.current!)
+    const mutationObserver = new MutationObserver(schedule)
+    mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'disabled', 'data-commerce-primary-action'],
+    })
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
+    schedule()
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
+      mutationObserver.disconnect()
+      resizeObserver?.disconnect()
+    }
+  }, [commerceMode])
+
   return <>
-    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} style={{ '--accent': music.track.accent } as React.CSSProperties}>
+    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} data-commerce-placement={commercePlacement.side} style={{ '--accent': music.track.accent, '--commerce-launcher-shift-x': `${commercePlacement.shiftX}px`, '--commerce-launcher-shift-y': `${commercePlacement.shiftY}px` } as React.CSSProperties}>
       <aside className="music-popover" id="global-music-player" aria-label="全站音乐播放器" aria-hidden={!open} inert={open ? undefined : true}>
         <header className="music-popover-header">
           <div className="music-popover-cover" aria-hidden="true"><i /></div>
@@ -68,6 +212,7 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
       </aside>
 
       <button
+        ref={launcherRef}
         className="music-launcher"
         type="button"
         onClick={() => setOpen((current) => !current)}

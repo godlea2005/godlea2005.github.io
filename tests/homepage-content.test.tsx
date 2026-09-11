@@ -32,10 +32,11 @@ describe('AI commerce homepage positioning', () => {
   it('uses the approved hero copy and routes both calls to action', () => {
     render(<StatusScene />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'AI 电商视觉，先把策略想清楚。' })).toBeInTheDocument()
-    expect(screen.getByText('面向 Ozon、Wildberries、抖音与淘宝/天猫，根据产品图生成主图创意、详情页分镜和可执行作图提示词。')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '免费分析一个产品' })).toHaveAttribute('href', '#ai-commerce')
-    expect(screen.getByRole('link', { name: '查看示例方案' })).toHaveAttribute('href', '#commerce-examples')
+    expect(screen.getByRole('heading', { level: 1, name: 'WENHAO 博客' })).toBeInTheDocument()
+    expect(screen.getByText(/把想法做成看得见的作品/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 设计师/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AI 电商设计' })).toHaveAttribute('href', '#ai-commerce')
+    expect(screen.getByRole('link', { name: '浏览作品' })).toHaveAttribute('href', '#archive')
     expect(screen.getByTestId('particle-text')).toHaveTextContent('WENHAO')
     expect(screen.getByTestId('gradient-waves')).toBeInTheDocument()
   })

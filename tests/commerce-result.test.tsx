@@ -219,7 +219,7 @@ describe('commerce history', () => {
     })
     render(<CommerceHistory repository={repository} onSelectResult={vi.fn()} />)
     expect(await screen.findByText('保温杯')).toBeInTheDocument()
-    expect(screen.getByText('已完成')).toBeInTheDocument()
+    expect(within(screen.getByRole('article', { name: '保温杯 历史项目' })).getByText('已完成')).toBeInTheDocument()
     expect(screen.getByText('剩余图片 1 张')).toBeInTheDocument()
     expect(screen.getByText('图片将在 2026-08-27 清理')).toBeInTheDocument()
     expect(screen.getByText('原始图片已自动清理，文字方案仍可使用')).toBeInTheDocument()
@@ -287,6 +287,17 @@ describe('commerce history', () => {
   })
 })
 
+const advanceToConfirmation = async () => {
+  await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+  await userEvent.click(screen.getByRole('button', { name: '下一步' }))
+  await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+}
+
+const openHistoryResult = async (name: string) => {
+  await userEvent.click(screen.getByRole('button', { name: /历史项目/ }))
+  await userEvent.click(await screen.findByRole('button', { name: `查看 ${name} 方案` }))
+}
+
 describe('completed generation integration', () => {
   beforeEach(() => {
     authMock.useAuth.mockReturnValue(auth())
@@ -300,7 +311,7 @@ describe('completed generation integration', () => {
     render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'cup.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     expect(await screen.findByRole('article', { name: 'AI 电商视觉方案' })).toBeInTheDocument()
     expect(repository.getGeneration).toHaveBeenCalled()
@@ -314,11 +325,34 @@ describe('completed generation integration', () => {
     render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'cup.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     expect(await screen.findByRole('article', { name: 'AI 电商视觉方案' })).toBeInTheDocument()
     expect(repository.getGeneration).toHaveBeenCalledWith('generation-1')
     expect(repository.getGeneration).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['invalid result data', vi.fn().mockResolvedValue(generation({ resultData: { productSummary: 'incomplete' } as CommerceResultData }))],
+    ['failed persisted read', vi.fn().mockRejectedValue(new Error('读取暂时失败'))],
+  ])('shows one truthful recovery action for %s without success copy or a phantom view action', async (_case, getGeneration) => {
+    const repository = makeRepository({
+      startGeneration: vi.fn().mockResolvedValue({ generationId: 'generation-1', status: 'completed' }),
+      getGeneration,
+      listProjects: vi.fn().mockResolvedValue([]),
+      listGenerations: vi.fn().mockResolvedValue([]),
+    })
+    render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
+    await userEvent.type(screen.getByLabelText('产品名称'), '保温杯')
+    await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'cup.png', { type: 'image/png' }))
+    await advanceToConfirmation()
+    await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/不可用|无法读取/)
+    expect(screen.getByRole('button', { name: '返回修改资料' })).toBeVisible()
+    expect(screen.queryByText('结果已安全写入，可进入方案页查看。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查看方案' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button').filter((button) => button.hasAttribute('data-commerce-primary-action'))).toHaveLength(1)
   })
 
   it('keeps the 390px result structure single-column-ready and marks actions/history as print-hidden', async () => {
@@ -339,11 +373,11 @@ describe('completed generation integration', () => {
     const view = render(<CommerceStudioPage repository={repository} />)
     await userEvent.type(screen.getByLabelText('产品名称'), 'A 的商品')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'a.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     authMock.useAuth.mockReturnValue({ ...auth('anonymous'), user: null, isAnonymous: true })
     view.rerender(<CommerceStudioPage repository={repository} />)
-    expect(screen.getByRole('heading', { name: '请先登录，再选择产品素材' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '登录后，开始分析你的产品' })).toBeInTheDocument()
     authMock.useAuth.mockReturnValue(auth('user-b'))
     view.rerender(<CommerceStudioPage repository={repository} />)
     await act(async () => pending.resolve(generation({ id: 'generation-a', resultData: { ...result, productSummary: 'A 的秘密方案' } })))
@@ -359,7 +393,7 @@ describe('completed generation integration', () => {
     const view = render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
     await userEvent.type(screen.getByLabelText('产品名称'), 'A 的轮询商品')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'a.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     await waitFor(() => expect(repository.getGeneration).toHaveBeenCalledTimes(1))
     authMock.useAuth.mockReturnValue(auth('user-b'))
@@ -380,9 +414,9 @@ describe('completed generation integration', () => {
     render(<CommerceStudioPage repository={repository} pollIntervalMs={1000} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '新商品')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'new.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
-    await userEvent.click(await screen.findByRole('button', { name: '查看 旧商品 方案' }))
+    await openHistoryResult('旧商品')
     expect(screen.getAllByRole('button', { name: '基于此方向重做' })[0]).toBeDisabled()
     expect(repository.startGeneration).toHaveBeenCalledTimes(1)
   })
@@ -399,9 +433,9 @@ describe('completed generation integration', () => {
     render(<CommerceStudioPage repository={repository} pollIntervalMs={5} />)
     await userEvent.type(screen.getByLabelText('产品名称'), '新商品')
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'new.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
-    await userEvent.click(await screen.findByRole('button', { name: '查看 旧商品 方案' }))
+    await openHistoryResult('旧商品')
     await act(async () => pending.resolve(generation({ id: 'generation-1', projectId: 'new-project', resultData: { ...result, productSummary: '新方案' } })))
     await userEvent.click((await screen.findAllByRole('button', { name: '基于此方向重做' }))[0])
     expect(await screen.findByDisplayValue('新商品')).toBeInTheDocument()
@@ -411,7 +445,7 @@ describe('completed generation integration', () => {
   it('never passes account A rerun draft or note into account B first render', async () => {
     const repository = makeRepository()
     const view = render(<CommerceStudioPage repository={repository} />)
-    await userEvent.click(await screen.findByRole('button', { name: '查看 保温杯 方案' }))
+    await openHistoryResult('保温杯')
     await userEvent.click(screen.getAllByRole('button', { name: '基于此方向重做' })[0])
     expect(screen.getByDisplayValue('保温杯')).toBeInTheDocument()
     authMock.useAuth.mockReturnValue(auth('user-b'))
@@ -423,13 +457,13 @@ describe('completed generation integration', () => {
   it('seeds a manual rerun draft with direction details and never starts automatically', async () => {
     const repository = makeRepository()
     render(<CommerceStudioPage repository={repository} />)
-    await userEvent.click(await screen.findByRole('button', { name: '查看 保温杯 方案' }))
+    await openHistoryResult('保温杯')
     await userEvent.click(screen.getAllByRole('button', { name: '基于此方向重做' })[0])
     expect(await screen.findByDisplayValue(/主图方向 1/)).toBeInTheDocument()
     expect(screen.getByDisplayValue(/image prompt 1/)).toBeInTheDocument()
     expect(repository.startGeneration).not.toHaveBeenCalled()
     await userEvent.upload(screen.getByLabelText('上传产品图'), new File(['x'], 'rerun.png', { type: 'image/png' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有这些素材的使用权/ }))
+    await advanceToConfirmation()
     await userEvent.click(screen.getByRole('button', { name: '生成视觉方案' }))
     await waitFor(() => expect(repository.createProject).toHaveBeenCalledTimes(1))
     expect(repository.createProject).toHaveBeenCalledWith(expect.objectContaining({

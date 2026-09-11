@@ -23,7 +23,7 @@ type Particle = {
   color: string
 }
 
-const defaultColors = ['#f8f7ff', '#c9c4ff', '#b9f88e', '#ee82e8']
+const defaultColors = ['#f8f7ff', '#ddd8f7', '#bbb2dc', '#e8b1d1']
 
 export function ParticleText({
   text,

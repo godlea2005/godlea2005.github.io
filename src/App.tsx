@@ -49,7 +49,7 @@ function App() {
   }
 
   return (
-    <div className={`site-shell${!subpage ? ' is-home' : ''}`}>
+    <div className={`site-shell${!subpage ? ' is-home' : ''}${commercePage || commerceAdminPage ? ' is-commerce' : ''}`}>
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
 
       {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : <main id="top">

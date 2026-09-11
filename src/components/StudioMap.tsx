@@ -2,7 +2,7 @@ import { projects, skills } from '../content/site'
 
 export function StudioMap() {
   return (
-    <section className="map-section frame" aria-labelledby="map-title">
+    <section className="map-section frame" id="studio-map" aria-labelledby="map-title">
       <div className="section-kicker"><span>02</span><p>AUTHOR / CAPABILITY EVIDENCE</p><i /></div>
       <div className="map-heading"><div><h2 id="map-title">从策略，到画面，<br />再到可运行的页面。</h2></div><p>我是文昊，身份横跨 AI 设计、电商运营与前端开发。工具背后的判断，也来自这三种工作视角的交叉。</p></div>
       <div className="map-grid">

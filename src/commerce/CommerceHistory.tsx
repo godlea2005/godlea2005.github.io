@@ -10,7 +10,11 @@ export type CommerceHistoryProps = {
   onSelectResult: (result: CommerceResult, project: CommerceProject, generation: CommerceGeneration) => void
   refreshKey?: number
   liveGeneration?: CommerceGeneration | null
+  excludedProjectIds?: ReadonlySet<string>
+  onCountChange?: (count: number) => void
 }
+
+type HistoryFilter = 'all' | 'completed' | 'processing' | 'incomplete'
 
 const platformLabels: Record<CommercePlatform, string> = {
   ozon: 'Ozon',
@@ -34,7 +38,7 @@ const expiryLabel = (value: string) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, liveGeneration = null }: CommerceHistoryProps) {
+export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, liveGeneration = null, excludedProjectIds, onCountChange }: CommerceHistoryProps) {
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [projects, setProjects] = useState<CommerceProject[]>([])
   const [generations, setGenerations] = useState<CommerceGeneration[]>([])
@@ -45,6 +49,7 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
   const [deleting, setDeleting] = useState<Set<string>>(() => new Set())
   const deletingRef = useRef(new Set<string>())
   const requestRef = useRef(0)
+  const [filter, setFilter] = useState<HistoryFilter>('all')
 
   const load = useCallback(async () => {
     const requestId = ++requestRef.current
@@ -81,6 +86,18 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
     })
     return map
   }, [generations, liveGeneration])
+
+  const visibleProjects = useMemo(() => projects.filter((project) => {
+    if (excludedProjectIds?.has(project.id)) return false
+    const status = latestByProject.get(project.id)?.status
+    if (filter === 'completed') return status === 'completed'
+    if (filter === 'processing') return status === 'queued' || status === 'processing'
+    if (filter === 'incomplete') return !status || status === 'failed' || status === 'cancelled'
+    return true
+  }), [excludedProjectIds, filter, latestByProject, projects])
+
+  const projectCount = useMemo(() => projects.filter((project) => !excludedProjectIds?.has(project.id)).length, [excludedProjectIds, projects])
+  useEffect(() => { onCountChange?.(projectCount) }, [onCountChange, projectCount])
 
   const setCardError = (id: string, message: string) => setCardErrors((current) => ({ ...current, [id]: message }))
   const clearCardError = (id: string) => setCardErrors((current) => {
@@ -140,12 +157,15 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
     onSelectResult(generation.resultData, project, generation)
   }
 
-  return <aside className="commerce-history commerce-print-hidden" aria-labelledby="commerce-history-title">
-    <header><div><span>ARCHIVE / 7 DAYS</span><h2 id="commerce-history-title">历史项目</h2></div><button type="button" onClick={() => void load()} disabled={loadState === 'loading'} aria-label="刷新历史记录">↻</button></header>
+  return <aside className="commerce-history commerce-print-hidden" aria-label="历史项目列表">
+    <div className="commerce-history-toolbar"><div className="commerce-history-filters" role="group" aria-label="筛选历史项目">
+      {([['all', '全部'], ['completed', '已完成'], ['processing', '进行中'], ['incomplete', '未完成']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
+    </div><button type="button" onClick={() => void load()} disabled={loadState === 'loading'} aria-label="刷新历史记录">↻</button></div>
     {loadState === 'loading' ? <p className="commerce-history-state" role="status">正在读取历史项目…</p> : null}
     {loadState === 'error' ? <div className="commerce-history-state" role="alert"><strong>读取失败</strong><p>{loadError}</p><button type="button" onClick={() => void load()}>重试历史记录</button></div> : null}
-    {loadState === 'ready' && projects.length === 0 ? <div className="commerce-history-state"><strong>还没有历史项目</strong><p>完成第一份视觉方案后，它会在这里保留文字结果。</p></div> : null}
-    {loadState === 'ready' && projects.length > 0 ? <ol className="commerce-history-list">{projects.map((project, index) => {
+    {loadState === 'ready' && projectCount === 0 ? <div className="commerce-history-state"><strong>还没有历史项目</strong><p>完成第一份视觉方案后，它会在这里保留文字结果。</p></div> : null}
+    {loadState === 'ready' && projectCount > 0 && visibleProjects.length === 0 ? <div className="commerce-history-state"><strong>当前筛选没有项目</strong><p>换一个状态看看。</p></div> : null}
+    {loadState === 'ready' && visibleProjects.length > 0 ? <ol className="commerce-history-list">{visibleProjects.map((project, index) => {
       const generation = latestByProject.get(project.id)
       const readyAssets = project.assets.filter((asset) => asset.state === 'ready' && !asset.deletedAt)
       const earliestExpiry = readyAssets.map((asset) => asset.expiresAt).filter(Boolean).sort()[0]
@@ -158,8 +178,8 @@ export function CommerceHistory({ repository, onSelectResult, refreshKey = 0, li
           <div className="commerce-history-copy">
             <p><span>{platformLabels[project.platform] ?? project.platform}</span><time dateTime={project.createdAt}>{dateLabel(project.createdAt)}</time></p>
             <h3>{project.name}</h3>
-            <div className="commerce-history-meta"><span>{generation ? statusLabels[generation.status] : '尚无任务'}</span><span>剩余图片 {readyAssets.length} 张</span></div>
-            {earliestExpiry ? <p className="commerce-history-expiry">图片将在 {expiryLabel(earliestExpiry)} 清理</p> : <p className="commerce-history-cleaned">原始图片已自动清理，文字方案仍可使用</p>}
+            <div className="commerce-history-meta"><span>{generation ? statusLabels[generation.status] : '未完成草稿'}</span><span>剩余图片 {readyAssets.length} 张</span></div>
+            {earliestExpiry ? <p className="commerce-history-expiry">图片将在 {expiryLabel(earliestExpiry)} 清理</p> : project.assets.length > 0 && readyAssets.length === 0 ? <p className="commerce-history-cleaned">原始图片已自动清理，文字方案仍可使用</p> : null}
             <label className="commerce-history-lock"><input type="checkbox" checked={project.locked} disabled={isLocking || isDeleting} onChange={() => void toggleLocked(project)} aria-label={`锁定 ${project.name}`} /><span>{project.locked ? '已锁定' : '锁定项目'}</span></label>
             <small>锁定仅避免软上限提前清理，仍按 7 天到期</small>
             {cardErrors[project.id] ? <p className="commerce-history-card-error" role="alert">{cardErrors[project.id]}</p> : null}

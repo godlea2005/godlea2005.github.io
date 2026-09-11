@@ -1,0 +1,12 @@
+.commerce-page {
+  --commerce-accent: #b9e589;
+  --commerce-panel-solid: #151618;
+  --commerce-drawer: #111214;
+  --commerce-shadow: rgba(0, 0, 0, 0.32);
+}
+:root[data-theme="light"] .commerce-page {
+  --commerce-accent: #497423;
+  --commerce-panel-solid: #f6f3ed;
+  --commerce-drawer: #fbf9f4;
+  --commerce-shadow: rgba(43, 37, 28, 0.14);
+}
