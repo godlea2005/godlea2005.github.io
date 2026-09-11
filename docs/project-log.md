@@ -160,3 +160,11 @@
 - 认证模块增加已有账号冲突和防循环回归覆盖；主项目 Vitest 14 个测试文件共 248/248 通过，Edge Function 类型检查与生产构建通过。构建仍仅保留已有 `MusicPage` 527.28 kB chunk 提醒。
 - 独立代码审查结果为 Critical 0、Important 0、Minor 0。源码合并提交为 `24993f1`，GitHub Pages 发布提交为 `5efe0ae`，Pages workflow `33762017717` 成功完成。
 - Playwright 已在 `https://geniusli.cn/#ai-commerce` 完成真实 GitHub OAuth 回归：已有账号自动进入 AI 电商工作台，额度可读取，“我的”菜单显示“管理后台”，证明正式会话与站长身份均生效；浏览器控制台 error/warning 为 0/0。
+
+## 2026-09-12 — 首页与 AI 电商工作台重构发布
+
+- 首页改为全屏 GradientWaves 与 WENHAO 粒子标题，导航收敛为五项浮动入口，并保留站内搜索、深浅主题和移动目录交互；AI 电商工作台改为“产品 → 市场 → 确认”三步布局、抽屉式历史记录与紧凑音乐入口。
+- 生成流程统一为 reducer 状态机，认证请求显式携带 Bearer token 并最多静默恢复一次；OAuth 整页跳转仅短期保存同账号的纯文字草稿，绝不保存 File、base64 或令牌。上传失败、生成启动前认证失效、项目清理、跨账号与过期轮询均有回归保护。
+- 源码提交为 `c951c2f`，部署提交为 `78fa017`；GitHub Pages workflow `34629989920` 成功完成。发布域名和 `CNAME` 保持为 `geniusli.cn`。
+- 2026-09-12 01:53（Asia/Shanghai）线上 Playwright 冒烟通过：`https://geniusli.cn/` 与 `/#ai-commerce` 均加载新资源 `index-Cd4erOnG.js`、`index-C5wdz3mu.css`；1440、1024、390px 深浅主题无横向溢出，页面标题正确，浏览器控制台 error/warning 为 0/0，音乐 LRC 返回 200、MP3 范围请求返回 206。
+- 发布前主项目 19 个测试文件共 300/300 通过，TypeScript 与 Vite 生产构建通过；构建仍只有既有的两个大于 500 kB 分块提醒。此次线上冒烟没有触发真实 OAuth 授权或会消耗额度的 AI 生成。
