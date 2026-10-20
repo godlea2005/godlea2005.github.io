@@ -14,12 +14,28 @@ describe('tool directory content', () => {
     })
   })
 
+  it('finds Ozon and its display category through the public matcher', () => {
+    const result = filterToolCategories(toolCategories, { query: ' Ozon ', category: 'all' })
+
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('cross-border')
+    expect(result[0].title).toBe('跨境电商')
+    expect(result[0].tools.map((tool) => tool.name)).toEqual(['Ozon'])
+  })
+
   it('filters a named category and keeps official HTTPS destinations', () => {
     const result = filterToolCategories(toolCategories, { query: '', category: 'cross-border' })
 
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('cross-border')
-    expect(result[0].tools.every((tool) => tool.href.startsWith('https://'))).toBe(true)
-    expect(result[0].tools.every((tool) => tool.note.trim().length > 0)).toBe(true)
+    expect(result[0].tools.map((tool) => tool.name)).toEqual(['Ozon', 'Wildberries'])
+  })
+
+  it('keeps HTTPS destinations and personal notes for every curated tool', () => {
+    const tools = toolCategories.flatMap((category) => category.tools)
+
+    expect(tools.length).toBeGreaterThan(0)
+    expect(tools.every((tool) => tool.href.startsWith('https://'))).toBe(true)
+    expect(tools.every((tool) => tool.note.trim().length > 0)).toBe(true)
   })
 })
