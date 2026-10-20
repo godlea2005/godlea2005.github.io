@@ -5,6 +5,7 @@ import { ProjectArchive } from './components/ProjectArchive'
 import { StatusScene } from './components/StatusScene'
 import { StudioMap } from './components/StudioMap'
 import { FloatingHeader } from './components/FloatingHeader'
+import { TargetCursor } from './components/TargetCursor'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
 import { isSiteSubpageHash } from './lib/siteRoutes'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
@@ -54,6 +55,7 @@ function App() {
   return (
     <div className={`site-shell${!subpage ? ' is-home' : ''}${commercePage || commerceAdminPage ? ' is-commerce' : ''}`}>
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
+      <TargetCursor />
 
       {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : <main id="top">
         <StatusScene />

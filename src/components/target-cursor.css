@@ -1,0 +1,80 @@
+.target-cursor {
+  position: fixed;
+  z-index: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: left 160ms ease, top 160ms ease, width 160ms ease, height 160ms ease, opacity 160ms ease;
+}
+
+.target-cursor[data-visible="true"] {
+  opacity: 1;
+}
+
+[data-target-cursor].target-cursor-active {
+  cursor: none;
+}
+
+.target-cursor-corner {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-color: var(--accent);
+  border-style: solid;
+  border-width: 0;
+}
+
+.target-cursor-top-left {
+  top: -3px;
+  left: -3px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+  border-top-left-radius: 4px;
+}
+
+.target-cursor-top-right {
+  top: -3px;
+  right: -3px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+  border-top-right-radius: 4px;
+}
+
+.target-cursor-bottom-left {
+  bottom: -3px;
+  left: -3px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+  border-bottom-left-radius: 4px;
+}
+
+.target-cursor-bottom-right {
+  right: -3px;
+  bottom: -3px;
+  border-right-width: 1px;
+  border-bottom-width: 1px;
+  border-bottom-right-radius: 4px;
+}
+
+.target-cursor-label {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .target-cursor {
+    display: none;
+    transition: none;
+  }
+
+  [data-target-cursor].target-cursor-active {
+    cursor: auto;
+  }
+}

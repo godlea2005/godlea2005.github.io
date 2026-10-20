@@ -150,6 +150,7 @@ export function FloatingHeader({
                   pageHash === href ? "is-current" : ""
                 }
                 aria-current={pageHash === href ? "page" : undefined}
+                data-target-cursor=""
                 href={href}
                 onClick={closeNavigation}
               >
@@ -201,7 +202,7 @@ export function FloatingHeader({
                 {activeMenu === group.label && (
                   <div className="floating-dropdown" id={"menu-" + group.label}>
                     {group.items.map(([name, href]) => (
-                      <a key={name} href={href} onClick={closeNavigation} aria-current={pageHash === href ? "page" : undefined}>
+                      <a key={name} href={href} onClick={closeNavigation} aria-current={pageHash === href ? "page" : undefined} data-target-cursor="">
                         {name}
                         <span aria-hidden="true">↗</span>
                       </a>

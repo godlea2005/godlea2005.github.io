@@ -43,7 +43,7 @@ export function ToolNavigationPage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <kbd>/ INDEX</kbd>
+            <small aria-hidden="true" style={{ color: 'var(--quiet)', fontSize: 9, fontFamily: '"SFMono-Regular", Consolas, monospace', letterSpacing: '.08em' }}>/ INDEX</small>
           </div>
         </label>
       </section>
@@ -61,8 +61,8 @@ export function ToolNavigationPage() {
         ))}
       </nav>
 
-      <section className="tool-navigation-results frame" aria-live="polite" aria-label="工具结果">
-        <p className="tool-results-summary">当前收录 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
+      <section className="tool-navigation-results frame" aria-label="工具结果">
+        <p className="tool-results-summary" aria-live="polite">当前收录 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
         {visibleCategories.length === 0 ? (
           <div className="tool-empty-state">
             <span aria-hidden="true">∅</span>
