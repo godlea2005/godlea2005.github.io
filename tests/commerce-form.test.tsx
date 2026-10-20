@@ -811,8 +811,8 @@ describe('AI commerce route and navigation', () => {
     fireEvent.click(directory)
     expect(directory).toHaveTextContent('关闭')
     expect(directory).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(screen.getByRole('button', { name: '我的' }))
-    expect(screen.getByRole('button', { name: '我的' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    expect(screen.getByRole('button', { name: '更多' })).toHaveAttribute('aria-expanded', 'true')
 
     fireEvent.keyDown(window, { key: 'Escape' })
 

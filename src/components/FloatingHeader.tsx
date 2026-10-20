@@ -13,16 +13,17 @@ type FloatingHeaderProps = {
 const destinations = [
   { name: "主页", href: "#top", detail: "文昊的个人空间" },
   {
-    name: "AI 电商设计",
+    name: "AI 电商",
     href: "#ai-commerce",
     detail: "产品分析 · 主图方向 · 详情分镜",
   },
-  { name: "作品", href: "#archive", detail: "设计作品与项目归档" },
-  { name: "文章与笔记", href: "#notes", detail: "实验记录 · 学习与思考" },
-  { name: "工具导航", href: "#studio-map", detail: "个人数字工作室" },
+  { name: "工具导航", href: "#tools", detail: "常用工具与工作流入口" },
+  { name: "实验记录", href: "#notes", detail: "学习与思考" },
+  { name: "作品归档", href: "#archive", detail: "设计作品与项目归档" },
   { name: "留言", href: "#guestbook", detail: "留下想法，交流近况" },
+  { name: "合作联系", href: `mailto:${site.contacts.email}`, detail: "聊聊合作机会" },
   { name: "音乐", href: "#music", detail: "音乐与声音可视化" },
-  { name: "联系与关于", href: "#about", detail: "与我取得联系" },
+  { name: "关于此站", href: "#about", detail: "了解这个个人空间" },
 ];
 export function FloatingHeader({
   theme,
@@ -41,15 +42,21 @@ export function FloatingHeader({
       label: "文章",
       items: [
         ["实验记录", "#notes"],
-        ["工具导航", "#studio-map"],
+        ["作品归档", "#archive"],
       ],
     },
     {
-      label: "我的",
+      label: "联系",
       items: [
         ["留言", "#guestbook"],
+        ["合作联系", `mailto:${site.contacts.email}`],
+      ],
+    },
+    {
+      label: "更多",
+      items: [
         ["音乐", "#music"],
-        ["联系与关于", "#about"],
+        ["关于此站", "#about"],
         ...(isAdmin ? [["管理后台", "#commerce-admin"]] : []),
       ],
     },
@@ -135,20 +142,14 @@ export function FloatingHeader({
             {[
               ["主页", "#top"],
               ["AI 电商", "#ai-commerce"],
-              ["作品", "#archive"],
+              ["工具导航", "#tools"],
             ].map(([name, href]) => (
               <a
                 key={href}
                 className={
-                  pageHash === href || (!pageHash && href === "#top")
-                    ? "is-current"
-                    : ""
+                  pageHash === href ? "is-current" : ""
                 }
-                aria-current={
-                  pageHash === href || (!pageHash && href === "#top")
-                    ? "page"
-                    : undefined
-                }
+                aria-current={pageHash === href ? "page" : undefined}
                 href={href}
                 onClick={closeNavigation}
               >
@@ -200,7 +201,7 @@ export function FloatingHeader({
                 {activeMenu === group.label && (
                   <div className="floating-dropdown" id={"menu-" + group.label}>
                     {group.items.map(([name, href]) => (
-                      <a key={name} href={href} onClick={closeNavigation}>
+                      <a key={name} href={href} onClick={closeNavigation} aria-current={pageHash === href ? "page" : undefined}>
                         {name}
                         <span aria-hidden="true">↗</span>
                       </a>
@@ -276,7 +277,7 @@ export function FloatingHeader({
           </p>
           <ul>
             {results.map((item) => (
-              <li key={item.href}>
+              <li key={item.name}>
                 <a href={item.href} onClick={() => setSearchOpen(false)}>
                   <strong>{item.name}</strong>
                   <span>{item.detail}</span>

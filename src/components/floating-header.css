@@ -239,7 +239,7 @@
   font-style: normal;
   color: var(--quiet);
 }
-@media (max-width: 900px) {
+@media (max-width: 1080px) {
   .floating-header {
     top: max(10px, env(safe-area-inset-top));
     width: calc(100% - 24px);

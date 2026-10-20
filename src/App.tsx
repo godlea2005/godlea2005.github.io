@@ -6,12 +6,14 @@ import { StatusScene } from './components/StatusScene'
 import { StudioMap } from './components/StudioMap'
 import { FloatingHeader } from './components/FloatingHeader'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
+import { isSiteSubpageHash } from './lib/siteRoutes'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 
 const MusicPage = lazy(() => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
 const GuestbookPage = lazy(() => import('./components/GuestbookPage').then((module) => ({ default: module.GuestbookPage })))
 const CommerceStudioPage = lazy(() => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
 const CommerceAdminPage = lazy(() => import('./commerce/CommerceAdminPage').then((module) => ({ default: module.CommerceAdminPage })))
+const ToolNavigationPage = lazy(() => import('./components/ToolNavigationPage').then((module) => ({ default: module.ToolNavigationPage })))
 
 const resolvePageHash = () => {
   const isGuestbookAuthReturn = new URLSearchParams(window.location.search).get('auth') === 'guestbook'
@@ -25,7 +27,8 @@ function App() {
   const guestbookPage = pageHash === '#guestbook'
   const commercePage = pageHash === '#ai-commerce'
   const commerceAdminPage = pageHash === '#commerce-admin'
-  const subpage = musicPage || guestbookPage || commercePage || commerceAdminPage
+  const toolsPage = pageHash === '#tools'
+  const subpage = isSiteSubpageHash(pageHash)
 
   useEffect(() => {
     const initial = getInitialTheme()
@@ -52,7 +55,7 @@ function App() {
     <div className={`site-shell${!subpage ? ' is-home' : ''}${commercePage || commerceAdminPage ? ' is-commerce' : ''}`}>
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
 
-      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : <main id="top">
+      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : <main id="top">
         <StatusScene />
         <CommerceHomeSection />
         <StudioMap />
