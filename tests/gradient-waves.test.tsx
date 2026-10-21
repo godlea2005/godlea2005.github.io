@@ -33,12 +33,16 @@ function setupObservers() {
   const resizeDisconnect = vi.fn()
   const intersectionDisconnect = vi.fn()
   const intersections: IntersectionObserverCallback[] = []
-  globalThis.ResizeObserver = class { observe = vi.fn(); disconnect = resizeDisconnect } as unknown as typeof ResizeObserver
+  const resizes: ResizeObserverCallback[] = []
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) { resizes.push(callback) }
+    observe = vi.fn(); disconnect = resizeDisconnect
+  } as unknown as typeof ResizeObserver
   globalThis.IntersectionObserver = class {
     constructor(callback: IntersectionObserverCallback) { intersections.push(callback) }
     observe = vi.fn(); disconnect = intersectionDisconnect
   } as unknown as typeof IntersectionObserver
-  return { frames, resizeDisconnect, intersectionDisconnect, intersections }
+  return { frames, resizeDisconnect, intersectionDisconnect, intersections, resizes }
 }
 
 afterEach(() => {
@@ -51,6 +55,7 @@ afterEach(() => {
   window.requestAnimationFrame = originalRaf
   window.cancelAnimationFrame = originalCancel
   if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
+  else Reflect.deleteProperty(document, 'hidden')
   vi.restoreAllMocks()
 })
 
@@ -75,12 +80,32 @@ describe('GradientWaves', () => {
     expect(ogl.lost).toHaveBeenCalledOnce()
   })
 
+  it('does not redraw a frozen wave for repeated observer reports at the same size', () => {
+    const env = setupObservers()
+    render(<GradientWaves speed={0} />)
+    expect(ogl.renders).toHaveBeenCalledTimes(1)
+    act(() => env.resizes[0]([], {} as ResizeObserver))
+    expect(ogl.renders).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the first positive intersection before scheduling an animated frame', () => {
+    const env = setupObservers()
+    render(<GradientWaves speed={0.5} />)
+    expect(env.frames.size).toBe(0)
+    act(() => env.intersections[0]([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver))
+    expect(env.frames.size).toBe(0)
+    act(() => env.intersections[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+    expect(env.frames.size).toBe(1)
+    act(() => env.intersections[0]([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver))
+    expect(env.frames.size).toBe(0)
+  })
+
   it('stops while hidden/offscreen and releases observers, listeners and context on unmount', () => {
     const env = setupObservers()
     const add = vi.spyOn(document, 'addEventListener')
     const remove = vi.spyOn(document, 'removeEventListener')
     const view = render(<GradientWaves speed={0.5} />)
-    expect(env.frames.size).toBe(1)
+    expect(env.frames.size).toBe(0)
     act(() => env.intersections[0]([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver))
     expect(env.frames.size).toBe(0)
     act(() => env.intersections[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))

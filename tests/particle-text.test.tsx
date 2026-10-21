@@ -53,6 +53,7 @@ afterEach(() => {
   window.requestAnimationFrame = originalRaf
   window.cancelAnimationFrame = originalCancel
   if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
+  else Reflect.deleteProperty(document, 'hidden')
   vi.restoreAllMocks()
 })
 
@@ -82,6 +83,26 @@ describe('ParticleText', () => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: true })
     act(() => document.dispatchEvent(new Event('visibilitychange')))
     expect(env.frames.size).toBe(0)
+  })
+
+  it('cancels a queued resize on hide and rebuilds from the latest size only after resume', () => {
+    const env = setup()
+    const view = render(<ParticleText text="WENHAO" />)
+    const root = screen.getByRole('img', { name: 'WENHAO' })
+    const bounds = vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40))
+    act(() => env.instances[0].callback([], env.instances[0] as unknown as ResizeObserver))
+    expect(env.frames.size).toBeGreaterThan(0)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(env.frames.size).toBe(0)
+    bounds.mockReturnValue(new DOMRect(0, 0, 120, 44))
+    act(() => env.instances[0].callback([], env.instances[0] as unknown as ResizeObserver))
+    expect(env.frames.size).toBe(0)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(root.querySelector('canvas')).toHaveAttribute('width', String(Math.round(120 * Math.min(window.devicePixelRatio || 1, 2))))
+    expect(env.frames.size).toBeGreaterThan(0)
+    view.unmount()
   })
 
   it.each([{ fine: false, reduced: false }, { fine: true, reduced: true }])('uses only a static wordmark for $fine/$reduced', (options) => {

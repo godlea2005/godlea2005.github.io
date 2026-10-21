@@ -17,6 +17,7 @@ afterEach(() => {
   vi.useRealTimers()
   window.matchMedia = initialMatchMedia
   if (initialHidden) Object.defineProperty(document, 'hidden', initialHidden)
+  else Reflect.deleteProperty(document, 'hidden')
 })
 
 describe('TextType', () => {
@@ -25,7 +26,10 @@ describe('TextType', () => {
     setMotion(false)
     render(<TextType texts={['记录设计与技术的现场', '把想法做成看得见的作品']} typingMs={1} deletingMs={1} pauseMs={1} />)
     await act(async () => vi.runAllTimers())
-    expect(screen.getByLabelText('记录设计与技术的现场')).toHaveTextContent('记录设计与技术的现场')
+    const accessible = screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })
+    expect(accessible).not.toHaveAttribute('aria-hidden')
+    expect(accessible).toBeInTheDocument()
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-glyphs' })).toHaveAttribute('aria-hidden', 'true')
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -33,7 +37,8 @@ describe('TextType', () => {
     vi.useFakeTimers()
     setMotion(true)
     render(<TextType texts={['记录设计与技术的现场', '第二句']} />)
-    expect(screen.getByLabelText('记录设计与技术的现场')).toHaveTextContent('记录设计与技术的现场')
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })).not.toHaveAttribute('aria-hidden')
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-glyphs' })).toHaveAttribute('aria-hidden', 'true')
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -42,6 +47,7 @@ describe('TextType', () => {
     setMotion(false)
     Object.defineProperty(document, 'hidden', { configurable: true, value: true })
     const view = render(<TextType texts={['第一句', '第二句']} typingMs={1} deletingMs={1} pauseMs={1} />)
+    expect(screen.getByText('第一句', { selector: '.text-type-accessible' })).toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(0)
     Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     act(() => document.dispatchEvent(new Event('visibilitychange')))

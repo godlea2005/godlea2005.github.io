@@ -134,12 +134,22 @@ export function ParticleText({
       start()
     }
     const onResize = () => {
+      if (document.hidden) return
       const bounds = root.getBoundingClientRect()
       if (Math.max(1, Math.round(bounds.width)) === width && Math.max(1, Math.round(bounds.height)) === height) return
       if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
-      resizeFrame = window.requestAnimationFrame(() => { resizeFrame = 0; build() })
+      resizeFrame = window.requestAnimationFrame(() => { resizeFrame = 0; if (!document.hidden) build() })
     }
-    const onVisibility = () => document.hidden ? stop() : start()
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop()
+        if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
+        resizeFrame = 0
+      } else {
+        build()
+        start()
+      }
+    }
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null
     observer?.observe(root)
     if (!observer) window.addEventListener('resize', onResize)

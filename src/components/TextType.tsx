@@ -56,7 +56,8 @@ export function TextType({ texts, typingMs = 55, deletingMs = 28, pauseMs = 1100
     ? first
     : Array.from(phrase).slice(0, step.length).join('')
 
-  return <span className="text-type" aria-label={first}>
+  return <span className="text-type">
+    <span className="text-type-accessible">{first}</span>
     <span aria-hidden="true" className="text-type-glyphs">{visibleText}</span>
     <span aria-hidden="true" className="text-type-caret" />
   </span>

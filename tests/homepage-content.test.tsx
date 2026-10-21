@@ -33,7 +33,7 @@ describe('AI commerce homepage positioning', () => {
     render(<StatusScene theme="dark" />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'WENHAO 博客' })).toBeInTheDocument()
-    expect(screen.getByLabelText('记录设计与技术的现场')).toBeInTheDocument()
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })).toBeInTheDocument()
     expect(screen.getByText(/AI 设计师/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '开始阅读' })).toHaveAttribute('href', '#featured')
     expect(screen.getByRole('link', { name: '查看作品' })).toHaveAttribute('href', '#work')

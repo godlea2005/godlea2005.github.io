@@ -168,7 +168,7 @@ const GradientWaves = ({
     let onPointerMove;
     let onPointerLeave;
     let raf = 0;
-    let sectionVisible = true;
+    let sectionVisible = typeof IntersectionObserver !== 'function';
     let pageVisible = !document.hidden;
     let disposed = false;
     let failed = false;
@@ -280,11 +280,18 @@ const GradientWaves = ({
       ctxMap.set(container, context);
 
       let sized = false;
+      let measuredWidth = 0;
+      let measuredHeight = 0;
       const setSize = () => {
         if (disposed || failed) return;
         try {
           const rect = container.getBoundingClientRect();
-          renderer.setSize(Math.max(1, Math.floor(rect.width)), Math.max(1, Math.floor(rect.height)));
+          const width = Math.max(1, Math.floor(rect.width));
+          const height = Math.max(1, Math.floor(rect.height));
+          if (sized && width === measuredWidth && height === measuredHeight) return;
+          measuredWidth = width;
+          measuredHeight = height;
+          renderer.setSize(width, height);
           const resolution = program.uniforms.iResolution.value;
           resolution[0] = gl.drawingBufferWidth;
           resolution[1] = gl.drawingBufferHeight;

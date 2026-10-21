@@ -27,6 +27,7 @@ afterEach(() => {
   cleanup()
   window.matchMedia = originalMatchMedia
   if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
+  else Reflect.deleteProperty(document, 'hidden')
   vi.restoreAllMocks()
 })
 
