@@ -754,7 +754,8 @@ describe('AI commerce route and navigation', () => {
 
   it('marks the first-level AI commerce navigation entry as current', () => {
     render(<FloatingHeader theme="dark" pageHash="#ai-commerce" onToggleTheme={vi.fn()} />)
-    const link = screen.getByRole('link', { name: 'AI 电商' })
+    fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
+    const link = screen.getByRole('link', { name: 'AI 电商实验室' })
     expect(link).toHaveAttribute('href', '#ai-commerce')
     expect(link).toHaveClass('is-current')
   })
@@ -790,35 +791,21 @@ describe('AI commerce route and navigation', () => {
     expect(search).toHaveFocus()
   })
 
-  it('toggles a pointer-opened dropdown closed on click and restores its trigger focus on Escape', () => {
+  it('opens the grouped card navigation and restores its trigger focus on Escape', async () => {
     const view = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    const group = view.container.querySelectorAll<HTMLElement>('.floating-nav-group')[0]
-    const trigger = screen.getByRole('button', { name: '文章' })
-    fireEvent.pointerEnter(group, { pointerType: 'mouse' })
-    expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(trigger)
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(trigger)
-    expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    const trigger = screen.getByRole('button', { name: '打开导航' })
+    await userEvent.click(trigger)
+    expect(screen.getByRole('navigation', { name: '主导航' })).toHaveClass('is-expanded')
+    await userEvent.keyboard('{Escape}')
+    expect(view.container.querySelector('nav')).not.toHaveClass('is-expanded')
     expect(trigger).toHaveFocus()
   })
 
-  it('returns focus to the mobile directory button after Escape closes navigation', async () => {
+  it('closes the grouped navigation when the page hash changes', async () => {
     const view = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    const directory = view.container.querySelector<HTMLButtonElement>('.floating-menu-toggle')!
-    fireEvent.click(directory)
-    expect(directory).toHaveTextContent('关闭')
-    expect(directory).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(screen.getByRole('button', { name: '更多' }))
-    expect(screen.getByRole('button', { name: '更多' })).toHaveAttribute('aria-expanded', 'true')
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(directory).toHaveTextContent('目录')
-    expect(directory).toHaveFocus()
-    expect(directory).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
+    view.rerender(<FloatingHeader theme="dark" pageHash="#ai-commerce" onToggleTheme={vi.fn()} />)
+    expect(screen.getByRole('button', { name: '打开导航' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('resolves the ai-commerce hash to the lazy workspace instead of the homepage', async () => {

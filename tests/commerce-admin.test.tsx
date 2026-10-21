@@ -117,13 +117,11 @@ describe('commerce administrator console authorization', () => {
 
   it('shows the administrator entry only to a verified administrator', async () => {
     const { rerender } = render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    screen.getByRole('button', { name: /更多/ }).focus()
-    await userEvent.keyboard('{Enter}')
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
     expect(screen.getByRole('link', { name: /管理后台/ })).toHaveAttribute('href', '#commerce-admin')
     authMock.useAuth.mockReturnValue(auth({ isAdmin: false }))
     rerender(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    screen.getByRole('button', { name: /更多/ }).focus()
-    await userEvent.keyboard('{Enter}')
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
     expect(screen.queryByRole('link', { name: /管理后台/ })).not.toBeInTheDocument()
   })
 
