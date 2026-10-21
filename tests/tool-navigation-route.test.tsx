@@ -17,7 +17,7 @@ vi.mock('../src/components/ProjectArchive', () => ({ ProjectArchive: () => null 
 
 import App from '../src/App'
 import { FloatingHeader } from '../src/components/FloatingHeader'
-import { isSiteSubpageHash, siteSubpageHashes } from '../src/lib/siteRoutes'
+import { isSiteSubpageHash } from '../src/lib/siteRoutes'
 
 const auth = (isAdmin = false): AuthContextValue => ({
   configured: true,
@@ -42,10 +42,14 @@ describe('tools route and site navigation', () => {
   })
 
   it('recognizes exact standalone hashes without treating homepage anchors as subpages', () => {
-    expect(siteSubpageHashes).toEqual(['#music', '#guestbook', '#ai-commerce', '#commerce-admin', '#tools'])
     expect(isSiteSubpageHash('#tools')).toBe(true)
+    expect(isSiteSubpageHash('#writing')).toBe(true)
+    expect(isSiteSubpageHash('#work')).toBe(true)
+    expect(isSiteSubpageHash('#article/a-valid-slug')).toBe(true)
+    expect(isSiteSubpageHash('#project/a-valid-slug')).toBe(true)
     expect(isSiteSubpageHash('#studio-map')).toBe(false)
     expect(isSiteSubpageHash('#tools/')).toBe(false)
+    expect(isSiteSubpageHash('#article/Bad')).toBe(false)
     expect(isSiteSubpageHash('#top')).toBe(false)
   })
 

@@ -1,0 +1,66 @@
+import type { Article } from './types'
+
+const articles: Article[] = [
+  {
+    slug: 'ai-speeds-up-judgment',
+    title: 'AI 不替代设计，它让判断更快抵达现场',
+    excerpt: '把 AI 放进设计流程，不是把决定交给模型，而是更快看见选项、验证方向，再由人做出取舍。',
+    date: '2026-10-21',
+    readingMinutes: 5,
+    tags: ['AI 设计', '设计判断', '工作流'],
+    featured: true,
+    body: [
+      { type: 'paragraph', text: '工具更新得很快，但设计工作的起点没有变：先弄清楚我们正在解决什么问题，以及什么才算解决得更好。AI 能缩短从想法到可见方案的距离，却不能替团队定义目标。' },
+      { type: 'heading', text: '先定义问题' },
+      { type: 'paragraph', text: '如果输入只有一句宽泛的要求，得到的也往往是一堆看似完整、却无法比较的结果。先描述对象、使用场景、限制条件和判断标准，模型才有机会参与真正的探索。' },
+      { type: 'list', items: ['写下这次设计要改变的用户处境。', '区分必须遵守的事实与可以尝试的表达。', '明确用什么标准判断一个方向是否值得继续。'] },
+      { type: 'heading', text: '让模型扩大选择' },
+      { type: 'paragraph', text: '模型适合快速生成差异化选项，让人跳出第一个念头的惯性。它也适合协助整理、改写和比较，但候选结果仍需要回到真实资料与实际语境中核对。' },
+      { type: 'quote', text: '生成更多可能，不等于自动得到更好的答案。' },
+      { type: 'heading', text: '最后的判断仍属于人' },
+      { type: 'paragraph', text: '设计师需要判断哪些差异有意义、哪些表达诚实可信，以及方案是否尊重使用者。把重复劳动交给工具，是为了把更多注意力留给这些不能外包的决定。' },
+    ],
+  },
+  {
+    slug: 'commerce-every-step-has-a-next-step',
+    title: '电商内容的关键，是让每一步都有下一步',
+    excerpt: '从首图到详情页，内容不是彼此孤立的版面；每一屏都应回答一个问题，并自然引出下一步。',
+    date: '2026-10-21',
+    readingMinutes: 6,
+    tags: ['电商内容', '信息设计', '运营'],
+    featured: true,
+    body: [
+      { type: 'paragraph', text: '商品页是一段连续的阅读体验。用户在不同位置带着不同问题到来；内容顺序如果能接住这些问题，信息就更容易被理解。' },
+      { type: 'heading', text: '首图只负责第一步' },
+      { type: 'paragraph', text: '首图首先要让人迅速辨认商品、看懂核心差异，并愿意继续了解。把所有卖点都塞进第一屏，反而会让主次失焦。' },
+      { type: 'list', items: ['让产品本身在缩略尺寸下仍清晰可辨。', '选择一个最值得先讲的场景或利益点。', '为后续信息留出继续说明的空间。'] },
+      { type: 'heading', text: '详情页建立连续理由' },
+      { type: 'paragraph', text: '详情内容可以从需求与场景开始，再说明功能、证据、使用方式和限制。每一段回应上一个问题，也为下一个问题做好准备，避免信息只是并列堆放。' },
+      { type: 'quote', text: '好的页面不是说得更多，而是让下一步变得更自然。' },
+      { type: 'heading', text: '平台语境决定顺序' },
+      { type: 'paragraph', text: '不同平台的浏览节奏、屏幕环境和表达规范都不一样。内容结构要从实际语境出发；照搬一套顺序，并不能保证每个商品都讲得清楚。' },
+    ],
+  },
+  {
+    slug: 'design-becomes-real-in-frontend',
+    title: '把设计做进前端之后，细节才真正有了重量',
+    excerpt: '当设计进入浏览器，响应、动效、加载和可访问性都会成为体验的一部分，而不是交付后的附注。',
+    date: '2026-10-21',
+    readingMinutes: 5,
+    tags: ['前端设计', '交互', '性能'],
+    featured: true,
+    body: [
+      { type: 'paragraph', text: '静态画面能说明一个理想状态，网页却会遇到不同尺寸、真实内容、键盘操作和加载过程。实现不是把稿子复刻出来，而是检验设计意图能否在这些条件下继续成立。' },
+      { type: 'heading', text: '静态稿没有最后一公里' },
+      { type: 'paragraph', text: '组件边界、文字长度和响应规则会改变布局。提前考虑内容的伸缩方式，并在真实设备上反复检查，才能让界面面对变化时仍然稳定。' },
+      { type: 'list', items: ['用真实长度的内容检查换行和溢出。', '验证窄屏、宽屏及键盘导航下的状态。', '为加载、失败和空内容设计一致的反馈。'] },
+      { type: 'heading', text: '动效必须解释关系' },
+      { type: 'paragraph', text: '动效可以说明元素从哪里来、状态如何改变，也可以帮助用户理解层级。若一个动画只增加等待，却没有提供线索，就值得删减或缩短。' },
+      { type: 'quote', text: '每个动态细节都应该帮助人理解正在发生什么。' },
+      { type: 'heading', text: '性能也是视觉的一部分' },
+      { type: 'paragraph', text: '加载缓慢、跳动的布局和迟来的反馈都会改变用户看到的画面。把资源大小、渲染节奏和减少动态偏好纳入实现，是完成视觉设计的一部分。' },
+    ],
+  },
+]
+
+export const findArticle = (slug: string): Article | undefined => articles.find((article) => article.slug === slug)
