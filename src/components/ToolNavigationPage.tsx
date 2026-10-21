@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   filterToolCategories,
+  toolCatalogMetadata,
   toolCategories,
   toolCategoryOptions,
   type ToolCategoryId,
@@ -31,7 +32,12 @@ export function ToolNavigationPage() {
             <p className="tool-navigation-index">FIELD NOTES / TOOL INDEX</p>
             <h1 id="tools-title">工具导航</h1>
           </div>
-          <p className="tool-navigation-intro-copy">从真实工作流里留下的工具，不追新，只留会反复打开的。</p>
+          <div>
+            <p className="tool-navigation-intro-copy">从真实工作流里留下的工具，不追新，只留会反复打开的。</p>
+            <p className="tool-catalog-hint">
+              已收录 {toolCatalogMetadata.totalTools} 个工具 · 最近核对 <time dateTime={toolCatalogMetadata.lastReviewed}>{toolCatalogMetadata.lastReviewed}</time>
+            </p>
+          </div>
         </div>
         <label className="tool-search-label">
           <span>搜索工具</span>

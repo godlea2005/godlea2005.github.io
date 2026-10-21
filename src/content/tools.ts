@@ -172,6 +172,11 @@ export const toolCategories: ToolCategory[] = [
   },
 ]
 
+export const toolCatalogMetadata = {
+  totalTools: toolCategories.reduce((total, category) => total + category.tools.length, 0),
+  lastReviewed: '2026-10-21',
+} as const
+
 export const toolCategoryOptions: ToolCategoryOption[] = [
   { id: 'all', label: '全部' },
   ...toolCategories.map(({ id, title }) => ({ id, label: title })),

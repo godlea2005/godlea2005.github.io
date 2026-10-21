@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { filterToolCategories, toolCategories } from '../src/content/tools'
+import { filterToolCategories, toolCatalogMetadata, toolCategories } from '../src/content/tools'
 
 describe('tool directory content', () => {
+  it('exposes the full catalog total and an explicit review date', () => {
+    expect(toolCatalogMetadata.totalTools).toBe(toolCategories.flatMap(({ tools }) => tools).length)
+    expect(toolCatalogMetadata.lastReviewed).toBe('2026-10-21')
+  })
+
   it('keeps only matching tools while preserving category metadata', () => {
     const result = filterToolCategories(toolCategories, { query: '图片', category: 'all' })
 
