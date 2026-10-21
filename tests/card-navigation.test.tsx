@@ -49,6 +49,36 @@ describe('editorial card navigation', () => {
     expect(container.querySelector('nav')).toHaveAttribute('aria-label', '主导航')
   })
 
+  it('moves keyboard focus to the stable trigger before closing on destination activation', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    const trigger = screen.getByRole('button', { name: '打开导航' })
+    await userEvent.click(trigger)
+    const destination = screen.getByRole('link', { name: '文章' })
+    destination.focus()
+
+    await userEvent.keyboard('{Enter}')
+
+    expect(trigger).toHaveFocus()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(destination.closest('nav')).toHaveAttribute('inert')
+  })
+
+  it('restores search focus to its visible trigger after Ctrl+K from the expanded nav', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
+    screen.getByRole('link', { name: '文章' }).focus()
+
+    await userEvent.keyboard('{Control>}k{/Control}')
+    const dialog = screen.getByRole('dialog', { name: '搜索本站' })
+    expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+
+    const searchTrigger = screen.getByRole('button', { name: '打开搜索' })
+    expect(searchTrigger).toHaveFocus()
+    expect(searchTrigger).toBeVisible()
+    expect(screen.getByRole('button', { name: '打开导航' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('keeps the console link exclusive to administrators', async () => {
     const { rerender } = render(<FloatingHeader theme="dark" pageHash="#commerce-admin" onToggleTheme={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
@@ -67,5 +97,18 @@ describe('editorial card navigation', () => {
     const dialog = screen.getByRole('dialog', { name: '搜索本站' })
     expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
     expect(within(dialog).getByRole('link', { name: /文章/ })).not.toHaveAttribute('data-target-cursor')
+  })
+
+  it('keeps the clear-search action outside the input label and preserves its accessible name', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: '打开搜索' }))
+    const dialog = screen.getByRole('dialog', { name: '搜索本站' })
+    const input = within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })
+    await userEvent.type(input, 'not-a-match')
+    const clear = within(dialog).getByRole('button', { name: '清除' })
+
+    expect(clear.closest('label')).toBeNull()
+    await userEvent.click(clear)
+    expect(input).toHaveValue('')
   })
 })

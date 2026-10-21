@@ -14,6 +14,10 @@ export type CardNavProps = {
 export function CardNav({ groups = navigationGroups, currentHash, open, onOpenChange, onNavigate }: CardNavProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const handleNavigate = () => {
+    triggerRef.current?.focus()
+    onNavigate()
+  }
   const currentGroup = groups.find((group) => group.destinations.some((destination) => isRouteCurrent(parseSiteRoute(currentHash), destination.href)))
 
   useEffect(() => {
@@ -70,7 +74,7 @@ export function CardNav({ groups = navigationGroups, currentHash, open, onOpenCh
                   className={current ? 'is-current' : undefined}
                   aria-current={current ? 'page' : undefined}
                   data-target-cursor=""
-                  onClick={onNavigate}
+                  onClick={handleNavigate}
                 >
                   <span className="card-nav-destination-index">0{destinationIndex + 1}</span>
                   <span className="card-nav-destination-copy"><strong>{destination.title}</strong><small>{destination.detail}</small></span>

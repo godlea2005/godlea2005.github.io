@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { navigationGroups } from '../content/navigation'
 import type { Theme } from '../lib/theme'
@@ -14,6 +14,7 @@ type FloatingHeaderProps = {
 
 export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeaderProps) {
   const { isAdmin } = useAuth()
+  const searchTriggerRef = useRef<HTMLButtonElement>(null)
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const groups = useMemo(() => isAdmin ? navigationGroups.map((group) => group.id === 'connect'
@@ -26,6 +27,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        searchTriggerRef.current?.focus()
         setNavigationOpen(false)
         setSearchOpen(true)
       }
@@ -46,7 +48,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
       </a>
       <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={setNavigationOpen} onNavigate={closeNavigation} />
       <div className="floating-actions">
-        <button className="floating-search" type="button" onClick={() => setSearchOpen(true)} aria-label="打开搜索">
+        <button ref={searchTriggerRef} className="floating-search" type="button" onClick={() => setSearchOpen(true)} aria-label="打开搜索">
           <span aria-hidden="true">⌕</span><kbd>⌘ / Ctrl K</kbd>
         </button>
         <button className="floating-theme" type="button" onClick={onToggleTheme} aria-label={`切换至${theme === 'dark' ? '浅色' : '深色'}模式`}>

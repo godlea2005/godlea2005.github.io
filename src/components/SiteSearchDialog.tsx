@@ -22,17 +22,20 @@ export function SiteSearchDialog({ open, onClose, includeAdmin }: SiteSearchDial
       <div><p>FIELD NOTES / INDEX</p><h2>去哪里看看？</h2></div>
       <button type="button" onClick={onClose} aria-label="关闭搜索">×</button>
     </header>
-    <label className="site-search-input-wrap">
-      <span aria-hidden="true">⌕</span>
-      <input
-        data-modal-focus
-        aria-label="搜索作品、笔记或标签"
-        placeholder="搜索文章、作品、工具或主题…"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
+    <div className="site-search-input-wrap">
+      <label className="site-search-input-label" htmlFor="site-search-input">
+        <span aria-hidden="true">⌕</span>
+        <input
+          id="site-search-input"
+          data-modal-focus
+          aria-label="搜索作品、笔记或标签"
+          placeholder="搜索文章、作品、工具或主题…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
       {query && <button type="button" className="site-search-clear" onClick={() => setQuery('')}>清除</button>}
-    </label>
+    </div>
     <p className="site-search-count" role="status">
       {groups.length ? `${groups.reduce((count, group) => count + group.items.length, 0)} 个相关入口` : '暂时没有找到相关内容。'}
     </p>

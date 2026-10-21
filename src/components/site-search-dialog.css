@@ -28,9 +28,10 @@
 .site-search-clear { min-width: 44px; min-height: 44px; border: 0; border-radius: 50%; background: var(--bg2); color: var(--ink); cursor: pointer; }
 .site-search-heading > button { font-size: 24px; }
 .site-search-input-wrap { min-height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
-.site-search-input-wrap > span { color: var(--accent); font-size: 22px; }
-.site-search-input-wrap input { flex: 1; min-width: 0; min-height: 52px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; }
-.site-search-clear { min-height: 36px; min-width: 48px; border-radius: 8px; color: var(--muted); font-size: 11px; }
+.site-search-input-label { flex: 1; min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 10px; }
+.site-search-input-label > span { color: var(--accent); font-size: 22px; }
+.site-search-input-label input { flex: 1; min-width: 0; min-height: 52px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; }
+.site-search-clear { min-width: 48px; min-height: 44px; border-radius: 8px; color: var(--muted); font-size: 11px; }
 .site-search-count { min-height: 20px; margin: 13px 0 10px; color: var(--muted); font-size: 12px; }
 .site-search-results { display: grid; gap: 15px; }
 .site-search-results section h3 { margin: 0 0 5px; padding: 0 3px; color: var(--quiet); font: 10px/1.5 "SFMono-Regular", Consolas, monospace; letter-spacing: .1em; }
