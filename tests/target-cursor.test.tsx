@@ -30,6 +30,22 @@ describe('TargetCursor', () => {
     expect(screen.getByTestId('target-cursor')).toHaveAttribute('data-visible', 'false')
   })
 
+  it('requires the opt-in attribute even when a custom selector matches links', () => {
+    setMedia(true)
+    render(<><a href="#plain">Plain</a><a href="#opted-in" data-target-cursor="">Opted in</a><TargetCursor selector="a" /></>)
+    const cursor = screen.getByTestId('target-cursor')
+    const plain = screen.getByRole('link', { name: 'Plain' })
+    const optedIn = screen.getByRole('link', { name: 'Opted in' })
+
+    fireEvent.pointerOver(plain)
+    expect(cursor).toHaveAttribute('data-visible', 'false')
+    expect(plain).not.toHaveClass('target-cursor-active')
+
+    fireEvent.pointerOver(optedIn)
+    expect(cursor).toHaveAttribute('data-visible', 'true')
+    expect(optedIn).toHaveClass('target-cursor-active')
+  })
+
   it('is absent for reduced motion and non-fine pointers', () => {
     setMedia(true, true)
     const view = render(<><a href="#tools" data-target-cursor="">Tool</a><TargetCursor /></>)

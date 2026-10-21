@@ -15,6 +15,8 @@ export function ToolNavigationPage() {
     [query, category],
   )
   const matchCount = visibleCategories.reduce((count, item) => count + item.tools.length, 0)
+  const categoryLabel = toolCategoryOptions.find((option) => option.id === category)?.label ?? '全部'
+  const searchQuery = query.trim()
 
   const clearFilters = () => {
     setQuery('')
@@ -62,7 +64,7 @@ export function ToolNavigationPage() {
       </nav>
 
       <section className="tool-navigation-results frame" aria-label="工具结果">
-        <p className="tool-results-summary" aria-live="polite">当前收录 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
+        <p className="tool-results-summary" aria-live="polite">{categoryLabel}{searchQuery ? `，搜索“${searchQuery}”` : ''}：匹配 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
         {visibleCategories.length === 0 ? (
           <div className="tool-empty-state">
             <span aria-hidden="true">∅</span>

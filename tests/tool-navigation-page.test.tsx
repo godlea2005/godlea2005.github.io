@@ -14,6 +14,7 @@ describe('ToolNavigationPage', () => {
     await user.type(search, 'Photopea')
     expect(screen.getByRole('link', { name: /Photopea/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /GitHub/ })).not.toBeInTheDocument()
+    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('搜索“Photopea”')
 
     await user.clear(search)
     await user.click(screen.getByRole('button', { name: '跨境电商' }))
@@ -47,5 +48,23 @@ describe('ToolNavigationPage', () => {
 
     const section = screen.getByRole('region', { name: /跨境电商/ })
     expect(within(section).getByText('2 个工具')).toBeInTheDocument()
+  })
+
+  it('announces the selected category when equal-count categories change', async () => {
+    const user = userEvent.setup()
+    render(<ToolNavigationPage />)
+
+    const status = document.querySelector('[aria-live="polite"]')
+    expect(status).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'AI 创作' }))
+    const firstAnnouncement = status?.textContent
+    expect(firstAnnouncement).toContain('AI 创作')
+    expect(firstAnnouncement).toContain('2 个工具')
+
+    await user.click(screen.getByRole('button', { name: '跨境电商' }))
+    expect(status).toHaveTextContent('跨境电商')
+    expect(status).toHaveTextContent('2 个工具')
+    expect(status?.textContent).not.toBe(firstAnnouncement)
   })
 })

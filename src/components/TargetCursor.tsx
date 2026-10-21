@@ -68,7 +68,7 @@ export function TargetCursor({ selector = '[data-target-cursor]' }: { selector?:
     const resolve = (eventTarget: EventTarget | null) => {
       if (!(eventTarget instanceof Element) || eventTarget.closest(blockedSelector) || eventTarget.closest(modalSelector) || document.querySelector(modalSelector)) return null
       const target = eventTarget.closest<HTMLElement>(selector)
-      return target && !target.closest(blockedSelector) ? target : null
+      return target?.hasAttribute('data-target-cursor') && !target.closest(blockedSelector) ? target : null
     }
     const enter = (event: Event) => {
       const target = resolve(event.target)
