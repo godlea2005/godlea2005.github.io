@@ -7,7 +7,7 @@ import { StudioMap } from './components/StudioMap'
 import { FloatingHeader } from './components/FloatingHeader'
 import { TargetCursor } from './components/TargetCursor'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
-import { isSiteSubpageHash } from './lib/siteRoutes'
+import { isSiteSubpageRoute, parseSiteRoute } from './lib/siteRoutes'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 
 const MusicPage = lazy(() => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
@@ -15,6 +15,10 @@ const GuestbookPage = lazy(() => import('./components/GuestbookPage').then((modu
 const CommerceStudioPage = lazy(() => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
 const CommerceAdminPage = lazy(() => import('./commerce/CommerceAdminPage').then((module) => ({ default: module.CommerceAdminPage })))
 const ToolNavigationPage = lazy(() => import('./components/ToolNavigationPage').then((module) => ({ default: module.ToolNavigationPage })))
+const WritingIndexPage = lazy(() => import('./editorial/WritingIndexPage').then((module) => ({ default: module.WritingIndexPage })))
+const ArticlePage = lazy(() => import('./editorial/ArticlePage').then((module) => ({ default: module.ArticlePage })))
+const WorkIndexPage = lazy(() => import('./editorial/WorkIndexPage').then((module) => ({ default: module.WorkIndexPage })))
+const ProjectPage = lazy(() => import('./editorial/ProjectPage').then((module) => ({ default: module.ProjectPage })))
 
 const resolvePageHash = () => {
   const isGuestbookAuthReturn = new URLSearchParams(window.location.search).get('auth') === 'guestbook'
@@ -24,12 +28,13 @@ const resolvePageHash = () => {
 function App() {
   const [theme, setTheme] = useState<Theme>('dark')
   const [pageHash, setPageHash] = useState(resolvePageHash)
-  const musicPage = pageHash === '#music'
-  const guestbookPage = pageHash === '#guestbook'
-  const commercePage = pageHash === '#ai-commerce'
-  const commerceAdminPage = pageHash === '#commerce-admin'
-  const toolsPage = pageHash === '#tools'
-  const subpage = isSiteSubpageHash(pageHash)
+  const route = parseSiteRoute(pageHash)
+  const musicPage = route.kind === 'static' && route.page === 'music'
+  const guestbookPage = route.kind === 'static' && route.page === 'guestbook'
+  const commercePage = route.kind === 'static' && route.page === 'ai-commerce'
+  const commerceAdminPage = route.kind === 'static' && route.page === 'commerce-admin'
+  const toolsPage = route.kind === 'static' && route.page === 'tools'
+  const subpage = isSiteSubpageRoute(route)
 
   useEffect(() => {
     const initial = getInitialTheme()
@@ -57,7 +62,7 @@ function App() {
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
       <TargetCursor />
 
-      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : <main id="top">
+      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : route.kind === 'static' && route.page === 'writing' ? <Suspense fallback={<main className="editorial-loading">载入文章索引</main>}><WritingIndexPage /></Suspense> : route.kind === 'article' ? <Suspense fallback={<main className="editorial-loading">载入文章</main>}><ArticlePage slug={route.slug} /></Suspense> : route.kind === 'static' && route.page === 'work' ? <Suspense fallback={<main className="editorial-loading">载入项目索引</main>}><WorkIndexPage /></Suspense> : route.kind === 'project' ? <Suspense fallback={<main className="editorial-loading">载入项目</main>}><ProjectPage slug={route.slug} /></Suspense> : <main id="top">
         <StatusScene />
         <CommerceHomeSection />
         <StudioMap />

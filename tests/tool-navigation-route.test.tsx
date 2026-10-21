@@ -101,4 +101,40 @@ describe('tools route and site navigation', () => {
     expect(await screen.findByRole('heading', { name: '工具导航' })).toBeInTheDocument()
     expect(view.container.querySelector('.site-shell')).not.toHaveClass('is-home')
   })
+
+  it('routes writing and article pages as subpages while retaining the default music dock', async () => {
+    window.location.hash = '#writing'
+    const view = render(<App />)
+    expect(await screen.findByRole('heading', { name: '文章与笔记' })).toBeInTheDocument()
+    expect(view.container.querySelector('.site-shell')).not.toHaveClass('is-home')
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
+
+    window.location.hash = '#article/ai-speeds-up-judgment'
+    fireEvent(window, new Event('hashchange'))
+    expect(await screen.findByRole('heading', { level: 1, name: /AI 不替代设计/ })).toBeInTheDocument()
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
+  })
+
+  it('preserves the guestbook OAuth-return override and music dock visibility rules', async () => {
+    window.history.replaceState({}, '', '/?auth=guestbook#article/ai-speeds-up-judgment')
+    const oauthReturn = render(<App />)
+    expect(await screen.findByRole('heading', { name: '留言板' })).toBeInTheDocument()
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
+    oauthReturn.unmount()
+
+    window.history.replaceState({}, '', '/#music')
+    const music = render(<App />)
+    expect(await screen.findByText('LOADING AUDIO FIELD')).toBeInTheDocument()
+    expect(screen.queryByTestId('music-dock-mode')).not.toBeInTheDocument()
+    music.unmount()
+
+    window.history.replaceState({}, '', '/#ai-commerce')
+    const commerce = render(<App />)
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'commerce')
+    commerce.unmount()
+
+    window.history.replaceState({}, '', '/#commerce-admin')
+    render(<App />)
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'commerce')
+  })
 })
