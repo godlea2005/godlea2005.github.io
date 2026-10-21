@@ -29,7 +29,7 @@ export function WritingIndexPage() {
             <time dateTime={article.date}>{article.date}</time>
             <span>{article.readingMinutes} 分钟阅读</span>
           </div>
-          <h2><a href={`#article/${article.slug}`}>{article.title}</a></h2>
+          <h2><a href={`#article/${article.slug}`} data-target-cursor="">{article.title}</a></h2>
           <p>{article.excerpt}</p>
           <ul className="editorial-tags" aria-label="文章主题">
             {article.tags.map((tag) => <li key={tag}>{tag}</li>)}

@@ -30,7 +30,8 @@
   transition: opacity .2s ease;
 }
 
-.particle-text.is-ready .particle-text-fallback {
+.particle-text.is-forming .particle-text-fallback,
+.particle-text.is-settled .particle-text-fallback {
   opacity: 0;
 }
 

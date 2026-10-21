@@ -1,8 +1,10 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TargetCursor } from '../src/components/TargetCursor'
 
-const setMedia = (fine: boolean, reduced = false) => {
+const setMedia = (fine: boolean, reduced = false, hover = fine) => {
   const mediaQuery = (matches: boolean) => {
     const events = new EventTarget()
     return {
@@ -17,10 +19,11 @@ const setMedia = (fine: boolean, reduced = false) => {
   }
   const pointer = mediaQuery(fine)
   const motion = mediaQuery(reduced)
+  const hoverPointer = mediaQuery(hover && fine)
   window.matchMedia = vi.fn().mockImplementation((query: string) =>
-    query === '(pointer: fine)' ? pointer : motion,
+    query === '(hover: hover) and (pointer: fine)' ? hoverPointer : motion,
   )
-  return { pointer, motion }
+  return { pointer, motion, hoverPointer }
 }
 
 afterEach(() => {
@@ -55,7 +58,7 @@ describe('TargetCursor', () => {
   })
 
   it('removes the overlay and active class on media changes and safely re-enables', () => {
-    const { pointer, motion } = setMedia(true)
+    const { hoverPointer: pointer, motion } = setMedia(true)
     render(<><a href="#tools" data-target-cursor="">Tool</a><TargetCursor /></>)
     const target = screen.getByRole('link', { name: 'Tool' })
 
@@ -100,7 +103,7 @@ describe('TargetCursor', () => {
   })
 
   it('releases active styling, observers, and registered listeners on teardown', () => {
-    const { pointer, motion } = setMedia(true)
+    const { hoverPointer: pointer, motion } = setMedia(true)
     render(<a href="#tools" data-target-cursor="">Tool</a>)
     const target = screen.getByRole('link', { name: 'Tool' })
     const measure = vi.spyOn(target, 'getBoundingClientRect')
@@ -179,9 +182,25 @@ describe('TargetCursor', () => {
 
     view.unmount()
     setMedia(false)
-    render(<><a href="#tools" data-target-cursor="">Tool</a><TargetCursor /></>)
+    const coarseView = render(<><a href="#tools" data-target-cursor="">Tool</a><TargetCursor /></>)
     fireEvent.pointerOver(screen.getByRole('link', { name: 'Tool' }))
     expect(screen.queryByTestId('target-cursor')).not.toBeInTheDocument()
+
+    coarseView.unmount()
+    setMedia(true, false, false)
+    render(<><a href="#tools" data-target-cursor="">Tool</a><TargetCursor /></>)
+    expect(screen.queryByTestId('target-cursor')).not.toBeInTheDocument()
+  })
+
+  it('limits production opt-ins to navigation, featured and tool cards', () => {
+    const header = readFileSync(resolve(process.cwd(), 'src/components/FloatingHeader.tsx'), 'utf8')
+    const hero = readFileSync(resolve(process.cwd(), 'src/components/StatusScene.tsx'), 'utf8')
+    const writing = readFileSync(resolve(process.cwd(), 'src/editorial/WritingIndexPage.tsx'), 'utf8')
+    const work = readFileSync(resolve(process.cwd(), 'src/editorial/WorkIndexPage.tsx'), 'utf8')
+    expect(header).not.toContain('data-target-cursor')
+    expect(hero).not.toContain('data-target-cursor')
+    expect(writing).toContain('data-target-cursor')
+    expect(work).toContain('data-target-cursor')
   })
 
   it('ignores unannotated inputs and protected descendants', () => {

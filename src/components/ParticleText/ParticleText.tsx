@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { useMotionProfile } from '../../lib/useMotionProfile'
 import './ParticleText.css'
 
 type ParticleTextProps = {
@@ -14,46 +15,43 @@ type ParticleTextProps = {
 }
 
 type Particle = {
-  x: number
-  y: number
-  originX: number
-  originY: number
-  velocityX: number
-  velocityY: number
-  color: string
+  x: number; y: number; originX: number; originY: number
+  velocityX: number; velocityY: number; color: string
 }
 
 const defaultColors = ['#f8f7ff', '#ddd8f7', '#bbb2dc', '#e8b1d1']
+const settledError = 0.45
+const settledFrames = 12
 
 export function ParticleText({
-  text,
-  colors = defaultColors,
-  particleSize = 1.55,
-  particleGap = 3,
-  mouseRadius = 86,
-  mouseStrength = 1.35,
-  friction = 0.78,
-  ease = 0.055,
-  className = '',
+  text, colors = defaultColors, particleSize = 1.55, particleGap = 3,
+  friction = 0.78, ease = 0.055, className = '',
 }: ParticleTextProps) {
+  const { reducedMotion, fineHover } = useMotionProfile()
+  const animated = fineHover && !reducedMotion
   const rootRef = useRef<HTMLSpanElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [ready, setReady] = useState(false)
+  const [stage, setStage] = useState<'fallback' | 'forming' | 'settled'>('fallback')
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!animated) return
     const root = rootRef.current
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!root || !canvas || !context) return
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const mouse = { x: Number.NEGATIVE_INFINITY, y: Number.NEGATIVE_INFINITY }
     let particles: Particle[] = []
     let frame = 0
     let resizeFrame = 0
     let width = 0
     let height = 0
+    let calmFrames = 0
+    let isSettled = false
 
+    const stop = () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      frame = 0
+    }
     const draw = () => {
       context.clearRect(0, 0, width, height)
       for (const particle of particles) {
@@ -63,13 +61,37 @@ export function ParticleText({
         context.fill()
       }
     }
-
-    const buildParticles = () => {
+    const animate = () => {
+      frame = 0
+      let maxError = 0
+      for (const particle of particles) {
+        particle.velocityX = (particle.velocityX + (particle.originX - particle.x) * ease) * friction
+        particle.velocityY = (particle.velocityY + (particle.originY - particle.y) * ease) * friction
+        particle.x += particle.velocityX
+        particle.y += particle.velocityY
+        maxError = Math.max(maxError,
+          Math.abs(particle.originX - particle.x) + Math.abs(particle.originY - particle.y) +
+          Math.abs(particle.velocityX) + Math.abs(particle.velocityY))
+      }
+      draw()
+      calmFrames = maxError < settledError ? calmFrames + 1 : 0
+      if (calmFrames >= settledFrames) {
+        isSettled = true
+        setStage('settled')
+      } else if (!document.hidden) frame = window.requestAnimationFrame(animate)
+    }
+    const start = () => {
+      if (!document.hidden && !isSettled && !frame && particles.length) frame = window.requestAnimationFrame(animate)
+    }
+    const build = () => {
       const bounds = root.getBoundingClientRect()
-      width = Math.max(1, Math.round(bounds.width))
-      height = Math.max(1, Math.round(bounds.height))
+      const nextWidth = Math.max(1, Math.round(bounds.width))
+      const nextHeight = Math.max(1, Math.round(bounds.height))
+      if (nextWidth === width && nextHeight === height) return
+      stop()
+      width = nextWidth
+      height = nextHeight
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
-
       canvas.width = Math.round(width * dpr)
       canvas.height = Math.round(height * dpr)
       canvas.style.width = `${width}px`
@@ -79,110 +101,61 @@ export function ParticleText({
       const sampleCanvas = document.createElement('canvas')
       sampleCanvas.width = width
       sampleCanvas.height = height
-      const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
-      if (!sampleContext) return
-
+      const sample = sampleCanvas.getContext('2d', { willReadFrequently: true })
+      if (!sample) { setStage('fallback'); return }
       let fontSize = Math.min(174, height * 0.84)
-      sampleContext.font = `900 ${fontSize}px Inter, Arial, sans-serif`
-      const measuredWidth = sampleContext.measureText(text).width
-      if (measuredWidth > width * 0.98) fontSize *= (width * 0.98) / measuredWidth
-
-      sampleContext.clearRect(0, 0, width, height)
-      sampleContext.fillStyle = '#fff'
-      sampleContext.font = `900 ${fontSize}px Inter, Arial, sans-serif`
-      sampleContext.textAlign = 'center'
-      sampleContext.textBaseline = 'middle'
-      sampleContext.fillText(text, width / 2, height / 2 + fontSize * 0.035)
-
-      const image = sampleContext.getImageData(0, 0, width, height).data
-      const nextParticles: Particle[] = []
-      const step = Math.max(2, particleGap)
-
-      for (let y = 0; y < height; y += step) {
-        for (let x = 0; x < width; x += step) {
+      sample.font = `900 ${fontSize}px Inter, Arial, sans-serif`
+      const measured = sample.measureText(text).width
+      if (measured > width * 0.98) fontSize *= (width * 0.98) / measured
+      sample.clearRect(0, 0, width, height)
+      sample.fillStyle = '#fff'
+      sample.font = `900 ${fontSize}px Inter, Arial, sans-serif`
+      sample.textAlign = 'center'
+      sample.textBaseline = 'middle'
+      sample.fillText(text, width / 2, height / 2 + fontSize * 0.035)
+      const image = sample.getImageData(0, 0, width, height).data
+      const next: Particle[] = []
+      for (let y = 0; y < height; y += Math.max(2, particleGap)) {
+        for (let x = 0; x < width; x += Math.max(2, particleGap)) {
           if (image[(y * width + x) * 4 + 3] < 128) continue
-          const spread = reducedMotion ? 0 : 22
-          nextParticles.push({
-            x: x + (Math.random() - 0.5) * spread,
-            y: y + (Math.random() - 0.5) * spread,
-            originX: x,
-            originY: y,
-            velocityX: 0,
-            velocityY: 0,
+          next.push({
+            x: x + (Math.random() - 0.5) * 22,
+            y: y + (Math.random() - 0.5) * 22,
+            originX: x, originY: y, velocityX: 0, velocityY: 0,
             color: colors[Math.floor(Math.random() * colors.length)] ?? '#fff',
           })
         }
       }
-
-      particles = nextParticles
-      setReady(true)
+      particles = next
+      calmFrames = 0
+      isSettled = false
+      setStage(particles.length ? 'forming' : 'fallback')
       draw()
+      start()
     }
-
-    const animate = () => {
-      for (const particle of particles) {
-        const deltaX = particle.x - mouse.x
-        const deltaY = particle.y - mouse.y
-        const distance = Math.hypot(deltaX, deltaY)
-
-        if (distance > 0 && distance < mouseRadius) {
-          const force = (1 - distance / mouseRadius) * mouseStrength
-          particle.velocityX += (deltaX / distance) * force
-          particle.velocityY += (deltaY / distance) * force
-        }
-
-        particle.velocityX += (particle.originX - particle.x) * ease
-        particle.velocityY += (particle.originY - particle.y) * ease
-        particle.velocityX *= friction
-        particle.velocityY *= friction
-        particle.x += particle.velocityX
-        particle.y += particle.velocityY
-      }
-
-      draw()
-      frame = window.requestAnimationFrame(animate)
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
+    const onResize = () => {
       const bounds = root.getBoundingClientRect()
-      mouse.x = event.clientX - bounds.left
-      mouse.y = event.clientY - bounds.top
+      if (Math.max(1, Math.round(bounds.width)) === width && Math.max(1, Math.round(bounds.height)) === height) return
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
+      resizeFrame = window.requestAnimationFrame(() => { resizeFrame = 0; build() })
     }
-
-    const clearPointer = () => {
-      mouse.x = Number.NEGATIVE_INFINITY
-      mouse.y = Number.NEGATIVE_INFINITY
-    }
-
-    const observer = new ResizeObserver(() => {
-      window.cancelAnimationFrame(resizeFrame)
-      resizeFrame = window.requestAnimationFrame(buildParticles)
-    })
-
-    observer.observe(root)
-    root.addEventListener('pointermove', handlePointerMove)
-    root.addEventListener('pointerleave', clearPointer)
-    buildParticles()
-    if (!reducedMotion) frame = window.requestAnimationFrame(animate)
-
+    const onVisibility = () => document.hidden ? stop() : start()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null
+    observer?.observe(root)
+    if (!observer) window.addEventListener('resize', onResize)
+    document.addEventListener('visibilitychange', onVisibility)
+    build()
     return () => {
-      observer.disconnect()
-      root.removeEventListener('pointermove', handlePointerMove)
-      root.removeEventListener('pointerleave', clearPointer)
-      window.cancelAnimationFrame(frame)
-      window.cancelAnimationFrame(resizeFrame)
+      stop()
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
+      observer?.disconnect()
+      if (!observer) window.removeEventListener('resize', onResize)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [colors, ease, friction, mouseRadius, mouseStrength, particleGap, particleSize, text])
+  }, [animated, colors, ease, friction, particleGap, particleSize, text])
 
-  return (
-    <span
-      ref={rootRef}
-      className={`particle-text${ready ? ' is-ready' : ''}${className ? ` ${className}` : ''}`}
-      role="img"
-      aria-label={text}
-    >
-      <span className="particle-text-fallback" aria-hidden="true">{text}</span>
-      <canvas ref={canvasRef} aria-hidden="true" />
-    </span>
-  )
+  return <span ref={rootRef} className={`particle-text is-${animated ? stage : 'fallback'}${className ? ` ${className}` : ''}`} role="img" aria-label={text}>
+    <span className="particle-text-fallback" aria-hidden="true">{text}</span>
+    {animated && <canvas ref={canvasRef} aria-hidden="true" />}
+  </span>
 }

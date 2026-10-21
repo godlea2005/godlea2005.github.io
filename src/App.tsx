@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import { experiments, site } from './content/site'
 import { CommerceHomeSection } from './components/CommerceHomeSection'
 import { ProjectArchive } from './components/ProjectArchive'
@@ -26,7 +26,7 @@ const resolvePageHash = () => {
 }
 
 function App() {
-  const [theme, setTheme] = useState<Theme>('dark')
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
   const [pageHash, setPageHash] = useState(resolvePageHash)
   const route = parseSiteRoute(pageHash)
   const musicPage = route.kind === 'static' && route.page === 'music'
@@ -36,11 +36,7 @@ function App() {
   const toolsPage = route.kind === 'static' && route.page === 'tools'
   const subpage = isSiteSubpageRoute(route)
 
-  useEffect(() => {
-    const initial = getInitialTheme()
-    setTheme(initial)
-    applyTheme(initial)
-  }, [])
+  useLayoutEffect(() => applyTheme(theme), [theme])
   useEffect(() => {
     const handleLocationChange = () => setPageHash(resolvePageHash())
     window.addEventListener('hashchange', handleLocationChange)
@@ -54,7 +50,6 @@ function App() {
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
-    applyTheme(next)
   }
 
   return (
@@ -63,7 +58,7 @@ function App() {
       <TargetCursor />
 
       {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : route.kind === 'static' && route.page === 'writing' ? <Suspense fallback={<main className="editorial-loading">载入文章索引</main>}><WritingIndexPage /></Suspense> : route.kind === 'article' ? <Suspense fallback={<main className="editorial-loading">载入文章</main>}><ArticlePage slug={route.slug} /></Suspense> : route.kind === 'static' && route.page === 'work' ? <Suspense fallback={<main className="editorial-loading">载入项目索引</main>}><WorkIndexPage /></Suspense> : route.kind === 'project' ? <Suspense fallback={<main className="editorial-loading">载入项目</main>}><ProjectPage slug={route.slug} /></Suspense> : <main id="top">
-        <StatusScene />
+        <StatusScene theme={theme} />
         <CommerceHomeSection />
         <StudioMap />
         <ProjectArchive />

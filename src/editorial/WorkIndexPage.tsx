@@ -11,7 +11,7 @@ export function WorkIndexPage() {
     <ul className="project-grid" aria-label="项目列表">
       {projectSummaries.map((project) => <li key={project.slug}>
         <article className="project-card">
-          <a href={`#project/${project.slug}`} aria-label={`查看项目：${project.title}`}>
+          <a href={`#project/${project.slug}`} aria-label={`查看项目：${project.title}`} data-target-cursor="">
             <img src={project.cover} alt={project.coverAlt} loading="lazy" />
             <div className="project-card-copy">
               <p className="project-card-meta"><span>{project.period}</span><span>个人实验</span></p>

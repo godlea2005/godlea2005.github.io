@@ -43,7 +43,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
 
   return <>
     <header className="floating-header">
-      <a className="floating-brand" href="#top" aria-label="文昊，回到首页" data-target-cursor="">
+      <a className="floating-brand" href="#top" aria-label="文昊，回到首页">
         <span aria-hidden="true">W</span><strong>WENHAO</strong><i aria-hidden="true">.</i>
       </a>
       <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={setNavigationOpen} onNavigate={closeNavigation} />

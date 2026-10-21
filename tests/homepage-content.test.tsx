@@ -30,14 +30,14 @@ afterEach(() => {
 
 describe('AI commerce homepage positioning', () => {
   it('uses the approved hero copy and routes both calls to action', () => {
-    render(<StatusScene />)
+    render(<StatusScene theme="dark" />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'WENHAO 博客' })).toBeInTheDocument()
-    expect(screen.getByText(/把想法做成看得见的作品/)).toBeInTheDocument()
+    expect(screen.getByLabelText('记录设计与技术的现场')).toBeInTheDocument()
     expect(screen.getByText(/AI 设计师/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'AI 电商设计' })).toHaveAttribute('href', '#ai-commerce')
-    expect(screen.getByRole('link', { name: '浏览作品' })).toHaveAttribute('href', '#archive')
-    expect(screen.getByTestId('particle-text')).toHaveTextContent('WENHAO')
+    expect(screen.getByRole('link', { name: '开始阅读' })).toHaveAttribute('href', '#featured')
+    expect(screen.getByRole('link', { name: '查看作品' })).toHaveAttribute('href', '#work')
+    expect(screen.getByText('WENHAO')).toBeInTheDocument()
     expect(screen.getByTestId('gradient-waves')).toBeInTheDocument()
   })
 
@@ -74,7 +74,7 @@ describe('AI commerce homepage positioning', () => {
       dispatchEvent: vi.fn(),
     })
 
-    render(<StatusScene />)
+    render(<StatusScene theme="dark" />)
 
     await waitFor(() => expect(gradientWavesSpy).toHaveBeenLastCalledWith(expect.objectContaining({
       speed: 0,
@@ -96,15 +96,19 @@ describe('AI commerce homepage positioning', () => {
     expect(cases).toBeGreaterThan(commerce)
     expect(archive).toBeGreaterThan(cases)
     expect(notes).toBeGreaterThan(archive)
-    expect(app).toContain("pageHash === '#music'")
-    expect(app).toContain("pageHash === '#guestbook'")
+    expect(app).toContain("route.page === 'music'")
+    expect(app).toContain("route.page === 'guestbook'")
     expect(app).toContain('<GlobalMusicDock')
+    expect(app).toContain('useState<Theme>(() => getInitialTheme())')
+    expect(app).toContain('useLayoutEffect(() => applyTheme(theme), [theme])')
+    expect(app).toContain('<StatusScene theme={theme} />')
 
     const scene = readSource('src/components/StatusScene.tsx')
     expect(scene).toContain('GradientWaves')
     expect(scene).toContain('ParticleText')
     expect(scene).toContain('aria-hidden="true"')
-    expect(scene).toContain('prefers-reduced-motion: reduce')
+    expect(scene).toContain('useMotionProfile')
+    expect(scene).toContain('在商业与创作之间持续实践')
 
     const content = readSource('src/content/site.ts')
     const styles = readSource('src/styles.css')

@@ -1,37 +1,16 @@
-import { useEffect, useState } from "react";
 import { site } from "../content/site";
+import type { Theme } from "../lib/theme";
+import { useMotionProfile } from "../lib/useMotionProfile";
 import GradientWaves from "./GradientWaves/GradientWaves";
 import { ParticleText } from "./ParticleText/ParticleText";
+import { TextType } from "./TextType";
 import "./status-scene.css";
 
 const darkParticleColors = ["#f7f5ff", "#ded9f6", "#b8afd9", "#e9aecf"];
 const lightParticleColors = ["#201f2a", "#39344f", "#6b5b91", "#9b567d"];
 
-export function StatusScene() {
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [lightTheme, setLightTheme] = useState(
-    () => document.documentElement.dataset.theme === "light",
-  );
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const syncPreference = () => setReducedMotion(media.matches);
-    syncPreference();
-    media.addEventListener("change", syncPreference);
-    return () => media.removeEventListener("change", syncPreference);
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() =>
-      setLightTheme(root.dataset.theme === "light"),
-    );
-    observer.observe(root, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    return () => observer.disconnect();
-  }, []);
+export function StatusScene({ theme }: { theme: Theme }) {
+  const { reducedMotion, fineHover } = useMotionProfile();
 
   return (
     <section className="status-scene" aria-labelledby="home-title">
@@ -53,7 +32,7 @@ export function StatusScene() {
           detail="medium"
           brightness={1.0}
           opacity={1.0}
-          mouseInteraction={!reducedMotion}
+          mouseInteraction={fineHover && !reducedMotion}
           parallaxStrength={0.5}
           grain={!reducedMotion}
           grainIntensity={0.05}
@@ -66,10 +45,10 @@ export function StatusScene() {
             文昊的个人空间 <span>持续探索，认真创造</span>
           </p>
           <h1 id="home-title" aria-label="WENHAO 博客">
-            <ParticleText
+            {fineHover && !reducedMotion ? <ParticleText
               text={site.englishName}
-              colors={lightTheme ? lightParticleColors : darkParticleColors}
-            />
+              colors={theme === "light" ? lightParticleColors : darkParticleColors}
+            /> : <span className="scene-static-wordmark" aria-hidden="true">{site.englishName}</span>}
             <span className="scene-blog">
               博客<span aria-hidden="true">.</span>
             </span>
@@ -77,17 +56,17 @@ export function StatusScene() {
           <p className="scene-role-line">
             AI 设计师 <span>/</span> 电商运营 <span>/</span> 前端开发
           </p>
-          <p className="scene-statement">
-            把想法做成看得见的作品。
-            <br />
-            在设计、技术与商业之间，记录我的实践与思考。
-          </p>
+          <p className="scene-statement"><TextType texts={[
+            "记录设计与技术的现场",
+            "把想法做成看得见的作品",
+            "在商业与创作之间持续实践",
+          ]} /></p>
           <div className="scene-actions">
-            <a href="#ai-commerce" className="scene-primary">
-              AI 电商设计 <span aria-hidden="true">↗</span>
+            <a href="#featured" className="scene-primary">
+              开始阅读 <span aria-hidden="true">→</span>
             </a>
-            <a href="#archive" className="scene-secondary">
-              浏览作品 <span aria-hidden="true">↓</span>
+            <a href="#work" className="scene-secondary">
+              查看作品 <span aria-hidden="true">→</span>
             </a>
           </div>
         </div>

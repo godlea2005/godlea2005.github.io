@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useMotionProfile } from '../lib/useMotionProfile'
 import './target-cursor.css'
 
 type CursorFrame = {
@@ -13,30 +14,11 @@ type CursorFrame = {
 const blockedSelector = 'form, input, textarea, select, [role="slider"], [role="textbox"], [role="combobox"], [contenteditable]:not([contenteditable="false"]), [data-no-target-cursor]'
 const modalSelector = '[role="dialog"][aria-modal="true"], dialog[open]'
 
-const supportsCursor = () =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(pointer: fine)').matches &&
-  !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
 export function TargetCursor({ selector = '[data-target-cursor]' }: { selector?: string }) {
-  const [enabled, setEnabled] = useState(supportsCursor)
+  const { reducedMotion, fineHover, pageVisible } = useMotionProfile()
+  const enabled = fineHover && !reducedMotion && pageVisible
   const [frame, setFrame] = useState<CursorFrame | null>(null)
   const activeRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return
-    const pointer = window.matchMedia('(pointer: fine)')
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setEnabled(pointer.matches && !motion.matches)
-    pointer.addEventListener('change', update)
-    motion.addEventListener('change', update)
-    update()
-    return () => {
-      pointer.removeEventListener('change', update)
-      motion.removeEventListener('change', update)
-    }
-  }, [])
 
   useEffect(() => {
     const clear = () => {
