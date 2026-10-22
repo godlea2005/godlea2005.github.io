@@ -182,14 +182,15 @@ function GuestbookPageContent() {
     try { await auth.disconnect(); showNotice('已切换为匿名访客') } catch { showNotice('退出失败，请稍后重试') }
   }
 
-  return <main className="guestbook-page" id="guestbook-top">
+  return <main className="guestbook-page editorial-page" id="guestbook-top">
+    <h1 className="sr-only">留言</h1>
     <section className="guestbook-shell frame">
-      <header className="guestbook-title-row">
-        <div><p><span>04</span> OPEN CHANNEL</p></div>
+      <header className="guestbook-title-row editorial-page-intro">
+        <div><p className="editorial-index"><span>04</span> OPEN CHANNEL</p></div>
         <div className="guestbook-signal"><i className={guestbookRepository.mode === 'supabase' ? 'is-live' : ''} /><span>{guestbookRepository.mode === 'supabase' ? 'DATABASE CHANNEL' : 'LOCAL PREVIEW'}</span><b>{auth.isOwner ? '站长在线' : auth.isAnonymous ? '匿名身份 · 无需登录' : '账号已连接'}</b></div>
       </header>
 
-      <section className="guestbook-board" aria-label="留言板">
+      <section className="guestbook-board editorial-surface" aria-label="留言板">
         <header className="guestbook-board-header">
           <div><h2>留言板</h2><span>· {messages.length} 条留言</span></div>
           <div><span>同步于 {syncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><button type="button" onClick={() => void refresh()} disabled={syncing} aria-label="立即刷新消息">{syncing ? '同步中' : '↻'}</button></div>

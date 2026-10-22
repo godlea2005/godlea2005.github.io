@@ -5,8 +5,8 @@
 @import './styles/history.css';
 
 .commerce-page {
-  --commerce-panel: color-mix(in srgb, var(--panel) 82%, transparent);
-  --commerce-rule: color-mix(in srgb, var(--line) 88%, transparent);
+  --commerce-panel: var(--surface);
+  --commerce-rule: var(--hairline);
   --commerce-error: #ffaaa3;
   --commerce-caution: #e9b376;
   position: relative;
@@ -15,6 +15,7 @@
   width: min(var(--frame), calc(100% - 64px));
   margin-inline: auto;
   padding: 54px 0 96px;
+  background: var(--paper);
 }
 :root[data-theme="light"] .commerce-page { --commerce-error: #8d1f29; --commerce-caution: #704400; }
 
@@ -29,7 +30,7 @@
     linear-gradient(90deg, color-mix(in srgb, var(--line) 35%, transparent) 1px, transparent 1px);
   background-size: auto, 42px 42px, 42px 42px;
   mask-image: linear-gradient(to bottom, black, transparent 92%);
-  opacity: .48;
+  opacity: .16;
 }
 
 .commerce-page-intro {
@@ -180,7 +181,7 @@
 .commerce-consent strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 12px; font-weight: 610; }
 .commerce-step-actions { display: none; }
 
-.commerce-auth-gate { min-height: 420px; margin-top: 38px; padding: clamp(34px, 6vw, 72px); display: grid; align-content: center; justify-items: start; border: 1px solid var(--commerce-rule); background: var(--commerce-panel); }
+.commerce-auth-gate { min-height: 420px; margin-top: 38px; padding: clamp(34px, 6vw, 72px); display: grid; align-content: center; justify-items: start; border: 1px solid var(--hairline); background: var(--surface); box-shadow: var(--surface-shadow); }
 .commerce-auth-gate > span { color: var(--accent); font: 600 9px/1.4 "SFMono-Regular", Consolas, monospace; letter-spacing: .14em; }
 .commerce-auth-gate h2 { max-width: 580px; margin: 16px 0 10px; font-size: clamp(29px, 4vw, 48px); line-height: 1.08; letter-spacing: -.065em; }
 .commerce-auth-gate p { max-width: 610px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
@@ -640,6 +641,7 @@
   .commerce-print-hidden,
   .commerce-history,
   .commerce-page-intro,
+  .commerce-intro-shell,
   .commerce-page-grid,
   .commerce-workspace,
   .commerce-direction-note,

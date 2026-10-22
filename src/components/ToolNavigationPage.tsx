@@ -25,11 +25,11 @@ export function ToolNavigationPage() {
   }
 
   return (
-    <main className="tool-navigation-page" id="tools" aria-labelledby="tools-title">
-      <section className="tool-navigation-intro frame">
+    <main className="tool-navigation-page editorial-page" id="tools" aria-labelledby="tools-title">
+      <section className="tool-navigation-intro editorial-page-intro frame">
         <div className="tool-navigation-heading">
           <div>
-            <p className="tool-navigation-index">FIELD NOTES / TOOL INDEX</p>
+            <p className="tool-navigation-index editorial-index">FIELD NOTES / TOOL INDEX</p>
             <h1 id="tools-title">工具导航</h1>
           </div>
           <div>
@@ -72,11 +72,11 @@ export function ToolNavigationPage() {
       <section className="tool-navigation-results frame" aria-label="工具结果">
         <p className="tool-results-summary" aria-live="polite">{categoryLabel}{searchQuery ? `，搜索“${searchQuery}”` : ''}：匹配 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
         {visibleCategories.length === 0 ? (
-          <div className="tool-empty-state">
+          <div className="tool-empty-state editorial-surface">
             <span aria-hidden="true">∅</span>
             <h2>没有找到匹配的工具</h2>
             <p>试试其他关键词，或者回到完整目录。</p>
-            <button type="button" onClick={clearFilters}>清除筛选</button>
+            <button className="editorial-action" type="button" onClick={clearFilters}>清除筛选</button>
           </div>
         ) : visibleCategories.map((item) => (
           <section className="tool-category-section" key={item.id} aria-labelledby={`${item.id}-title`}>
@@ -89,9 +89,9 @@ export function ToolNavigationPage() {
               <span className="tool-category-count">{item.tools.length} 个工具</span>
             </header>
             <div className="tool-card-grid">
-              {item.tools.map((tool) => (
+              {item.tools.map((tool, index) => (
                 <a
-                  className="tool-card"
+                  className="tool-card editorial-surface"
                   key={tool.id}
                   href={tool.href}
                   target="_blank"
@@ -101,7 +101,7 @@ export function ToolNavigationPage() {
                 >
                   <div className="tool-card-top">
                     <span className="tool-card-mark" aria-hidden="true">{tool.mark}</span>
-                    <span className="tool-card-arrow" aria-hidden="true">↗</span>
+                    <span className="tool-card-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
                   </div>
                   <h3>{tool.name}</h3>
                   <p className="tool-card-description">{tool.description}</p>
@@ -111,6 +111,7 @@ export function ToolNavigationPage() {
                   <div className="tool-card-bottom">
                     <span className="tool-card-host">{tool.host}</span>
                     <p>{tool.note}</p>
+                    <span className="tool-card-external">EXTERNAL LINK <span aria-hidden="true">↗</span></span>
                   </div>
                 </a>
               ))}

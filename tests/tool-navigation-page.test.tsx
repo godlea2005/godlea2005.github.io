@@ -87,6 +87,15 @@ describe('ToolNavigationPage', () => {
     expect(within(section).getByText('2 个工具')).toBeInTheDocument()
   })
 
+  it('presents numbered editorial entries with an explicit external state', () => {
+    render(<ToolNavigationPage />)
+    const firstSection = document.querySelector('.tool-category-section') as HTMLElement
+    const firstLink = within(firstSection).getAllByRole('link')[0]
+    expect(firstLink).toHaveClass('editorial-surface')
+    expect(firstLink.querySelector('.tool-card-number')).toHaveTextContent('01')
+    expect(firstLink.querySelector('.tool-card-external')).toHaveTextContent('EXTERNAL LINK')
+  })
+
   it('announces the selected category when equal-count categories change', async () => {
     const user = userEvent.setup()
     render(<ToolNavigationPage />)

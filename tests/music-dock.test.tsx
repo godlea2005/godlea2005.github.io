@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/music/MusicProvider', () => ({
@@ -33,6 +34,26 @@ describe('mobile commerce music launcher', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+  })
+
+  it('shows only an exact 48px collapsed launcher until activation', async () => {
+    const style = document.createElement('style')
+    style.textContent = readFileSync('src/music/music-experience.css', 'utf8')
+    document.head.append(style)
+    try {
+      render(<GlobalMusicDock />)
+      const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
+      expect(getComputedStyle(launcher).width).toBe('48px')
+      expect(getComputedStyle(launcher).height).toBe('48px')
+      expect(screen.getAllByRole('button')).toEqual([launcher])
+      expect(screen.queryByRole('button', { name: '播放' })).not.toBeInTheDocument()
+      expect(launcher).toHaveAttribute('aria-expanded', 'false')
+      await userEvent.click(launcher)
+      expect(screen.getByRole('button', { name: '播放' })).toBeInTheDocument()
+      expect(launcher).toHaveAttribute('aria-expanded', 'true')
+    } finally {
+      style.remove()
+    }
   })
 
   it.each([

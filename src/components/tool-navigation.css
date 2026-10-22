@@ -1,11 +1,13 @@
 .tool-navigation-page {
-  --tool-line: var(--line);
-  --tool-surface: var(--panel);
+  --tool-line: var(--hairline);
+  --tool-surface: var(--surface);
   --tool-muted: var(--muted);
-  --tool-accent: var(--accent);
+  --tool-accent: var(--violet);
+  --tool-signal: var(--signal-green);
   min-height: 100svh;
-  padding: 48px 0 116px;
-  color: var(--ink);
+  padding: 44px 0 116px;
+  color: var(--studio-ink);
+  background: var(--paper);
 }
 
 .tool-navigation-page .frame {
@@ -17,8 +19,7 @@
   align-items: end;
   justify-content: space-between;
   gap: 48px;
-  padding: 44px 0 46px;
-  border-top: 1px solid var(--tool-line);
+  padding: 36px 0 46px;
 }
 
 .tool-navigation-index,
@@ -34,8 +35,6 @@
 
 .tool-navigation-index {
   margin: 0 0 28px;
-  color: var(--tool-accent);
-  font-size: 10px;
 }
 
 .tool-navigation-heading h1 {
@@ -211,24 +210,27 @@
 .tool-card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 18px 24px;
 }
 
 .tool-card {
   display: flex;
   min-width: 0;
-  min-height: 315px;
+  min-height: 322px;
   flex-direction: column;
-  padding: 22px;
-  border: 1px solid var(--tool-line);
-  background: var(--tool-surface);
+  padding: 23px 4px 18px;
+  border: 0;
+  border-top: 1px solid var(--tool-line);
+  border-bottom: 1px solid var(--tool-line);
+  background: transparent;
+  box-shadow: none;
   transition: border-color .2s, box-shadow .2s, background .2s;
 }
 
 .tool-card:hover {
   border-color: var(--tool-accent);
-  background: color-mix(in srgb, var(--tool-surface) 92%, var(--tool-accent));
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--tool-accent) 8%, transparent);
+  background: color-mix(in srgb, var(--tool-surface) 45%, transparent);
+  box-shadow: inset 0 3px var(--tool-accent);
 }
 
 .tool-card-top {
@@ -239,31 +241,26 @@
 
 .tool-card-mark {
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--tool-accent) 45%, var(--tool-line));
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--tool-accent) 10%, transparent);
-  color: var(--tool-accent);
+  border: 1px solid color-mix(in srgb, var(--tool-signal) 50%, var(--tool-line));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tool-signal) 10%, transparent);
+  color: var(--tool-signal);
   font: 600 14px "SFMono-Regular", Consolas, monospace;
   letter-spacing: -.05em;
 }
 
-.tool-card-arrow {
-  color: var(--quiet);
-  font-size: 20px;
-  transition: color .2s, transform .2s;
-}
-
-.tool-card:hover .tool-card-arrow {
+.tool-card-number {
   color: var(--tool-accent);
-  transform: translate(2px, -2px);
+  font: 600 11px/1 "SFMono-Regular", Consolas, monospace;
+  letter-spacing: .12em;
 }
 
 .tool-card h3 {
-  margin: 23px 0 8px;
-  font-size: 20px;
+  margin: 43px 0 9px;
+  font-size: 21px;
   font-weight: 550;
   letter-spacing: -.04em;
 }
@@ -286,8 +283,8 @@
 }
 
 .tool-card-tags li {
-  padding: 5px 7px;
-  border: 1px solid var(--tool-line);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--tool-line);
   color: var(--tool-muted);
   font-size: 9px;
   letter-spacing: 0;
@@ -295,7 +292,7 @@
 
 .tool-card-bottom {
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: 13px;
   border-top: 1px solid var(--tool-line);
 }
 
@@ -311,6 +308,19 @@
   font-size: 11px;
   line-height: 1.7;
 }
+
+.tool-card-external {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 19px;
+  color: var(--tool-signal);
+  font: 600 9px/1.2 "SFMono-Regular", Consolas, monospace;
+  letter-spacing: .13em;
+}
+
+.tool-card-external span { font-size: 16px; transition: transform .2s; }
+.tool-card:hover .tool-card-external span { transform: translate(2px, -2px); }
 
 .tool-empty-state {
   display: grid;
@@ -411,7 +421,7 @@
   }
 
   .tool-card {
-    min-height: 285px;
+    min-height: 292px;
   }
 
   .tool-category-section + .tool-category-section {
