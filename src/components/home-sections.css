@@ -1,3 +1,19 @@
+.site-shell.is-home {
+  --home-meta: var(--quiet);
+  --home-meta-accent: var(--accent);
+  --home-action-bg: var(--accent);
+  --home-action-hover-bg: #b9dbab;
+  --home-action-ink: var(--bg);
+}
+
+:root[data-theme="light"] .site-shell.is-home {
+  --home-meta: #55575d;
+  --home-meta-accent: #306235;
+  --home-action-bg: #306235;
+  --home-action-hover-bg: #285b31;
+  --home-action-ink: #faf8f3;
+}
+
 .site-shell.is-home main#top {
   --color-ink: var(--ink);
   --color-ink-soft: var(--muted);
@@ -17,7 +33,7 @@
 
 .home-section-eyebrow {
   margin: 0 0 16px;
-  color: var(--accent);
+  color: var(--home-meta-accent);
   font: 600 11px/1.4 "SFMono-Regular", Consolas, monospace;
   letter-spacing: .13em;
 }
@@ -100,7 +116,7 @@
 }
 
 .featured-note-topline {
-  color: var(--quiet);
+  color: var(--home-meta);
   font: 11px/1.4 "SFMono-Regular", Consolas, monospace;
 }
 
@@ -140,11 +156,11 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  color: var(--muted);
+  color: var(--home-meta);
   font-size: 11px;
 }
 
-.featured-note-bottomline li::before { content: "#"; color: var(--accent); }
+.featured-note-bottomline li::before { content: "#"; color: var(--home-meta-accent); }
 .featured-note-arrow { color: var(--accent); font-size: 24px; line-height: 1; }
 
 .selected-work-section { padding-top: 38px; }
@@ -172,7 +188,7 @@
 .commerce-home-intro > p:not(.home-section-eyebrow) {
   max-width: 520px;
   margin: 24px 0 30px;
-  color: var(--muted);
+  color: var(--home-meta);
   font-size: 14px;
   line-height: 1.85;
 }
@@ -184,20 +200,23 @@
   align-items: center;
   gap: 28px;
   padding: 0 18px;
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--home-action-bg);
+  color: var(--home-action-ink);
   font-size: 13px;
   font-weight: 650;
-  transition: transform .2s ease;
+  transition: transform .2s ease, background .2s ease;
 }
 
 .commerce-home-intro > a:hover,
-.about-links a:first-child:hover { transform: translateY(-2px); }
+.about-links a:first-child:hover { background: var(--home-action-hover-bg); transform: translateY(-2px); }
+
+.commerce-home-intro > a:focus-visible,
+.about-links a:first-child:focus-visible { outline-color: var(--home-action-bg); }
 
 .commerce-home-label,
 .about-label {
   margin: 0 0 14px;
-  color: var(--quiet);
+  color: var(--home-meta);
   font: 11px/1.4 "SFMono-Regular", Consolas, monospace;
   letter-spacing: .1em;
 }
@@ -225,7 +244,7 @@
 }
 
 .commerce-home-workflow span {
-  color: var(--accent);
+  color: var(--home-meta-accent);
   font: 11px "SFMono-Regular", Consolas, monospace;
 }
 
@@ -241,7 +260,7 @@
 .commerce-home-platforms li {
   padding: 8px 11px;
   border: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--home-meta);
   font: 11px/1.35 "SFMono-Regular", Consolas, monospace;
 }
 
@@ -260,10 +279,10 @@
 .writing-preview-number,
 .writing-preview-list time,
 .writing-preview-tag {
-  color: var(--quiet);
+  color: var(--home-meta);
   font: 11px/1.4 "SFMono-Regular", Consolas, monospace;
 }
-.writing-preview-number { color: var(--accent); }
+.writing-preview-number { color: var(--home-meta-accent); }
 .writing-preview-list h3 {
   min-width: 0;
   margin: 0;
@@ -301,9 +320,9 @@
 .site-footer { min-height: 0; display: block; padding-block: 42px 28px; border-top: 1px solid var(--line); }
 .site-footer-main { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding-bottom: 46px; }
 .site-footer-main > p:last-child { margin: 0; color: var(--muted); font-size: 12px; }
-.footer-label { margin: 0; color: var(--accent); font: 11px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; }
-.footer-bottom { display: flex; justify-content: space-between; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--quiet); font: 10px "SFMono-Regular", Consolas, monospace; letter-spacing: .06em; }
-.footer-bottom a { color: var(--muted); }
+.footer-label { margin: 0; color: var(--home-meta-accent); font: 11px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; }
+.footer-bottom { display: flex; justify-content: space-between; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--home-meta); font: 10px "SFMono-Regular", Consolas, monospace; letter-spacing: .06em; }
+.footer-bottom a { color: var(--home-meta); }
 
 @media (max-width: 900px) {
   .featured-notes-layout { grid-template-columns: 1fr; }

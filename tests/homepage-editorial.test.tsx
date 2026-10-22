@@ -1,4 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { articleSummaries, projectSummaries } from '../src/editorial'
 import { site } from '../src/content/site'
@@ -13,7 +15,54 @@ vi.mock('../src/components/ParticleText/ParticleText', () => ({
 
 afterEach(cleanup)
 
+const contrastRatio = (foreground: string, background: string) => {
+  const luminance = (hex: string) => {
+    const [red, green, blue] = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+      .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  }
+  const first = luminance(foreground)
+  const second = luminance(background)
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+}
+
+const cssToken = (block: string, name: string) => {
+  const match = block.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))
+  if (!match) throw new Error(`Missing ${name} color token`)
+  return match[1]
+}
+
 describe('WENHAO Field Notes homepage', () => {
+  it('keeps light-theme homepage metadata and action text at readable contrast', () => {
+    const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+    const homeCss = readFileSync(resolve(process.cwd(), 'src/components/home-sections.css'), 'utf8')
+    const lightRoot = globalCss.match(/:root\[data-theme="light"\]\s*\{([^}]+)\}/)?.[1]
+    const lightHome = homeCss.match(/:root\[data-theme="light"\] \.site-shell\.is-home\s*\{([^}]+)\}/)?.[1]
+    if (!lightRoot || !lightHome) throw new Error('Missing light-theme tokens')
+
+    const surfaces = ['bg', 'bg2', 'panel'].map((name) => cssToken(lightRoot, name))
+    const soft = lightRoot.match(/--soft:rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+    if (!soft) throw new Error('Missing light-theme mist overlay')
+    const mist = soft.slice(1, 4).map(Number)
+    const opacity = Number(soft[4])
+    const commerceBase = cssToken(lightRoot, 'bg2')
+    const commerceSurface = `#${[1, 3, 5].map((offset, index) => {
+      const base = parseInt(commerceBase.slice(offset, offset + 2), 16)
+      return Math.round(base * (1 - opacity) + mist[index] * opacity).toString(16).padStart(2, '0')
+    }).join('')}`
+    surfaces.push(commerceSurface)
+    for (const token of ['home-meta', 'home-meta-accent']) {
+      for (const surface of surfaces) {
+        expect(contrastRatio(cssToken(lightHome, token), surface)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+    expect(contrastRatio(cssToken(lightHome, 'home-action-ink'), cssToken(lightHome, 'home-action-bg'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(cssToken(lightHome, 'home-action-ink'), cssToken(lightHome, 'home-action-hover-bg'))).toBeGreaterThanOrEqual(4.5)
+    expect(homeCss).not.toMatch(/color:\s*var\(--quiet\)/)
+    expect(homeCss).toMatch(/\.featured-note-topline\s*\{\s*color:\s*var\(--home-meta\)/)
+    expect(homeCss).toMatch(/\.commerce-home-intro > a,\s*\.about-links a:first-child\s*\{[^}]*background:\s*var\(--home-action-bg\);\s*color:\s*var\(--home-action-ink\)/s)
+  })
+
   it('renders the approved landmark order with one about anchor and a separate footer', () => {
     const { container } = render(<HomePage theme="dark" />)
     const regions = screen.getAllByRole('region').map((region) => region.getAttribute('aria-labelledby'))
