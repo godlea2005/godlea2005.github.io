@@ -1,6 +1,6 @@
 .tool-navigation-page {
   --tool-line: var(--hairline);
-  --tool-surface: var(--surface);
+  --tool-surface: var(--editorial-surface);
   --tool-muted: var(--muted);
   --tool-accent: var(--violet);
   --tool-signal: var(--signal-green);

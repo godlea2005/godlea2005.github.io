@@ -1,6 +1,6 @@
 .guestbook-page {
-  --guest-surface: color-mix(in srgb, var(--surface) 76%, transparent);
-  --guest-surface-strong: color-mix(in srgb, var(--surface) 92%, var(--paper));
+  --guest-surface: color-mix(in srgb, var(--editorial-surface) 76%, transparent);
+  --guest-surface-strong: color-mix(in srgb, var(--editorial-surface) 92%, var(--paper));
   --guest-line: var(--hairline);
   --guest-accent: var(--signal-green);
   min-height: calc(100svh - 78px);
@@ -38,11 +38,11 @@
   overflow: hidden;
   border: 1px solid var(--guest-line);
   border-radius: 3px;
-  background: var(--surface);
-  box-shadow: var(--surface-shadow);
+  background: var(--editorial-surface);
+  box-shadow: var(--editorial-surface-shadow);
 }
 
-:root[data-theme="light"] .guestbook-board { background: var(--surface); }
+:root[data-theme="light"] .guestbook-board { background: var(--editorial-surface); }
 
 .guestbook-board-header {
   min-height: 58px;

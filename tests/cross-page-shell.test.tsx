@@ -1,7 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
 import type { CommerceRepository } from '../src/commerce/commerceRepository'
+import { AuthDialog } from '../src/auth/AuthDialog'
+import { useAuth as mockedUseAuth } from '../src/auth/AuthProvider'
+import '../src/styles.css'
+import '../src/auth/auth.css'
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -10,10 +16,7 @@ const mocks = vi.hoisted(() => ({
   requireLogin: vi.fn(),
 }))
 
-vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/auth/AuthProvider')>()
-  return { ...actual, useAuth: mocks.useAuth }
-})
+vi.mock('../src/auth/AuthProvider', () => ({ useAuth: mocks.useAuth }))
 
 vi.mock('../src/guestbook/guestbookRepository', () => ({
   guestbookRepository: {
@@ -40,6 +43,7 @@ const authState = (signedIn = false): AuthContextValue => ({
 })
 
 beforeEach(() => {
+  document.documentElement.removeAttribute('data-theme')
   window.localStorage.clear()
   window.sessionStorage.clear()
   window.sessionStorage.setItem('wenhao-guestbook:rules-seen', 'true')
@@ -50,11 +54,38 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  document.documentElement.removeAttribute('data-theme')
   vi.clearAllMocks()
   vi.useRealTimers()
 })
 
 describe('shared editorial page shells', () => {
+  it('keeps the cross-page auth hook fully isolated from its real provider', () => {
+    expect(mockedUseAuth).toBe(mocks.useAuth)
+  })
+
+  it('keeps the light-theme login dialog readable with its own paired fallback colors', () => {
+    document.documentElement.setAttribute('data-theme', 'light')
+    const { container } = render(<AuthDialog open ready providers={{ github: true, google: true }} error="" onClose={vi.fn()} onSignIn={vi.fn().mockResolvedValue(undefined)} />)
+    expect(container.querySelector('.auth-dialog')).toBeInTheDocument()
+
+    const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+    const authCss = readFileSync(resolve(process.cwd(), 'src/auth/auth.css'), 'utf8')
+    expect(globalCss).not.toMatch(/--surface\s*:/)
+    expect(globalCss).not.toMatch(/--text\s*:/)
+    const background = authCss.match(/background:\s*var\(--surface,\s*(#[0-9a-f]{6})\)/i)?.[1]
+    const foreground = authCss.match(/color:\s*var\(--text,\s*(#[0-9a-f]{6})\)/i)?.[1]
+    expect(background).toBeDefined()
+    expect(foreground).toBeDefined()
+    const luminance = (hex: string) => {
+      const channels = hex.slice(1).match(/.{2}/g)!.map((channel) => parseInt(channel, 16) / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2)
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    }
+    const lightness = luminance(background!)
+    const darkness = luminance(foreground!)
+    expect((darkness + 0.05) / (lightness + 0.05)).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('keeps the tools index searchable, labeled and arranged as a shared editorial page', () => {
     const { container } = render(<ToolNavigationPage />)
     const main = container.querySelector('main')!

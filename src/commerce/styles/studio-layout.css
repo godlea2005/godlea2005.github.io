@@ -53,7 +53,7 @@
   border: 0;
   border-right: 1px solid var(--hairline);
   color: var(--ink);
-  background: var(--surface);
+  background: var(--editorial-surface);
   text-align: left;
 }
 .commerce-studio-tools > :last-child {
