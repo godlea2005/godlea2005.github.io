@@ -41,22 +41,19 @@ describe('AI commerce homepage positioning', () => {
     expect(screen.getByTestId('gradient-waves')).toBeInTheDocument()
   })
 
-  it('makes the four markets, three-step workflow and demo result tangible', () => {
+  it('keeps commerce as one compact laboratory entry', () => {
     render(<CommerceHomeSection />)
 
     for (const platform of ['Ozon', 'Wildberries', '抖音', '淘宝/天猫']) {
       expect(screen.getByText(platform)).toBeInTheDocument()
     }
-    for (const step of ['上传产品资料', '选择市场平台', '获得主图与详情页方案']) {
-      expect(screen.getByText(step)).toBeInTheDocument()
+    for (const verb of ['理解产品', '判断市场', '组织画面']) {
+      expect(screen.getByText(verb)).toBeInTheDocument()
     }
-    expect(screen.getByText('演示案例')).toBeInTheDocument()
-    expect(screen.getByText('主图方向')).toBeInTheDocument()
-    expect(screen.getByText('详情页分镜')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: '作图提示词' })).toBeInTheDocument()
-    expect(screen.getByText('快速出汽场景')).toBeInTheDocument()
-    expect(screen.getByText('折叠收纳展示')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '进入 AI 电商工作台' })).toHaveAttribute('href', '#ai-commerce')
+    expect(screen.queryByText('演示案例')).not.toBeInTheDocument()
+    expect(screen.queryByText('主图方向')).not.toBeInTheDocument()
+    expect(screen.queryByText('详情页分镜')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '进入 AI 电商实验室' })).toHaveAttribute('href', '#ai-commerce')
 
     const demoSource = readSource('src/content/site.ts') + readSource('src/components/CommerceHomeSection.tsx')
     expect(demoSource).not.toMatch(/20\s*(?:秒|s)|双电压/i)
@@ -83,25 +80,20 @@ describe('AI commerce homepage positioning', () => {
     })))
   })
 
-  it('keeps the approved homepage order, routes and decorative effects in source', () => {
+  it('keeps subpage routes, theme ownership and hero effects in source', () => {
     const app = readSource('src/App.tsx')
-    const hero = app.indexOf('<StatusScene')
-    const commerce = app.indexOf('<CommerceHomeSection')
-    const cases = app.indexOf('<StudioMap')
-    const archive = app.indexOf('<ProjectArchive')
-    const notes = app.indexOf('notes-section')
-
-    expect(hero).toBeGreaterThan(-1)
-    expect(commerce).toBeGreaterThan(hero)
-    expect(cases).toBeGreaterThan(commerce)
-    expect(archive).toBeGreaterThan(cases)
-    expect(notes).toBeGreaterThan(archive)
+    expect(app).toContain('<HomePage theme={theme} />')
     expect(app).toContain("route.page === 'music'")
     expect(app).toContain("route.page === 'guestbook'")
     expect(app).toContain('<GlobalMusicDock')
     expect(app).toContain('useState<Theme>(() => getInitialTheme())')
     expect(app).toContain('useLayoutEffect(() => applyTheme(theme), [theme])')
-    expect(app).toContain('<StatusScene theme={theme} />')
+    expect(app).not.toContain('id="about"')
+
+    const homepage = readSource('src/components/HomePage.tsx')
+    expect(homepage).toContain('<StatusScene theme={theme} />')
+    expect(homepage).toContain('<VisualNotes />')
+    expect(homepage).toContain('<SiteFooter />')
 
     const scene = readSource('src/components/StatusScene.tsx')
     expect(scene).toContain('GradientWaves')

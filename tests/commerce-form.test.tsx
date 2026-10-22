@@ -15,8 +15,6 @@ vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
 
 vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: ({ commerceMode = false }: { commerceMode?: boolean }) => <div data-testid="music-dock-mode" data-mode={commerceMode ? 'commerce' : 'default'} /> }))
 vi.mock('../src/components/StatusScene', () => ({ StatusScene: () => <section>HOME</section> }))
-vi.mock('../src/components/StudioMap', () => ({ StudioMap: () => null }))
-vi.mock('../src/components/ProjectArchive', () => ({ ProjectArchive: () => null }))
 
 import App from '../src/App'
 import { CommerceProjectForm } from '../src/commerce/CommerceProjectForm'

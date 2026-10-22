@@ -12,8 +12,6 @@ vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
 
 vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: ({ commerceMode = false }: { commerceMode?: boolean }) => <div data-testid="music-dock-mode" data-mode={commerceMode ? 'commerce' : 'default'} /> }))
 vi.mock('../src/components/StatusScene', () => ({ StatusScene: () => <section>HOME</section> }))
-vi.mock('../src/components/StudioMap', () => ({ StudioMap: () => <section id="studio-map">STUDIO MAP</section> }))
-vi.mock('../src/components/ProjectArchive', () => ({ ProjectArchive: () => null }))
 
 import App from '../src/App'
 import { FloatingHeader } from '../src/components/FloatingHeader'
@@ -47,7 +45,7 @@ describe('tools route and site navigation', () => {
     expect(isSiteSubpageHash('#work')).toBe(true)
     expect(isSiteSubpageHash('#article/a-valid-slug')).toBe(true)
     expect(isSiteSubpageHash('#project/a-valid-slug')).toBe(true)
-    expect(isSiteSubpageHash('#studio-map')).toBe(false)
+    expect(isSiteSubpageHash('#featured')).toBe(false)
     expect(isSiteSubpageHash('#tools/')).toBe(false)
     expect(isSiteSubpageHash('#article/Bad')).toBe(false)
     expect(isSiteSubpageHash('#top')).toBe(false)
@@ -92,8 +90,8 @@ describe('tools route and site navigation', () => {
     expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
   })
 
-  it('keeps #studio-map on the homepage and responds to later hash navigation', async () => {
-    window.location.hash = '#studio-map'
+  it('keeps #featured on the homepage and responds to later hash navigation', async () => {
+    window.location.hash = '#featured'
     const view = render(<App />)
     expect(screen.getByText('HOME')).toBeInTheDocument()
     expect(view.container.querySelector('.site-shell')).toHaveClass('is-home')

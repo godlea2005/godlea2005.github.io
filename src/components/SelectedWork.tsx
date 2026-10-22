@@ -2,10 +2,10 @@ import { projectSummaries } from '../editorial'
 import { TiltedCard } from '../editorial/TiltedCard'
 
 export function SelectedWork() {
-  return <section className="selected-work-section" aria-labelledby="selected-work-heading">
+  return <section className="selected-work-section" aria-labelledby="selected-work-title">
     <header className="selected-work-heading">
       <p className="selected-work-eyebrow">FIELD NOTES / SELECTED WORK</p>
-      <h2 id="selected-work-heading">精选实践</h2>
+      <h2 id="selected-work-title">精选实践</h2>
       <p>三个仍在迭代中的个人实验，记录问题、方法与正在形成的答案。</p>
     </header>
     <ul className="selected-work-grid" aria-label="精选个人实验">

@@ -71,7 +71,7 @@ export function StatusScene({ theme }: { theme: Theme }) {
           </div>
         </div>
         <div className="scene-lower-edge">
-          <a href="#commerce-home-title">
+          <a href="#featured">
             向下探索 <span aria-hidden="true">↓</span>
           </a>
           <p>

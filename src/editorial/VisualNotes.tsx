@@ -31,10 +31,10 @@ export function VisualNotes({ items = visualNotes }: VisualNotesProps) {
     })
   }
 
-  return <section className="visual-notes-section" aria-labelledby="visual-notes-heading">
+  return <section className="visual-notes-section" id="visual-notes" aria-labelledby="visual-notes-title">
     <header className="visual-notes-heading">
       <p className="visual-notes-eyebrow">FIELD NOTES / OBSERVATIONS</p>
-      <h2 id="visual-notes-heading">视觉随记</h2>
+      <h2 id="visual-notes-title">视觉随记</h2>
       <p>把工作现场、材质线索与还没定论的想法，留成一组可以回看的片段。</p>
     </header>
     <div className="visual-notes-wall">
