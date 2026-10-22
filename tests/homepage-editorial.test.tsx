@@ -32,6 +32,18 @@ const cssToken = (block: string, name: string) => {
   return match[1]
 }
 
+const mistSurface = (rootTokens: string) => {
+  const soft = rootTokens.match(/--soft:rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+  if (!soft) throw new Error('Missing theme mist overlay')
+  const mist = soft.slice(1, 4).map(Number)
+  const opacity = Number(soft[4])
+  const baseHex = cssToken(rootTokens, 'bg2')
+  return `#${[1, 3, 5].map((offset, index) => {
+    const base = parseInt(baseHex.slice(offset, offset + 2), 16)
+    return Math.round(base * (1 - opacity) + mist[index] * opacity).toString(16).padStart(2, '0')
+  }).join('')}`
+}
+
 describe('WENHAO Field Notes homepage', () => {
   it('keeps light-theme homepage metadata and action text at readable contrast', () => {
     const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
@@ -41,16 +53,7 @@ describe('WENHAO Field Notes homepage', () => {
     if (!lightRoot || !lightHome) throw new Error('Missing light-theme tokens')
 
     const surfaces = ['bg', 'bg2', 'panel'].map((name) => cssToken(lightRoot, name))
-    const soft = lightRoot.match(/--soft:rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
-    if (!soft) throw new Error('Missing light-theme mist overlay')
-    const mist = soft.slice(1, 4).map(Number)
-    const opacity = Number(soft[4])
-    const commerceBase = cssToken(lightRoot, 'bg2')
-    const commerceSurface = `#${[1, 3, 5].map((offset, index) => {
-      const base = parseInt(commerceBase.slice(offset, offset + 2), 16)
-      return Math.round(base * (1 - opacity) + mist[index] * opacity).toString(16).padStart(2, '0')
-    }).join('')}`
-    surfaces.push(commerceSurface)
+    surfaces.push(mistSurface(lightRoot))
     for (const token of ['home-meta', 'home-meta-accent']) {
       for (const surface of surfaces) {
         expect(contrastRatio(cssToken(lightHome, token), surface)).toBeGreaterThanOrEqual(4.5)
@@ -61,6 +64,17 @@ describe('WENHAO Field Notes homepage', () => {
     expect(homeCss).not.toMatch(/color:\s*var\(--quiet\)/)
     expect(homeCss).toMatch(/\.featured-note-topline\s*\{\s*color:\s*var\(--home-meta\)/)
     expect(homeCss).toMatch(/\.commerce-home-intro > a,\s*\.about-links a:first-child\s*\{[^}]*background:\s*var\(--home-action-bg\);\s*color:\s*var\(--home-action-ink\)/s)
+  })
+
+  it('keeps dark lab paragraph copy readable over its mist background', () => {
+    const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+    const homeCss = readFileSync(resolve(process.cwd(), 'src/components/home-sections.css'), 'utf8')
+    const darkRoot = globalCss.match(/:root\s*\{([^}]+)\}/)?.[1]
+    if (!darkRoot) throw new Error('Missing dark-theme tokens')
+
+    expect(contrastRatio(cssToken(darkRoot, 'muted'), mistSurface(darkRoot))).toBeGreaterThanOrEqual(4.5)
+    expect(homeCss).toMatch(/\.commerce-home-intro > p:not\(\.home-section-eyebrow\)\s*\{[^}]*color:\s*var\(--muted\)/s)
+    expect(homeCss).toMatch(/:root\[data-theme="light"\] \.commerce-home-intro > p:not\(\.home-section-eyebrow\)\s*\{\s*color:\s*var\(--home-meta\)/)
   })
 
   it('renders the approved landmark order with one about anchor and a separate footer', () => {

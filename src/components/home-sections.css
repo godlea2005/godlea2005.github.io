@@ -188,9 +188,13 @@
 .commerce-home-intro > p:not(.home-section-eyebrow) {
   max-width: 520px;
   margin: 24px 0 30px;
-  color: var(--home-meta);
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.85;
+}
+
+:root[data-theme="light"] .commerce-home-intro > p:not(.home-section-eyebrow) {
+  color: var(--home-meta);
 }
 
 .commerce-home-intro > a,
