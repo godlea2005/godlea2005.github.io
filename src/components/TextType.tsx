@@ -12,7 +12,8 @@ export type TextTypeProps = {
 type Step = { phrase: number; length: number; phase: 'typing' | 'pausing' | 'deleting' | 'settled' }
 
 export function TextType({ texts, typingMs = 55, deletingMs = 28, pauseMs = 1100 }: TextTypeProps) {
-  const { reducedMotion, pageVisible } = useMotionProfile()
+  const { reducedMotion, fineHover, pageVisible } = useMotionProfile()
+  const staticText = reducedMotion || !fineHover
   const [step, setStep] = useState<Step>({ phrase: 0, length: 0, phase: 'typing' })
   const stepRef = useRef(step)
   const first = texts[0] ?? ''
@@ -20,7 +21,7 @@ export function TextType({ texts, typingMs = 55, deletingMs = 28, pauseMs = 1100
   const textKey = JSON.stringify(texts)
 
   useEffect(() => {
-    if (reducedMotion || !pageVisible || stepRef.current.phase === 'settled' || texts.length === 0) return
+    if (staticText || !pageVisible || stepRef.current.phase === 'settled' || texts.length === 0) return
     let timer = 0
     const tick = () => {
       const current = stepRef.current
@@ -50,15 +51,15 @@ export function TextType({ texts, typingMs = 55, deletingMs = 28, pauseMs = 1100
     }
     tick()
     return () => window.clearTimeout(timer)
-  }, [deletingMs, first, pageVisible, pauseMs, reducedMotion, textKey, texts, typingMs])
+  }, [deletingMs, first, pageVisible, pauseMs, staticText, textKey, texts, typingMs])
 
-  const visibleText = reducedMotion || step.phase === 'settled'
+  const visibleText = staticText || step.phase === 'settled'
     ? first
     : Array.from(phrase).slice(0, step.length).join('')
 
   return <span className="text-type">
     <span className="text-type-accessible">{first}</span>
     <span aria-hidden="true" className="text-type-glyphs">{visibleText}</span>
-    <span aria-hidden="true" className="text-type-caret" />
+    {!staticText && step.phase !== 'settled' && <span aria-hidden="true" className="text-type-caret" />}
   </span>
 }

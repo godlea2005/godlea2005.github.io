@@ -84,8 +84,8 @@ export function GuestbookComposer({
     />
     <div className="composer-toolbar">
       <div className="composer-tools">
-        <button type="button" onClick={() => setEmojiOpen((value) => !value)} aria-expanded={emojiOpen}>☺ <span>表情</span></button>
-        <button type="button" onClick={() => fileRef.current?.click()}>▧ <span>图片</span></button>
+        <button type="button" aria-label="表情" onClick={() => setEmojiOpen((value) => !value)} aria-expanded={emojiOpen}>☺ <span>表情</span></button>
+        <button type="button" aria-label="图片" onClick={() => fileRef.current?.click()}>▧ <span>图片</span></button>
         <input ref={fileRef} hidden type="file" accept="image/*" onChange={(event) => chooseImage(event.target.files?.[0])} />
         {emojiOpen && <div className="emoji-panel" aria-label="选择表情">{emojis.map((emoji) => <button type="button" key={emoji} onClick={() => { setContent((value) => `${value}${emoji}`.slice(0, 300)); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
       </div>

@@ -17,9 +17,9 @@ export function MusicPage() {
     <AudioTerrain />
     <div className="music-vignette" aria-hidden="true" />
     <header className="music-local-header">
-      <a href="#top"><ArrowLeftIcon /><span>返回主站</span></a>
+      <a href="#top" aria-label="返回主站"><ArrowLeftIcon /><span>返回主站</span></a>
       <div><i className={music.playing ? 'is-live' : ''} /><span>AUDIO FIELD</span><b>WENHAO / 2026</b></div>
-      <button type="button" onClick={() => setPlaylistOpen(true)}><ListIcon /><span>歌单</span><em>{String(music.tracks.length).padStart(2, '0')}</em></button>
+      <button type="button" aria-label="打开歌单" onClick={() => setPlaylistOpen(true)}><ListIcon /><span>歌单</span><em>{String(music.tracks.length).padStart(2, '0')}</em></button>
     </header>
     <div className="music-stage-grid">
       <RecordSleeve />

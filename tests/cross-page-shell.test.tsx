@@ -60,8 +60,41 @@ afterEach(() => {
 })
 
 describe('shared editorial page shells', () => {
+  it('gives light editorial metadata and compact navigation text at least 4.5:1 contrast', () => {
+    const editorialCss = readFileSync(resolve(process.cwd(), 'src/editorial/editorial-pages.css'), 'utf8')
+    const navCss = readFileSync(resolve(process.cwd(), 'src/components/card-nav.css'), 'utf8')
+    const luminance = (hex: string) => {
+      const channels = hex.slice(1).match(/.{2}/g)!.map((channel) => parseInt(channel, 16) / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    }
+    const paper = editorialCss.match(/--editorial-paper:\s*(#[0-9a-f]{6})/)![1]
+    for (const token of ['muted', 'accent']) {
+      const ink = editorialCss.match(new RegExp(`--editorial-${token}:\\s*(#[0-9a-f]{6})`))![1]
+      expect((luminance(paper) + 0.05) / (luminance(ink) + 0.05)).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(navCss).toMatch(/\.card-nav-destination-copy small\s*\{[^}]*color: var\(--muted\)/s)
+    expect(navCss).toMatch(/\[data-theme="light"\] \.card-nav-wrap\s*\{\s*--card-nav-accent: #306235/s)
+    expect((luminance('#e9e6df') + 0.05) / (luminance('#306235') + 0.05)).toBeGreaterThanOrEqual(4.5)
+    expect((luminance('#e9e6df') + 0.05) / (luminance('#666771') + 0.05)).toBeGreaterThanOrEqual(4.5)
+  })
+  it('keeps compact editorial, guestbook and music controls at least 44px', () => {
+    const editorialCss = readFileSync(resolve(process.cwd(), 'src/editorial/editorial-pages.css'), 'utf8')
+    const guestbookCss = readFileSync(resolve(process.cwd(), 'src/guestbook/guestbook.css'), 'utf8')
+    const musicCss = readFileSync(resolve(process.cwd(), 'src/music/music-experience.css'), 'utf8')
+    expect(editorialCss).toMatch(/\.editorial-filter button\s*\{[^}]*min-height:\s*44px/s)
+    expect(editorialCss).toMatch(/\.editorial-return\s*\{[^}]*min-height:\s*44px/s)
+    expect(guestbookCss).toMatch(/\.guestbook-page button,\s*\.guestbook-dialog button,\s*\.guestbook-dialog input\s*\{[^}]*min-width:\s*44px;\s*min-height:\s*44px/s)
+    expect(musicCss).toMatch(/\.music-experience button,[\s\S]*?\.music-popover input\[type="range"\]\s*\{[^}]*min-width:\s*44px;\s*min-height:\s*44px/s)
+    expect(musicCss).toMatch(/\.music-popover-controls\s*\{[^}]*grid-template-columns:\s*44px 48px 44px 1px 44px minmax\(44px,\s*1fr\) 44px/s)
+  })
   it('keeps the cross-page auth hook fully isolated from its real provider', () => {
     expect(mockedUseAuth).toBe(mocks.useAuth)
+  })
+
+  it('does not apply compact eyebrow typography to full writing and work indexes', () => {
+    const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+    expect(globalCss).toMatch(/p\.editorial-index\s*\{/)
+    expect(globalCss).not.toMatch(/(?:^|\n)\.editorial-index\s*\{/)
   })
 
   it('keeps the light-theme login dialog readable with its own paired fallback colors', () => {
@@ -78,7 +111,7 @@ describe('shared editorial page shells', () => {
     expect(background).toBeDefined()
     expect(foreground).toBeDefined()
     const luminance = (hex: string) => {
-      const channels = hex.slice(1).match(/.{2}/g)!.map((channel) => parseInt(channel, 16) / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2)
+      const channels = hex.slice(1).match(/.{2}/g)!.map((channel) => parseInt(channel, 16) / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
       return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
     }
     const lightness = luminance(background!)
@@ -126,6 +159,15 @@ describe('shared editorial page shells', () => {
     fireEvent.keyDown(composer, { key: 'Enter' })
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('编辑中的留言', undefined))
     expect(mocks.list).not.toHaveBeenCalled()
+  })
+
+  it('keeps guestbook toolbar icons named when compact labels are hidden', () => {
+    const { container } = render(<GuestbookComposer identity={{ nickname: '访客', email: '', website: '' }} replyTo={null} sending={false} onOpenIdentity={vi.fn()} onCancelReply={vi.fn()} onSend={vi.fn()} onNotice={vi.fn()} />)
+    container.querySelectorAll<HTMLElement>('.composer-tools button span').forEach((label) => { label.style.display = 'none' })
+    expect(screen.getByRole('button', { name: '表情', exact: true })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: '图片', exact: true })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '表情', exact: true }))
+    expect(screen.getByLabelText('选择表情')).toBeInTheDocument()
   })
 
   it('keeps one visible commerce H1 and its authenticated workbench controls', async () => {

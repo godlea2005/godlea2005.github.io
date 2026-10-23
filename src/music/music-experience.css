@@ -458,7 +458,7 @@
 
 .music-popover { width: min(354px, calc(100vw - 32px)); padding: 15px; opacity: 0; visibility: hidden; transform: translateY(12px) scale(.97); transform-origin: bottom right; border: 1px solid rgba(230,255,250,.14); border-radius: 21px; background: rgba(4,9,11,.9); box-shadow: 0 24px 70px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(24px) saturate(1.2); pointer-events: none; transition: opacity .2s ease, transform .2s ease, visibility .2s; }
 .music-dock.is-open .music-popover { opacity: 1; visibility: visible; transform: translateY(0) scale(1); pointer-events: auto; }
-.music-popover-header { display: grid; grid-template-columns: 52px minmax(0,1fr) 30px; align-items: center; gap: 11px; }
+.music-popover-header { display: grid; grid-template-columns: 52px minmax(0,1fr) 44px; align-items: center; gap: 11px; }
 .music-popover-cover { width: 52px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 14px; background: repeating-radial-gradient(circle,#0b1112 0 2px,#252b2b 3px,#0b1112 5px); }
 .music-popover-cover i { width: 16px; aspect-ratio: 1; border-radius: 50%; background: var(--accent); box-shadow: 0 0 13px color-mix(in srgb,var(--accent) 60%,transparent); }
 .music-dock.is-playing .music-popover-cover { animation: record-spin 7s linear infinite; }
@@ -475,7 +475,7 @@
 .music-popover-progress input,.music-popover-volume { width: 100%; height: 16px; margin: 4px 0 0; appearance: none; background: transparent; cursor: pointer; }
 .music-popover-progress input::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: linear-gradient(90deg,var(--accent) var(--progress,0%),rgba(225,255,250,.16) var(--progress,0%)); }
 .music-popover-progress input::-webkit-slider-thumb,.music-popover-volume::-webkit-slider-thumb { width: 8px; height: 8px; margin-top: -3px; appearance: none; border-radius: 50%; background: #effffb; box-shadow: 0 0 9px color-mix(in srgb,var(--accent) 65%,transparent); }
-.music-popover-controls { min-height: 53px; display: grid; grid-template-columns: 34px 48px 34px 1px 34px minmax(45px,1fr) 34px; gap: 5px; align-items: center; }
+.music-popover-controls { min-height: 53px; display: grid; grid-template-columns: 44px 48px 44px 1px 44px minmax(44px,1fr) 44px; gap: 5px; align-items: center; }
 .music-popover-controls button { width: 34px; height: 34px; display: grid; place-items: center; }
 .music-popover-controls .music-popover-play { width: 48px; height: 48px; color: #071012; border-radius: 50%; background: var(--accent); }
 .music-control-divider { width: 1px; height: 20px; background: rgba(238,248,246,.12); }
@@ -494,14 +494,28 @@
   .music-dock.is-commerce .music-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   .music-launcher { width: 48px; height: 48px; border-radius: 15px; }
   .site-shell.is-commerce:has(.commerce-workspace input:focus, .commerce-workspace textarea:focus) .music-dock:not(.is-open) { visibility: hidden; }
+  .site-shell:has(.guestbook-composer :focus) .music-dock:not(.is-open) { visibility: hidden; }
   .music-note { font-size: 24px; }
   .music-popover { position: fixed; left: 10px; right: 10px; bottom: calc(max(12px,env(safe-area-inset-bottom)) + 58px); width: auto; padding: 14px; border-radius: 20px; transform-origin: bottom center; }
   .music-dock.is-commerce .music-popover { top: max(70px,env(safe-area-inset-top)); bottom: auto; transform-origin: top center; }
-  .music-popover-controls { grid-template-columns: 32px 46px 32px 1px 32px minmax(36px,1fr) 32px; gap: 3px; }
+  .music-popover-controls { grid-template-columns: 44px 48px 44px 1px 44px minmax(44px,1fr) 44px; gap: 3px; }
   .music-popover-controls button { width: 32px; }.music-popover-controls .music-popover-play { width: 46px; height: 46px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .music-popover,.music-launcher,.music-note { transition: none; }
   .music-equalizer i,.music-dock.is-playing .music-popover-cover,.music-popover-footer span i.is-live { animation: none; }
+}
+
+.music-experience button,
+.music-local-header > a,
+.playlist-panel button,
+.music-popover button,
+.music-popover-footer a,
+.transport input[type="range"],
+.music-popover input[type="range"] { min-width: 44px; min-height: 44px; }
+.music-popover-footer a { display: inline-flex; align-items: center; }
+@media (max-width: 900px) {
+  .mobile-player-top { grid-template-columns: minmax(0, 1fr) repeat(4, 44px); }
+  .mobile-player-bottom { grid-template-columns: 44px 32px minmax(44px, 1fr) 32px 44px; }
 }

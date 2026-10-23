@@ -165,7 +165,7 @@
 .rules-copy li { margin: 6px 0; }
 .guestbook-dialog > footer { min-height: 64px; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--guest-line); }
 .guestbook-dialog footer span { color: var(--quiet); font: 7px/1 monospace; letter-spacing: .12em; }
-.guestbook-dialog footer button { min-height: 34px; padding: 0 16px; color: #06110f; border: 0; border-radius: 6px; background: var(--guest-accent); cursor: pointer; }
+.guestbook-dialog footer button { min-height: 44px; padding: 0 16px; color: #06110f; border: 0; border-radius: 6px; background: var(--guest-accent); cursor: pointer; }
 .identity-dialog { width: min(450px, 100%); }
 .identity-session { margin: 18px 22px 0; padding: 11px 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--guest-line); border-radius: 7px; background: color-mix(in srgb, var(--guest-accent) 5%, transparent); }
 .identity-session > div { display: grid; grid-template-columns: 8px auto; align-items: center; gap: 4px 8px; }
@@ -237,3 +237,12 @@
   .guestbook-loading i { animation: none; }
   .message-actions { transition: none; }
 }
+
+/* Compact visual controls still expose a full touch-sized hit area. */
+.guestbook-page button,
+.guestbook-dialog button,
+.guestbook-dialog input { min-width: 44px; min-height: 44px; }
+.guestbook-announcement { padding-right: 55px; }
+.guestbook-announcement > button:last-child { top: 1px; }
+.emoji-panel { width: min(304px, calc(100vw - 48px)); }
+.emoji-panel button { min-width: 0; }

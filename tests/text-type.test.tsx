@@ -5,9 +5,9 @@ import { TextType } from '../src/components/TextType'
 const initialMatchMedia = window.matchMedia
 const initialHidden = Object.getOwnPropertyDescriptor(document, 'hidden')
 
-function setMotion(reduced: boolean) {
+function setMotion(reduced: boolean, fine = true) {
   window.matchMedia = vi.fn((query: string) => ({
-    matches: query === '(prefers-reduced-motion: reduce)' ? reduced : true,
+    matches: query === '(prefers-reduced-motion: reduce)' ? reduced : fine,
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
   })) as typeof window.matchMedia
 }
@@ -30,6 +30,7 @@ describe('TextType', () => {
     expect(accessible).not.toHaveAttribute('aria-hidden')
     expect(accessible).toBeInTheDocument()
     expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-glyphs' })).toHaveAttribute('aria-hidden', 'true')
+    expect(document.querySelector('.text-type-caret')).not.toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -39,6 +40,16 @@ describe('TextType', () => {
     render(<TextType texts={['记录设计与技术的现场', '第二句']} />)
     expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })).not.toHaveAttribute('aria-hidden')
     expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-glyphs' })).toHaveAttribute('aria-hidden', 'true')
+    expect(document.querySelector('.text-type-caret')).not.toBeInTheDocument()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps touch and non-hover devices static with no typing timer or caret', () => {
+    vi.useFakeTimers()
+    setMotion(false, false)
+    const { container } = render(<TextType texts={['记录设计与技术的现场', '第二句']} />)
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-glyphs' })).toBeInTheDocument()
+    expect(container.querySelector('.text-type-caret')).not.toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(0)
   })
 

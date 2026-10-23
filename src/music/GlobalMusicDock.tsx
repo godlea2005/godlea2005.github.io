@@ -77,7 +77,7 @@ export function calculateCommerceLauncherPlacement({
   return { shiftX: 0, shiftY: 0, side: 'unchanged' }
 }
 
-export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boolean }) {
+export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }: { commerceMode?: boolean; guestbookMode?: boolean }) {
   const music = useMusic()
   const dockRef = useRef<HTMLDivElement>(null)
   const launcherRef = useRef<HTMLButtonElement>(null)
@@ -105,14 +105,14 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
   }, [open, playlistOpen])
 
   useEffect(() => {
-    if (!commerceMode) {
+    if (!commerceMode && !guestbookMode) {
       setCommercePlacement({ shiftX: 0, shiftY: 0, side: 'unchanged' })
       return
     }
     let frame: number | null = null
     let observedAction: HTMLElement | null = null
     const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => schedule())
-    const visiblePrimaryAction = () => Array.from(document.querySelectorAll<HTMLElement>('[data-commerce-primary-action]'))
+    const visiblePrimaryAction = () => Array.from(document.querySelectorAll<HTMLElement>(guestbookMode ? '.guestbook-composer' : '[data-commerce-primary-action]'))
       .find((candidate) => {
         const candidateRect = candidate.getBoundingClientRect()
         const style = window.getComputedStyle(candidate)
@@ -170,7 +170,7 @@ export function GlobalMusicDock({ commerceMode = false }: { commerceMode?: boole
       mutationObserver.disconnect()
       resizeObserver?.disconnect()
     }
-  }, [commerceMode])
+  }, [commerceMode, guestbookMode])
 
   return <>
     <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} data-commerce-placement={commercePlacement.side} style={{ '--accent': music.track.accent, '--commerce-launcher-shift-x': `${commercePlacement.shiftX}px`, '--commerce-launcher-shift-y': `${commercePlacement.shiftY}px` } as React.CSSProperties}>

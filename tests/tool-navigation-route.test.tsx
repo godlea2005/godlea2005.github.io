@@ -10,7 +10,7 @@ vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
   return { ...actual, useAuth: authMock.useAuth }
 })
 
-vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: ({ commerceMode = false }: { commerceMode?: boolean }) => <div data-testid="music-dock-mode" data-mode={commerceMode ? 'commerce' : 'default'} /> }))
+vi.mock('../src/music/GlobalMusicDock', () => ({ GlobalMusicDock: ({ commerceMode = false, guestbookMode = false }: { commerceMode?: boolean; guestbookMode?: boolean }) => <div data-testid="music-dock-mode" data-mode={commerceMode ? 'commerce' : 'default'} data-guestbook={guestbookMode} /> }))
 vi.mock('../src/components/StatusScene', () => ({ StatusScene: () => <section>HOME</section> }))
 
 import App from '../src/App'
@@ -119,6 +119,7 @@ describe('tools route and site navigation', () => {
     const oauthReturn = render(<App />)
     expect(await screen.findByRole('heading', { name: '留言板' })).toBeInTheDocument()
     expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
+    expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-guestbook', 'true')
     oauthReturn.unmount()
 
     window.history.replaceState({}, '', '/#music')

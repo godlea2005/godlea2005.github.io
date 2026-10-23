@@ -107,4 +107,21 @@ describe('mobile commerce music launcher', () => {
     await userEvent.tab()
     expect(launcher).toHaveFocus()
   })
+
+  it('keeps the launcher 12px clear of the guestbook composer without commerce mode', async () => {
+    const view = render(<><form className="guestbook-composer"><textarea aria-label="留言内容" /></form><GlobalMusicDock guestbookMode /></>)
+    const composer = view.container.querySelector<HTMLElement>('.guestbook-composer')!
+    const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
+    const dock = view.container.querySelector<HTMLElement>('.music-dock')!
+    composer.getBoundingClientRect = vi.fn(() => rect(17, 742, 373, 863))
+    launcher.getBoundingClientRect = vi.fn(() => {
+      const shift = Number.parseFloat(dock.style.getPropertyValue('--commerce-launcher-shift-y')) || 0
+      return rect(330, 784 - shift, 378, 832 - shift)
+    })
+    window.dispatchEvent(new Event('resize'))
+    await waitFor(() => expect(dock).toHaveAttribute('data-commerce-placement', 'above'))
+    expect(Number.parseFloat(dock.style.getPropertyValue('--commerce-launcher-shift-y'))).toBe(102)
+    const css = readFileSync('src/music/music-experience.css', 'utf8')
+    expect(css).toMatch(/\.site-shell:has\(\.guestbook-composer :focus\) \.music-dock:not\(\.is-open\)\s*\{\s*visibility: hidden/s)
+  })
 })

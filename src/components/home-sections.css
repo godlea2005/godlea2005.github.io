@@ -295,7 +295,7 @@
   letter-spacing: -.035em;
   font-weight: 550;
 }
-.writing-preview-list h3 a { display: block; padding-block: 20px; }
+.writing-preview-list h3 a { display: flex; min-height: 44px; align-items: center; padding-block: 20px; }
 .writing-preview-arrow { color: var(--accent); font-size: 20px; }
 .writing-preview-more {
   display: inline-flex;
@@ -319,14 +319,14 @@
 .about-details li { padding: 9px 12px; border: 1px solid var(--line); font-size: 12px; }
 .about-status { max-width: 530px; margin: 0; font-size: 16px; line-height: 1.9; }
 .about-links { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 28px; margin-top: 32px; }
-.about-links a:last-child { border-bottom: 1px solid var(--accent); padding-block: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.about-links a:last-child { display: inline-flex; min-height: 44px; align-items: center; border-bottom: 1px solid var(--accent); padding-block: 10px; font-size: 13px; overflow-wrap: anywhere; }
 
 .site-footer { min-height: 0; display: block; padding-block: 42px 28px; border-top: 1px solid var(--line); }
 .site-footer-main { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding-bottom: 46px; }
 .site-footer-main > p:last-child { margin: 0; color: var(--muted); font-size: 12px; }
 .footer-label { margin: 0; color: var(--home-meta-accent); font: 11px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; }
 .footer-bottom { display: flex; justify-content: space-between; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--home-meta); font: 10px "SFMono-Regular", Consolas, monospace; letter-spacing: .06em; }
-.footer-bottom a { color: var(--home-meta); }
+.footer-bottom a { display: inline-flex; min-height: 44px; align-items: center; color: var(--home-meta); }
 
 @media (max-width: 900px) {
   .featured-notes-layout { grid-template-columns: 1fr; }

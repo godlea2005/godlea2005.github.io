@@ -45,6 +45,12 @@ const mistSurface = (rootTokens: string) => {
 }
 
 describe('WENHAO Field Notes homepage', () => {
+  it('preserves 44px hit areas for compact writing, email and footer links', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/home-sections.css'), 'utf8')
+    expect(css).toMatch(/\.writing-preview-list h3 a\s*\{[^}]*min-height:\s*44px/s)
+    expect(css).toMatch(/\.about-links a:last-child\s*\{[^}]*min-height:\s*44px/s)
+    expect(css).toMatch(/\.footer-bottom a\s*\{[^}]*min-height:\s*44px/s)
+  })
   it('keeps light-theme homepage metadata and action text at readable contrast', () => {
     const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
     const homeCss = readFileSync(resolve(process.cwd(), 'src/components/home-sections.css'), 'utf8')
