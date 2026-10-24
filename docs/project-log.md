@@ -193,3 +193,9 @@
 - 完整审计上轮遗留的 9 个未提交源码/测试文件（含 1 个新测试）。针对性命令 `npm.cmd test -- tests/guestbook-message-actions.test.tsx tests/music-dock.test.tsx tests/music-page-accessibility.test.tsx tests/modal-surface.test.tsx`：4 文件、26/26 通过。完整 `npm.cmd test`：40 文件、423/423 通过；`npm.cmd run build`、`npm.cmd run check:edge`、`git diff --check` 均通过。受管理沙盒的 Vitest 缓存重命名曾在断言开始前遇到 EPERM；在获准的本地执行环境中原命令通过，单 worker 重试在沙盒内仍遇到同一文件系统错误。
 - Playwright CLI 在 390×844、768×1024、1024×900 的深浅主题共 6 组真实浏览器复核中，读取本地只读留言夹具并阻止所有非本机请求。操作按钮实测均为 44px；人为收窄消息气泡后操作区为 96px，子按钮无祖先裁切。音乐弹层与入口保持 10px 间距，入口与输入区保持 12px 间距，弹层位于视口内且无横向溢出。进入播放器后的前向 Tab、Escape/收起/再次点击入口/点击外部、歌单双向焦点圈定/背景 inert/关闭返回均通过；页面异常和意外 console error/warning 均为 0。
 - 本地预览 `http://127.0.0.1:5173/` 在工作树中以进程级空白 `VITE_SUPABASE_URL`、`VITE_SUPABASE_PUBLISHABLE_KEY` 启动，执行会话 `64293`、Vite PID `28580`，与真实 Supabase 断开；未读取、打印或修改 `.env*`。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`，未触碰用户所有的未跟踪 `output/`。未执行真实认证、数据库改写、上传、付费调用、外部跳转、推送、PR、部署或 DNS 变更。构建仍有原有的大包提示（主包 519.77 kB，MusicPage 527.36 kB），本轮未新增依赖。
+
+## 2026-10-24 — Field Notes Task 9 输入焦点复核
+
+- 修复音乐弹层打开后第一次点击页面表单控件时焦点被强行拉回启动按钮的问题：仅在外部点击把原生焦点交给输入框、文本域、下拉框或可编辑区域时保留该焦点；Escape、弹层内收起、启动按钮、歌单以及点击普通背景按钮仍按原规则返回。新增输入框与留言文本域两项回归，先确认两项 RED，再确认修复后 GREEN。
+- `npm.cmd test -- tests/music-dock.test.tsx tests/modal-surface.test.tsx tests/music-page-accessibility.test.tsx`：3 文件、25/25 通过；完整 `npm.cmd test`：40 文件、425/425 通过。`npm.cmd run build`、`npm.cmd run check:edge`、`git diff --check` 通过；仍为原有主包 520.04 kB / MusicPage 527.36 kB 大分块提示，未新增依赖。
+- 使用复用的本机安全预览（127.0.0.1:5173，Vite PID 28580，进程级空白 Supabase public 配置）和 Playwright CLI，在 390×844 深浅主题实际点击打开播放器，再第一次点击留言框；两种主题均确认弹层收起、留言框保持焦点、移动端启动按钮隐藏。浏览器 page exception、console error/warning 和被阻止的远端请求均为 0。浏览器证据仅存于 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未触碰 `output/`，未执行真实认证、留言写入、上传或外部操作。

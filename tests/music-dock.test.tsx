@@ -181,6 +181,22 @@ describe('mobile commerce music launcher', () => {
     expect(view.container.querySelector('.music-popover')).toHaveAttribute('inert')
   })
 
+  it.each(['textbox', 'textarea'] as const)('keeps the first-click %s focused when it dismisses the player', async (control) => {
+    const user = userEvent.setup()
+    render(<><form className="guestbook-composer">
+      <input aria-label="访客名称" />
+      <textarea aria-label="留言内容" />
+    </form><GlobalMusicDock guestbookMode /></>)
+    const launcher = screen.getByRole('button', { name: '打开音乐播放器' })
+    await user.click(launcher)
+    expect(screen.getByRole('slider', { name: '播放进度' })).toHaveFocus()
+    const field = control === 'textbox' ? screen.getByRole('textbox', { name: '访客名称' }) : screen.getByRole('textbox', { name: '留言内容' })
+    await user.click(field)
+    expect(launcher).toHaveAttribute('aria-expanded', 'false')
+    expect(field).toHaveFocus()
+    expect(screen.queryByRole('slider', { name: '播放进度' })).not.toBeInTheDocument()
+  })
+
   it.each(['Escape', 'close', 'keyboard close', 'scrim', 'selection'])('uses the real shared playlist modal lifecycle on %s', async (dismissal) => {
     const user = userEvent.setup()
     const view = render(<GlobalMusicDock />)

@@ -82,6 +82,7 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
   const dockRef = useRef<HTMLDivElement>(null)
   const launcherRef = useRef<HTMLButtonElement>(null)
   const progressRef = useRef<HTMLInputElement>(null)
+  const restoreLauncherFocusRef = useRef(true)
   const [open, setOpen] = useState(false)
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [commercePlacement, setCommercePlacement] = useState<CommerceLauncherPlacement>({ shiftX: 0, shiftY: 0, side: 'unchanged' })
@@ -91,11 +92,12 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
 
   useEffect(() => {
     if (!open) return
+    restoreLauncherFocusRef.current = true
     // Wait for the opening visibility style to take effect in real browsers.
     const frame = window.requestAnimationFrame(() => progressRef.current?.focus({ preventScroll: true }))
     return () => {
       window.cancelAnimationFrame(frame)
-      launcherRef.current?.focus({ preventScroll: true })
+      if (restoreLauncherFocusRef.current) launcherRef.current?.focus({ preventScroll: true })
     }
   }, [open])
 
@@ -105,13 +107,23 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
       // A playlist click can unmount its portal before reaching this listener.
       // It dismisses only the modal, not the player underneath it.
       if (event.target instanceof Element && event.target.closest('.playlist-layer')) return
-      if (!playlistOpen && !dockRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!playlistOpen && !dockRef.current?.contains(event.target as Node)) {
+        const focused = document.activeElement
+        const target = event.target
+        // Preserve a form field's native focus on its first outside click.
+        // Other dismissals still return focus to the launcher.
+        restoreLauncherFocusRef.current = !(focused instanceof HTMLElement
+          && focused.matches('input, textarea, select, [contenteditable="true"]')
+          && target instanceof Node
+          && (focused.contains(target) || (target instanceof HTMLLabelElement && target.control === focused)))
+        setOpen(false)
+      }
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !playlistOpen) setOpen(false)
     }
-    // Close after the outside click's native focus action, so dismissal restores
-    // the launcher instead of leaving focus in the now-hidden player subtree.
+    // Close after the outside click's native focus action so a clicked form
+    // field keeps focus while other dismissal paths restore the launcher.
     document.addEventListener('click', closeOutside)
     window.addEventListener('keydown', closeOnEscape)
     return () => {
