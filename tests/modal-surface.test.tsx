@@ -18,6 +18,16 @@ function ModalHarness() {
 }
 
 describe('ModalSurface focus lifecycle', () => {
+  it('restores the trigger after a complete backdrop pointer click', async () => {
+    const user = userEvent.setup()
+    render(<ModalHarness />)
+    const trigger = screen.getByRole('button', { name: 'Open dialog' })
+    await user.click(trigger)
+    await user.click(screen.getByRole('dialog', { name: 'Test dialog' }).parentElement!)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
   it('inerts the background, wraps both Tab directions, closes on Escape, and restores trigger focus', async () => {
     const user = userEvent.setup()
     const { container } = render(<ModalHarness />)

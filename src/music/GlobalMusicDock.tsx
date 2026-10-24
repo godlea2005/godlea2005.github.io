@@ -81,6 +81,7 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
   const music = useMusic()
   const dockRef = useRef<HTMLDivElement>(null)
   const launcherRef = useRef<HTMLButtonElement>(null)
+  const progressRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [commercePlacement, setCommercePlacement] = useState<CommerceLauncherPlacement>({ shiftX: 0, shiftY: 0, side: 'unchanged' })
@@ -90,16 +91,31 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
 
   useEffect(() => {
     if (!open) return
-    const closeOutside = (event: PointerEvent) => {
-      if (!dockRef.current?.contains(event.target as Node)) setOpen(false)
+    // Wait for the opening visibility style to take effect in real browsers.
+    const frame = window.requestAnimationFrame(() => progressRef.current?.focus({ preventScroll: true }))
+    return () => {
+      window.cancelAnimationFrame(frame)
+      launcherRef.current?.focus({ preventScroll: true })
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: MouseEvent) => {
+      // A playlist click can unmount its portal before reaching this listener.
+      // It dismisses only the modal, not the player underneath it.
+      if (event.target instanceof Element && event.target.closest('.playlist-layer')) return
+      if (!playlistOpen && !dockRef.current?.contains(event.target as Node)) setOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !playlistOpen) setOpen(false)
     }
-    document.addEventListener('pointerdown', closeOutside)
+    // Close after the outside click's native focus action, so dismissal restores
+    // the launcher instead of leaving focus in the now-hidden player subtree.
+    document.addEventListener('click', closeOutside)
     window.addEventListener('keydown', closeOnEscape)
     return () => {
-      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('click', closeOutside)
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [open, playlistOpen])
@@ -173,7 +189,7 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
   }, [commerceMode, guestbookMode])
 
   return <>
-    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}`} ref={dockRef} data-commerce-placement={commercePlacement.side} style={{ '--accent': music.track.accent, '--commerce-launcher-shift-x': `${commercePlacement.shiftX}px`, '--commerce-launcher-shift-y': `${commercePlacement.shiftY}px` } as React.CSSProperties}>
+    <div className={`music-dock${open ? ' is-open' : ''}${music.playing ? ' is-playing' : ''}${commerceMode ? ' is-commerce' : ''}${guestbookMode ? ' is-guestbook' : ''}`} ref={dockRef} data-commerce-placement={commercePlacement.side} style={{ '--accent': music.track.accent, '--commerce-launcher-shift-x': `${commercePlacement.shiftX}px`, '--commerce-launcher-shift-y': `${commercePlacement.shiftY}px` } as React.CSSProperties}>
       <aside className="music-popover" id="global-music-player" aria-label="全站音乐播放器" aria-hidden={!open} inert={open ? undefined : true}>
         <header className="music-popover-header">
           <div className="music-popover-cover" aria-hidden="true"><i /></div>
@@ -184,6 +200,7 @@ export function GlobalMusicDock({ commerceMode = false, guestbookMode = false }:
         <div className="music-popover-progress">
           <div><span>{formatTime(music.currentTime)}</span><span>{formatTime(music.duration)}</span></div>
           <input
+            ref={progressRef}
             aria-label="播放进度"
             type="range"
             min="0"

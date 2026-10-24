@@ -7,11 +7,13 @@ export function ModalSurface({
   onClose,
   label,
   className,
+  panelClassName,
 }: {
   children: ReactNode;
   onClose: () => void;
   label: string;
   className: string;
+  panelClassName?: string;
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -81,11 +83,17 @@ export function ModalSurface({
       className={className}
       ref={layerRef}
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) {
+          // Keep the backdrop's native pointer focus from stealing the focus
+          // restored by the modal cleanup when this layer unmounts.
+          event.preventDefault();
+          onClose();
+        }
       }}
     >
       <div
         ref={panelRef}
+        className={panelClassName}
         role="dialog"
         aria-modal="true"
         aria-label={label}

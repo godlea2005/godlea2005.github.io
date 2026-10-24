@@ -268,7 +268,7 @@
 .music-coordinate i { width: 42px; height: 1px; background: rgba(226,255,250,.17); }
 
 .playlist-layer { position: fixed; z-index: 100; inset: 0; visibility: hidden; pointer-events: none; }
-.playlist-layer.is-open { visibility: visible; pointer-events: auto; }
+.playlist-layer.is-open { visibility: visible; pointer-events: auto; background: rgba(0,5,6,.36); backdrop-filter: blur(5px); }
 .playlist-scrim { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(0,5,6,.36); opacity: 0; backdrop-filter: blur(0); transition: opacity .35s ease, backdrop-filter .35s ease; }
 .playlist-layer.is-open .playlist-scrim { opacity: 1; backdrop-filter: blur(5px); }
 .playlist-panel { position: absolute; inset: 0 auto 0 0; width: min(440px, 92vw); padding: 45px 34px 28px; display: flex; flex-direction: column; color: #edf9f6; border-right: 1px solid rgba(214,255,249,.15); background: linear-gradient(130deg, rgba(3,11,12,.94), rgba(3,11,12,.72)); backdrop-filter: blur(28px) saturate(1.2); transform: translateX(-102%); transition: transform .46s cubic-bezier(.22,.85,.23,1); box-shadow: 20px 0 70px rgba(0,0,0,.38); }
@@ -445,7 +445,7 @@
 }
 
 /* Collapsible global music dock */
-.music-dock { position: fixed; z-index: 95; right: clamp(16px, 2.2vw, 34px); bottom: max(clamp(16px, 2.2vw, 30px), env(safe-area-inset-bottom)); display: grid; justify-items: end; gap: 10px; color: #eff8f7; pointer-events: none; }
+.music-dock { --music-dock-bottom: max(clamp(16px, 2.2vw, 30px), env(safe-area-inset-bottom)); position: fixed; z-index: 95; right: clamp(16px, 2.2vw, 34px); bottom: var(--music-dock-bottom); display: grid; justify-items: end; gap: 10px; color: #eff8f7; pointer-events: none; }
 .music-dock .music-launcher, .music-dock .music-popover { pointer-events: auto; }
 .music-launcher { width: 48px; height: 48px; padding: 0; display: grid; place-items: center; position: relative; overflow: hidden; color: #fff; border: 1px solid rgba(230,255,250,.18); border-radius: 15px; background: rgba(5,10,12,.84); box-shadow: 0 14px 38px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.05); backdrop-filter: blur(20px) saturate(1.2); cursor: pointer; transform: translate(var(--commerce-launcher-shift-x, 0px), calc(-1 * var(--commerce-launcher-shift-y, 0px))); transition: border-color .2s ease, background .2s ease; }
 .music-launcher:hover,.music-launcher:focus-visible { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: rgba(8,15,16,.94); }
@@ -456,8 +456,11 @@
 .music-equalizer i:nth-child(2) { height: 16px; animation-delay: -.25s; }.music-equalizer i:nth-child(3) { height: 11px; animation-delay: -.45s; }
 .music-dock.is-playing .music-note { opacity: 0; transform: translateY(4px); }.music-dock.is-playing .music-equalizer { opacity: 1; }
 
-.music-popover { width: min(354px, calc(100vw - 32px)); padding: 15px; opacity: 0; visibility: hidden; transform: translateY(12px) scale(.97); transform-origin: bottom right; border: 1px solid rgba(230,255,250,.14); border-radius: 21px; background: rgba(4,9,11,.9); box-shadow: 0 24px 70px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(24px) saturate(1.2); pointer-events: none; transition: opacity .2s ease, transform .2s ease, visibility .2s; }
-.music-dock.is-open .music-popover { opacity: 1; visibility: visible; transform: translateY(0) scale(1); pointer-events: auto; }
+.music-popover { width: min(354px, calc(100vw - 32px)); padding: 15px; opacity: 0; visibility: hidden; transform: translateY(12px) scale(.97); transform-origin: bottom right; border: 1px solid rgba(230,255,250,.14); border-radius: 21px; background: rgba(4,9,11,.9); box-shadow: 0 24px 70px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(24px) saturate(1.2); pointer-events: none; transition: opacity .2s ease, transform .2s ease, visibility 0s .2s; }
+.music-dock.is-open .music-popover { opacity: 1; visibility: visible; transform: translateY(0) scale(1); pointer-events: auto; transition-delay: 0s; }
+/* Guestbook launcher and panel share the measured composer clearance. The
+   independent translate keeps the open animation and mobile fixed layout intact. */
+.music-dock.is-guestbook .music-popover { translate: var(--commerce-launcher-shift-x, 0px) calc(-1 * var(--commerce-launcher-shift-y, 0px)); max-height: calc(100dvh - var(--music-dock-bottom) - 58px - var(--commerce-launcher-shift-y, 0px) - 12px); overflow-y: auto; }
 .music-popover-header { display: grid; grid-template-columns: 52px minmax(0,1fr) 44px; align-items: center; gap: 11px; }
 .music-popover-cover { width: 52px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 14px; background: repeating-radial-gradient(circle,#0b1112 0 2px,#252b2b 3px,#0b1112 5px); }
 .music-popover-cover i { width: 16px; aspect-ratio: 1; border-radius: 50%; background: var(--accent); box-shadow: 0 0 13px color-mix(in srgb,var(--accent) 60%,transparent); }
@@ -490,13 +493,13 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .music-launcher,.music-popover { background: #070c0e; } }
 
 @media (max-width: 640px) {
-  .music-dock { right: 12px; bottom: max(12px,env(safe-area-inset-bottom)); }
+  .music-dock { --music-dock-bottom: max(12px,env(safe-area-inset-bottom)); right: 12px; }
   .music-dock.is-commerce .music-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   .music-launcher { width: 48px; height: 48px; border-radius: 15px; }
   .site-shell.is-commerce:has(.commerce-workspace input:focus, .commerce-workspace textarea:focus) .music-dock:not(.is-open) { visibility: hidden; }
   .site-shell:has(.guestbook-composer :focus) .music-dock:not(.is-open) { visibility: hidden; }
   .music-note { font-size: 24px; }
-  .music-popover { position: fixed; left: 10px; right: 10px; bottom: calc(max(12px,env(safe-area-inset-bottom)) + 58px); width: auto; padding: 14px; border-radius: 20px; transform-origin: bottom center; }
+  .music-popover { position: fixed; left: 10px; right: 10px; bottom: calc(var(--music-dock-bottom) + 58px); width: auto; padding: 14px; border-radius: 20px; transform-origin: bottom center; }
   .music-dock.is-commerce .music-popover { top: max(70px,env(safe-area-inset-top)); bottom: auto; transform-origin: top center; }
   .music-popover-controls { grid-template-columns: 44px 48px 44px 1px 44px minmax(44px,1fr) 44px; gap: 3px; }
   .music-popover-controls button { width: 32px; }.music-popover-controls .music-popover-play { width: 46px; height: 46px; }
