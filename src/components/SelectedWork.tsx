@@ -1,5 +1,6 @@
 import { projectSummaries } from '../editorial'
 import { TiltedCard } from '../editorial/TiltedCard'
+import { ProjectArtwork } from '../editorial/ProjectArtwork'
 
 export function SelectedWork() {
   return <section className="selected-work-section" aria-labelledby="selected-work-title">
@@ -12,7 +13,7 @@ export function SelectedWork() {
       {projectSummaries.map((project) => <li key={project.slug}>
         <TiltedCard className="selected-work-link" href={`#project/${project.slug}`} label={project.title}>
           <article className="selected-work-card">
-            <img src={project.cover} alt={project.coverAlt} loading="lazy" decoding="async" />
+            <ProjectArtwork src={project.cover} alt={project.coverAlt} />
             <div className="selected-work-copy">
               <p className="selected-work-meta"><span>{project.period}</span><span>个人实验</span></p>
               <h3>{project.title}</h3>

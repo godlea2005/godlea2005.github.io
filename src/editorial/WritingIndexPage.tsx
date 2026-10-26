@@ -6,13 +6,16 @@ export function WritingIndexPage() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const tags = ['设计实践', '电商内容']
   const articles = useMemo(
-    () => selectedTag === '设计实践'
-      ? articleSummaries.filter((article) => !article.tags.includes('电商内容'))
-      : selectedTag ? articleSummaries.filter((article) => article.tags.includes(selectedTag)) : articleSummaries,
+    () => {
+      const chronological = [...articleSummaries].sort((a, b) => b.date.localeCompare(a.date))
+      return selectedTag === '设计实践'
+        ? chronological.filter((article) => !article.tags.includes('电商内容'))
+        : selectedTag ? chronological.filter((article) => article.tags.includes(selectedTag)) : chronological
+    },
     [selectedTag],
   )
 
-  return <main className="editorial-page editorial-index" id="writing-index">
+  return <main className="editorial-reading-page editorial-index" id="writing-index">
     <header className="editorial-heading">
       <p className="editorial-eyebrow">FIELD NOTES / WRITING</p>
       <h1>文章与笔记</h1>
@@ -29,7 +32,7 @@ export function WritingIndexPage() {
             <time dateTime={article.date}>{article.date}</time>
             <span>{article.readingMinutes} 分钟阅读</span>
           </div>
-          <h2><a href={`#article/${article.slug}`} data-target-cursor="">{article.title}</a></h2>
+          <h2><a href={`#article/${article.slug}`}>{article.title}</a></h2>
           <p>{article.excerpt}</p>
           <ul className="editorial-tags" aria-label="文章主题">
             {article.tags.map((tag) => <li key={tag}>{tag}</li>)}

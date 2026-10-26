@@ -106,13 +106,6 @@
   box-shadow: 0 1.4rem 3rem rgb(0 0 0 / 28%);
 }
 
-.selected-work-card > img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 3 / 2;
-  object-fit: cover;
-}
-
 .selected-work-copy {
   padding: 1.2rem 1.25rem 1.35rem;
 }

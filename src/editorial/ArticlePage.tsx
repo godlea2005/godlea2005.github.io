@@ -17,14 +17,14 @@ const renderBlock = (block: ArticleBlock, index: number) => {
 
 export function ArticlePage({ slug }: { slug: string }) {
   const article = findArticle(slug)
-  if (!article) return <main className="editorial-page editorial-missing">
+  if (!article) return <main className="editorial-reading-page editorial-missing">
     <p className="editorial-eyebrow">FIELD NOTES / NOT FOUND</p>
     <h1>这篇文章还不存在</h1>
     <p>链接可能已经变化，或者这篇文章还没有发布。</p>
     <a className="editorial-return" href="#writing">返回文章索引</a>
   </main>
 
-  return <main className="editorial-page editorial-article">
+  return <main className="editorial-reading-page editorial-article">
     <a className="editorial-back" href="#writing">← 返回文章索引</a>
     <header className="article-heading">
       <p className="editorial-eyebrow">FIELD NOTES / ESSAY</p>

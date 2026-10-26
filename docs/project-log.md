@@ -199,3 +199,10 @@
 - 修复音乐弹层打开后第一次点击页面表单控件时焦点被强行拉回启动按钮的问题：仅在外部点击把原生焦点交给输入框、文本域、下拉框或可编辑区域时保留该焦点；Escape、弹层内收起、启动按钮、歌单以及点击普通背景按钮仍按原规则返回。新增输入框与留言文本域两项回归，先确认两项 RED，再确认修复后 GREEN。
 - `npm.cmd test -- tests/music-dock.test.tsx tests/modal-surface.test.tsx tests/music-page-accessibility.test.tsx`：3 文件、25/25 通过；完整 `npm.cmd test`：40 文件、425/425 通过。`npm.cmd run build`、`npm.cmd run check:edge`、`git diff --check` 通过；仍为原有主包 520.04 kB / MusicPage 527.36 kB 大分块提示，未新增依赖。
 - 使用复用的本机安全预览（127.0.0.1:5173，Vite PID 28580，进程级空白 Supabase public 配置）和 Playwright CLI，在 390×844 深浅主题实际点击打开播放器，再第一次点击留言框；两种主题均确认弹层收起、留言框保持焦点、移动端启动按钮隐藏。浏览器 page exception、console error/warning 和被阻止的远端请求均为 0。浏览器证据仅存于 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未触碰 `output/`，未执行真实认证、留言写入、上传或外部操作。
+
+## 2026-10-26 — Field Notes 最终审查缺口收口
+
+- 在既定设计/计划下审计并保留最终审查修复：延迟加载的文章/作品 CSS 仅作用于阅读页；481–760px 作品索引卡片由链接自身承载双列；新增提交后滚动边界，缓存详情/索引回到顶部、首页锚点在挂载后落位；视觉随记等模态打开时 Ctrl/Cmd+K 不再启动搜索。文章索引按日期复制排序；作品图像在首页、索引、详情共用定尺寸且带说明的错误后备；普通文章/作品索引链接移除 Target Cursor 标记。补齐不同日期的七条乱序内容、滚动、弹窗和图像错误回归。未修改业务/数据库逻辑或新增依赖。
+- 独立复跑聚焦 `10` 文件 `62/62`、完整 `43` 文件 `439/439`；`npm.cmd run build`、三个 Edge Function 的 `npm.cmd run check:edge`、`git diff --check` 均通过。构建仍有已有的大分块提示：主包 `520.15 kB`、音乐页 `527.36 kB`。
+- Playwright CLI 在真实 `600×900` 深色页面测得作品卡图片 `181.55px`、文案 `352.45px` 双列，无横向溢出；`1024×900` 深浅主题逐项走过阅读页→工具/留言/电商及相反加载顺序。已滚动 `700px` 的文章、项目和索引切换后均回到 `0`；首页锚点、后退/前进、视觉随记模态下 Ctrl/Cmd+K 抑制及关闭后搜索恢复通过。控制台 error/warning `0/0`；动态请求仅本机音乐资源，LRC 一次取消后重试 `200`、MP3 `206`，没有意外远端请求。
+- 安全预览为 `http://127.0.0.1:5174/`（Vite PID `34612`，启动包装 PID `3260`），仅绑定本机且进程级 Supabase public 环境值为空白。首次尝试的 `5173` 被占用，本轮未终止该端口上的任何进程。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未查看、打印或修改 `.env*` 内容，未触碰或暂存用户的 `output/`，未登录、写入后端、上传、调用付费接口、打开外站、推送或部署。详见忽略目录中的 `final-fix-report.md`。

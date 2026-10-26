@@ -27,6 +27,8 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        // A visible modal already owns the keyboard and focus lifecycle.
+        if (document.querySelector('[aria-modal="true"]')) return
         searchTriggerRef.current?.focus()
         setNavigationOpen(false)
         setSearchOpen(true)

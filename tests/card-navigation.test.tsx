@@ -10,6 +10,7 @@ vi.mock('../src/auth/AuthProvider', async (importOriginal) => {
 })
 
 import { FloatingHeader } from '../src/components/FloatingHeader'
+import { VisualNotes } from '../src/editorial/VisualNotes'
 
 const auth = (isAdmin = false): AuthContextValue => ({
   configured: true, ready: true, user: null, isAnonymous: true, isAdmin,
@@ -20,6 +21,25 @@ const auth = (isAdmin = false): AuthContextValue => ({
 describe('editorial card navigation', () => {
   beforeEach(() => authMock.useAuth.mockReturnValue(auth()))
   afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it.each(['Control', 'Meta'])('ignores %s+K while Visual Notes owns the modal and preserves both focus lifecycles', async (modifier) => {
+    render(<><FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} /><VisualNotes /></>)
+    const noteTrigger = screen.getByRole('button', { name: '查看：雨夜工作室窗口' })
+    await userEvent.click(noteTrigger)
+    const close = screen.getByRole('button', { name: '关闭视觉随记' })
+    expect(close).toHaveFocus()
+    await userEvent.keyboard(`{${modifier}>}k{/${modifier}}`)
+    expect(document.querySelectorAll('[aria-modal="true"]')).toHaveLength(1)
+    expect(screen.queryByRole('dialog', { name: '搜索本站', hidden: true })).not.toBeInTheDocument()
+    expect(close).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(noteTrigger).toHaveFocus()
+    expect(noteTrigger.closest('[inert]')).toBeNull()
+    await userEvent.keyboard(`{${modifier}>}k{/${modifier}}`)
+    expect(screen.getByRole('dialog', { name: '搜索本站' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: '打开搜索' })).toHaveFocus()
+  })
 
   it('expands three labeled groups, highlights the exact current route, and restores trigger focus on Escape', async () => {
     render(<FloatingHeader theme="dark" pageHash="#tools" onToggleTheme={vi.fn()} />)

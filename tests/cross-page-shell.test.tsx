@@ -33,6 +33,7 @@ import { ToolNavigationPage } from '../src/components/ToolNavigationPage'
 import { GuestbookPage } from '../src/components/GuestbookPage'
 import { CommerceStudioPage } from '../src/commerce/CommerceStudioPage'
 import { GuestbookComposer } from '../src/guestbook/GuestbookComposer'
+import { WritingIndexPage } from '../src/editorial/WritingIndexPage'
 
 const authState = (signedIn = false): AuthContextValue => ({
   configured: true, ready: true,
@@ -60,6 +61,29 @@ afterEach(() => {
 })
 
 describe('shared editorial page shells', () => {
+  it.each([
+    ['tools', <ToolNavigationPage />],
+    ['guestbook', <GuestbookPage />],
+    ['commerce', <CommerceStudioPage />],
+  ])('keeps lazy reading CSS from matching the %s shell after visiting writing', async (_name, page) => {
+    const view = render(<div className="site-shell"><WritingIndexPage /></div>)
+    view.rerender(<div className="site-shell">{page}</div>)
+    await act(async () => {})
+    const css = readFileSync(resolve(process.cwd(), 'src/editorial/editorial-pages.css'), 'utf8')
+    const selectors = [...css.matchAll(/([^{}]+)\{/g)]
+      .flatMap((match) => match[1].trim().split(','))
+      .filter((selector) => !selector.trim().startsWith('@'))
+    for (const selector of selectors) {
+      expect(view.container.querySelector(selector.trim()), `Reading selector leaked: ${selector}`).toBeNull()
+    }
+  })
+
+  it('lays out a 600px project card in two columns only at its anchor', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/editorial/editorial-pages.css'), 'utf8')
+    const tablet = css.split('@media (max-width: 760px)')[1].split('@media (max-width: 480px)')[0]
+    expect(tablet).not.toMatch(/\.project-card\s*\{[^}]*display:\s*grid/)
+    expect(tablet).toMatch(/\.project-card > a\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:/)
+  })
   it('gives light editorial metadata and compact navigation text at least 4.5:1 contrast', () => {
     const editorialCss = readFileSync(resolve(process.cwd(), 'src/editorial/editorial-pages.css'), 'utf8')
     const navCss = readFileSync(resolve(process.cwd(), 'src/components/card-nav.css'), 'utf8')

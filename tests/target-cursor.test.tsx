@@ -199,8 +199,11 @@ describe('TargetCursor', () => {
     const work = readFileSync(resolve(process.cwd(), 'src/editorial/WorkIndexPage.tsx'), 'utf8')
     expect(header).not.toContain('data-target-cursor')
     expect(hero).not.toContain('data-target-cursor')
-    expect(writing).toContain('data-target-cursor')
-    expect(work).toContain('data-target-cursor')
+    expect(writing).not.toContain('data-target-cursor')
+    expect(work).not.toContain('data-target-cursor')
+    for (const file of ['components/CardNav.tsx', 'components/FeaturedNotes.tsx', 'editorial/TiltedCard.tsx', 'components/ToolNavigationPage.tsx']) {
+      expect(readFileSync(resolve(process.cwd(), 'src', file), 'utf8')).toContain('data-target-cursor')
+    }
   })
 
   it('ignores unannotated inputs and protected descendants', () => {

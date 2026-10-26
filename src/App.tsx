@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import { HomePage } from './components/HomePage'
 import { FloatingHeader } from './components/FloatingHeader'
 import { TargetCursor } from './components/TargetCursor'
+import { RouteScrollBoundary } from './components/RouteScrollBoundary'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
 import { isSiteSubpageRoute, parseSiteRoute } from './lib/siteRoutes'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
@@ -34,10 +35,14 @@ function App() {
 
   useLayoutEffect(() => applyTheme(theme), [theme])
   useEffect(() => {
+    // Hash routes own their scroll position; preserve the browser's setting on teardown.
+    const previousRestoration = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
     const handleLocationChange = () => setPageHash(resolvePageHash())
     window.addEventListener('hashchange', handleLocationChange)
     window.addEventListener('popstate', handleLocationChange)
     return () => {
+      window.history.scrollRestoration = previousRestoration
       window.removeEventListener('hashchange', handleLocationChange)
       window.removeEventListener('popstate', handleLocationChange)
     }
@@ -53,7 +58,13 @@ function App() {
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
       <TargetCursor />
 
-      {musicPage ? <Suspense fallback={<main className="music-loading">LOADING AUDIO FIELD</main>}><MusicPage /></Suspense> : guestbookPage ? <Suspense fallback={<main className="music-loading">CONNECTING OPEN CHANNEL</main>}><GuestbookPage /></Suspense> : commercePage ? <Suspense fallback={<main className="commerce-loading">OPENING COMMERCE LAB</main>}><CommerceStudioPage /></Suspense> : commerceAdminPage ? <Suspense fallback={<main className="commerce-loading">OPENING OPERATOR CONSOLE</main>}><CommerceAdminPage /></Suspense> : toolsPage ? <Suspense fallback={<main className="music-loading">OPENING TOOL INDEX</main>}><ToolNavigationPage /></Suspense> : route.kind === 'static' && route.page === 'writing' ? <Suspense fallback={<main className="editorial-loading">载入文章索引</main>}><WritingIndexPage /></Suspense> : route.kind === 'article' ? <Suspense fallback={<main className="editorial-loading">载入文章</main>}><ArticlePage slug={route.slug} /></Suspense> : route.kind === 'static' && route.page === 'work' ? <Suspense fallback={<main className="editorial-loading">载入项目索引</main>}><WorkIndexPage /></Suspense> : route.kind === 'project' ? <Suspense fallback={<main className="editorial-loading">载入项目</main>}><ProjectPage slug={route.slug} /></Suspense> : <HomePage theme={theme} />}
+      <Suspense fallback={<main className={commercePage || commerceAdminPage ? 'commerce-loading' : 'music-loading'}>
+        {musicPage ? 'LOADING AUDIO FIELD' : guestbookPage ? 'CONNECTING OPEN CHANNEL' : commercePage ? 'OPENING COMMERCE LAB' : commerceAdminPage ? 'OPENING OPERATOR CONSOLE' : toolsPage ? 'OPENING TOOL INDEX' : '载入现场笔记'}
+      </main>}>
+        <RouteScrollBoundary pageHash={pageHash}>
+          {musicPage ? <MusicPage /> : guestbookPage ? <GuestbookPage /> : commercePage ? <CommerceStudioPage /> : commerceAdminPage ? <CommerceAdminPage /> : toolsPage ? <ToolNavigationPage /> : route.kind === 'static' && route.page === 'writing' ? <WritingIndexPage /> : route.kind === 'article' ? <ArticlePage slug={route.slug} /> : route.kind === 'static' && route.page === 'work' ? <WorkIndexPage /> : route.kind === 'project' ? <ProjectPage slug={route.slug} /> : <HomePage theme={theme} />}
+        </RouteScrollBoundary>
+      </Suspense>
       {!musicPage && <GlobalMusicDock commerceMode={commercePage || commerceAdminPage} guestbookMode={guestbookPage} />}
     </div>
   )
