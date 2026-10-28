@@ -45,10 +45,11 @@ export function StatusScene({ theme }: { theme: Theme }) {
             文昊的个人空间 <span>持续探索，认真创造</span>
           </p>
           <h1 id="home-title" aria-label="WENHAO 博客">
-            {fineHover && !reducedMotion ? <ParticleText
+            <ParticleText
               text={site.englishName}
               colors={theme === "light" ? lightParticleColors : darkParticleColors}
-            /> : <span className="scene-static-wordmark" aria-hidden="true">{site.englishName}</span>}
+              interaction={fineHover ? 'repel-and-burst' : 'tap-burst'}
+            />
             <span className="scene-blog">
               博客<span aria-hidden="true">.</span>
             </span>

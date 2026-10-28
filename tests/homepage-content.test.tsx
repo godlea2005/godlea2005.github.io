@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const gradientWavesSpy = vi.hoisted(() => vi.fn())
+const particleTextSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('../src/components/GradientWaves/GradientWaves', () => ({
   default: (props: Record<string, unknown>) => {
@@ -13,7 +14,10 @@ vi.mock('../src/components/GradientWaves/GradientWaves', () => ({
 }))
 
 vi.mock('../src/components/ParticleText/ParticleText', () => ({
-  ParticleText: ({ text }: { text: string }) => <span data-testid="particle-text">{text}</span>,
+  ParticleText: (props: { text: string; interaction?: string }) => {
+    particleTextSpy(props)
+    return <span data-testid="particle-text">{props.text}</span>
+  },
 }))
 
 import { CommerceHomeSection } from '../src/components/CommerceHomeSection'
@@ -25,10 +29,25 @@ const defaultMatchMedia = window.matchMedia
 afterEach(() => {
   cleanup()
   gradientWavesSpy.mockClear()
+  particleTextSpy.mockClear()
   window.matchMedia = defaultMatchMedia
 })
 
 describe('AI commerce homepage positioning', () => {
+  it.each([
+    { fine: true, reduced: false, interaction: 'repel-and-burst' },
+    { fine: false, reduced: false, interaction: 'tap-burst' },
+    { fine: false, reduced: true, interaction: 'tap-burst' },
+  ])('delegates title interaction and reduced-motion fallback for $fine/$reduced', ({ fine, reduced, interaction }) => {
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)' ? reduced : fine,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })) as typeof window.matchMedia
+    render(<StatusScene theme="dark" />)
+    expect(screen.getByTestId('particle-text')).toBeInTheDocument()
+    expect(particleTextSpy).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'WENHAO', interaction }))
+  })
+
   it('uses the approved hero copy and routes both calls to action', () => {
     render(<StatusScene theme="dark" />)
 

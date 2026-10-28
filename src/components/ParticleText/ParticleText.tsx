@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useMotionProfile } from '../../lib/useMotionProfile'
 import './ParticleText.css'
 
@@ -9,6 +9,8 @@ type ParticleTextProps = {
   particleGap?: number
   mouseRadius?: number
   mouseStrength?: number
+  interaction?: 'none' | 'repel-and-burst' | 'tap-burst'
+  burstStrength?: number
   friction?: number
   ease?: number
   className?: string
@@ -25,11 +27,14 @@ const settledFrames = 12
 
 export function ParticleText({
   text, colors = defaultColors, particleSize = 1.55, particleGap = 3,
+  mouseRadius = 88, mouseStrength = 0.9, interaction = 'none', burstStrength = 1.15,
   friction = 0.78, ease = 0.055, className = '',
 }: ParticleTextProps) {
   const { reducedMotion, fineHover } = useMotionProfile()
-  const animated = fineHover && !reducedMotion
-  const rootRef = useRef<HTMLSpanElement>(null)
+  const animated = !reducedMotion
+  const interactive = interaction !== 'none' && !reducedMotion
+  const rootRef = useRef<HTMLElement | null>(null)
+  const setRoot = useCallback((node: HTMLElement | null) => { rootRef.current = node }, [])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [stage, setStage] = useState<'fallback' | 'forming' | 'settled'>('fallback')
 
@@ -37,8 +42,12 @@ export function ParticleText({
     if (!animated) return
     const root = rootRef.current
     const canvas = canvasRef.current
-    const context = canvas?.getContext('2d')
-    if (!root || !canvas || !context) return
+    if (!root || !canvas) return
+    canvas.hidden = false
+    let context: CanvasRenderingContext2D | null
+    try { context = canvas.getContext('2d') } catch { context = null }
+    if (!context) { canvas.hidden = true; setStage('fallback'); return }
+    const ctx = context
 
     let particles: Particle[] = []
     let frame = 0
@@ -47,19 +56,33 @@ export function ParticleText({
     let height = 0
     let calmFrames = 0
     let isSettled = false
+    let burstActive = false
+    let failed = false
+    let observer: ResizeObserver | null = null
 
     const stop = () => {
       if (frame) window.cancelAnimationFrame(frame)
       frame = 0
     }
+    const fail = () => {
+      failed = true
+      stop()
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
+      resizeFrame = 0
+      particles = []
+      canvas.hidden = true
+      setStage('fallback')
+    }
     const draw = () => {
-      context.clearRect(0, 0, width, height)
+      try {
+      ctx.clearRect(0, 0, width, height)
       for (const particle of particles) {
-        context.fillStyle = particle.color
-        context.beginPath()
-        context.arc(particle.x, particle.y, particleSize, 0, Math.PI * 2)
-        context.fill()
+        ctx.fillStyle = particle.color
+        ctx.beginPath()
+        ctx.arc(particle.x, particle.y, particleSize, 0, Math.PI * 2)
+        ctx.fill()
       }
+      } catch { fail() }
     }
     const animate = () => {
       frame = 0
@@ -74,16 +97,59 @@ export function ParticleText({
           Math.abs(particle.velocityX) + Math.abs(particle.velocityY))
       }
       draw()
+      if (failed) return
       calmFrames = maxError < settledError ? calmFrames + 1 : 0
       if (calmFrames >= settledFrames) {
         isSettled = true
+        burstActive = false
         setStage('settled')
       } else if (!document.hidden) frame = window.requestAnimationFrame(animate)
     }
     const start = () => {
-      if (!document.hidden && !isSettled && !frame && particles.length) frame = window.requestAnimationFrame(animate)
+      if (!failed && !document.hidden && !isSettled && !frame && particles.length) frame = window.requestAnimationFrame(animate)
+    }
+    const disturb = () => {
+      if (failed) return
+      calmFrames = 0
+      isSettled = false
+      setStage('forming')
+      start()
+    }
+    const repelAt = (clientX: number, clientY: number) => {
+      if (failed || document.hidden) return
+      const bounds = root.getBoundingClientRect()
+      const pointerX = clientX - bounds.left
+      const pointerY = clientY - bounds.top
+      let affected = false
+      for (const particle of particles) {
+        const dx = particle.x - pointerX
+        const dy = particle.y - pointerY
+        const distance = Math.max(1, Math.hypot(dx, dy))
+        if (distance >= mouseRadius) continue
+        affected = true
+        const force = (1 - distance / mouseRadius) * mouseStrength
+        particle.velocityX += (dx / distance) * force * 9
+        particle.velocityY += (dy / distance) * force * 9
+      }
+      if (affected) disturb()
+    }
+    const onPointerMove = (event: PointerEvent) => repelAt(event.clientX, event.clientY)
+    const burst = () => {
+      if (failed || document.hidden || burstActive || !isSettled) return
+      for (const particle of particles) {
+        const dx = particle.x - width / 2
+        const dy = particle.y - height / 2
+        const distance = Math.hypot(dx, dy)
+        const angle = distance ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2
+        particle.velocityX += Math.cos(angle) * 18 * burstStrength
+        particle.velocityY += Math.sin(angle) * 18 * burstStrength
+      }
+      burstActive = true
+      disturb()
     }
     const build = () => {
+      if (failed) return
+      try {
       const bounds = root.getBoundingClientRect()
       const nextWidth = Math.max(1, Math.round(bounds.width))
       const nextHeight = Math.max(1, Math.round(bounds.height))
@@ -96,13 +162,13 @@ export function ParticleText({
       canvas.height = Math.round(height * dpr)
       canvas.style.width = `${width}px`
       canvas.style.height = `${height}px`
-      context.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       const sampleCanvas = document.createElement('canvas')
       sampleCanvas.width = width
       sampleCanvas.height = height
       const sample = sampleCanvas.getContext('2d', { willReadFrequently: true })
-      if (!sample) { setStage('fallback'); return }
+      if (!sample) { fail(); return }
       let fontSize = Math.min(174, height * 0.84)
       sample.font = `900 ${fontSize}px Inter, Arial, sans-serif`
       const measured = sample.measureText(text).width
@@ -129,18 +195,21 @@ export function ParticleText({
       particles = next
       calmFrames = 0
       isSettled = false
+      burstActive = false
       setStage(particles.length ? 'forming' : 'fallback')
       draw()
       start()
+      } catch { fail() }
     }
     const onResize = () => {
-      if (document.hidden) return
+      if (failed || document.hidden) return
       const bounds = root.getBoundingClientRect()
       if (Math.max(1, Math.round(bounds.width)) === width && Math.max(1, Math.round(bounds.height)) === height) return
       if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
       resizeFrame = window.requestAnimationFrame(() => { resizeFrame = 0; if (!document.hidden) build() })
     }
     const onVisibility = () => {
+      if (failed) return
       if (document.hidden) {
         stop()
         if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
@@ -150,21 +219,39 @@ export function ParticleText({
         start()
       }
     }
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null
-    observer?.observe(root)
-    if (!observer) window.addEventListener('resize', onResize)
-    document.addEventListener('visibilitychange', onVisibility)
-    build()
-    return () => {
+    const cleanup = () => {
       stop()
       if (resizeFrame) window.cancelAnimationFrame(resizeFrame)
       observer?.disconnect()
       if (!observer) window.removeEventListener('resize', onResize)
       document.removeEventListener('visibilitychange', onVisibility)
+      root.removeEventListener('pointermove', onPointerMove)
+      root.removeEventListener('click', burst)
     }
-  }, [animated, colors, ease, friction, particleGap, particleSize, text])
+    build()
+    if (failed) return cleanup
+    try {
+      observer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null
+      observer?.observe(root)
+    } catch {
+      observer?.disconnect()
+      observer = null
+      fail()
+      return cleanup
+    }
+    if (!observer) window.addEventListener('resize', onResize)
+    document.addEventListener('visibilitychange', onVisibility)
+    if (interaction !== 'none') root.addEventListener('click', burst)
+    if (interaction === 'repel-and-burst' && fineHover) root.addEventListener('pointermove', onPointerMove)
+    return cleanup
+  }, [animated, colors, ease, friction, particleGap, particleSize, text, interaction, fineHover, mouseRadius, mouseStrength, burstStrength])
 
-  return <span ref={rootRef} className={`particle-text is-${animated ? stage : 'fallback'}${className ? ` ${className}` : ''}`} role="img" aria-label={text}>
+  if (interactive) return <button ref={setRoot} type="button" className={`particle-text particle-text-trigger is-${stage}${className ? ` ${className}` : ''}`} aria-label={`重新组合 ${text} 粒子标题`}>
+    <span className="particle-text-fallback" aria-hidden="true">{text}</span>
+    {animated && <canvas ref={canvasRef} aria-hidden="true" />}
+  </button>
+
+  return <span ref={setRoot} className={`particle-text is-${animated ? stage : 'fallback'}${className ? ` ${className}` : ''}`} role="img" aria-label={text}>
     <span className="particle-text-fallback" aria-hidden="true">{text}</span>
     {animated && <canvas ref={canvasRef} aria-hidden="true" />}
   </span>

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ParticleText } from '../src/components/ParticleText/ParticleText'
 
@@ -8,7 +9,15 @@ const originalHidden = Object.getOwnPropertyDescriptor(document, 'hidden')
 const originalRaf = window.requestAnimationFrame
 const originalCancel = window.cancelAnimationFrame
 
-function setup({ fine = true, reduced = false } = {}) {
+type SetupOptions = {
+  fine?: boolean
+  reduced?: boolean
+  sampledParticles?: ReadonlyArray<readonly [number, number]>
+  canvasFailure?: 'none' | 'missing-context' | 'sample-error'
+  observerThrows?: boolean
+}
+
+function setup({ fine = true, reduced = false, sampledParticles = [[0, 0]], canvasFailure = 'none', observerThrows = false }: SetupOptions = {}) {
   window.matchMedia = vi.fn((query: string) => ({
     matches: query === '(prefers-reduced-motion: reduce)' ? reduced : fine,
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -21,7 +30,10 @@ function setup({ fine = true, reduced = false } = {}) {
   const disconnect = vi.fn()
   class ResizeMock {
     callback: ResizeObserverCallback
-    constructor(callback: ResizeObserverCallback) { this.callback = callback; instances.push(this) }
+    constructor(callback: ResizeObserverCallback) {
+      if (observerThrows) throw new Error('observer failed')
+      this.callback = callback; instances.push(this)
+    }
     observe = resize
     disconnect = disconnect
   }
@@ -32,18 +44,27 @@ function setup({ fine = true, reduced = false } = {}) {
     setTransform: vi.fn(), font: '', measureText: vi.fn(() => ({ width: 100 })),
     textAlign: '', textBaseline: '', fillText: vi.fn(),
     getImageData: vi.fn((_: number, __: number, width: number, height: number) => {
+      if (canvasFailure === 'sample-error') throw new Error('sample failed')
       const data = new Uint8ClampedArray(width * height * 4)
-      data[3] = 255
+      sampledParticles.forEach(([x, y]) => {
+        if (x < width && y < height) data[(y * width + x) * 4 + 3] = 255
+      })
       return { data }
     }),
   }
-  const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
+  const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValue(canvasFailure === 'missing-context' ? null : context as unknown as CanvasRenderingContext2D)
   const flush = () => {
     const pending = [...frames.values()]
     frames.clear()
     act(() => pending.forEach((callback) => callback(performance.now())))
   }
-  return { frames, instances, resize, disconnect, getContext, flush }
+  return { frames, instances, resize, disconnect, getContext, context, flush }
+}
+
+const flushUntilSettled = (env: ReturnType<typeof setup>, limit = 160) => {
+  for (let frame = 0; frame < limit && env.frames.size; frame += 1) env.flush()
+  expect(env.frames.size).toBe(0)
 }
 
 afterEach(() => {
@@ -58,7 +79,7 @@ afterEach(() => {
 })
 
 describe('ParticleText', () => {
-  it('forms once, settles after twelve calm frames, ignores pointer movement, and rebuilds only on size change', () => {
+  it('forms once in default non-interactive mode and rebuilds only on size change', () => {
     const env = setup()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     const view = render(<ParticleText text="WENHAO" />)
@@ -66,6 +87,7 @@ describe('ParticleText', () => {
     expect(env.frames.size).toBe(1)
     for (let i = 0; i < 12; i++) env.flush()
     expect(env.frames.size).toBe(0)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
     fireEvent.pointerMove(screen.getByRole('img', { name: 'WENHAO' }))
     expect(env.frames.size).toBe(0)
     vi.spyOn(screen.getByRole('img', { name: 'WENHAO' }), 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40))
@@ -105,12 +127,73 @@ describe('ParticleText', () => {
     view.unmount()
   })
 
-  it.each([{ fine: false, reduced: false }, { fine: true, reduced: true }])('uses only a static wordmark for $fine/$reduced', (options) => {
-    const env = setup(options)
-    render(<ParticleText text="WENHAO" />)
-    expect(screen.getByRole('img', { name: 'WENHAO' })).toHaveTextContent('WENHAO')
+  it('wakes settled particles for local pointer repulsion and settles again', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, 80))
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const env = setup({ sampledParticles: [[24, 24], [180, 24]] })
+    render(<ParticleText text="WENHAO" interaction="repel-and-burst" mouseRadius={88} mouseStrength={0.9} />)
+    flushUntilSettled(env)
+    const title = screen.getByRole('button', { name: '重新组合 WENHAO 粒子标题' })
+    env.context.arc.mockClear()
+    vi.mocked(window.requestAnimationFrame).mockClear()
+    fireEvent.pointerMove(title, { clientX: 25, clientY: 24 })
+    expect(env.frames.size).toBe(1)
+    env.flush()
+    expect(env.context.arc.mock.calls[0][0]).toBeLessThan(24)
+    expect(env.context.arc.mock.calls[1][0]).toBe(180)
+    flushUntilSettled(env)
+  })
+
+  it('bursts on click, Enter and Space without stacking an active burst', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40))
+    const user = userEvent.setup()
+    const env = setup()
+    render(<ParticleText text="WENHAO" interaction="repel-and-burst" />)
+    const title = screen.getByRole('button', { name: '重新组合 WENHAO 粒子标题' })
+    flushUntilSettled(env)
+    fireEvent.click(title)
+    fireEvent.click(title)
+    expect(env.frames.size).toBe(1)
+    flushUntilSettled(env)
+    title.focus()
+    await user.keyboard('{Enter}')
+    expect(env.frames.size).toBe(1)
+    flushUntilSettled(env)
+    await user.keyboard('[Space]')
+    expect(env.frames.size).toBe(1)
+    flushUntilSettled(env)
+  })
+
+  it('forms and replays finitely on a coarse pointer without pointer tracking', () => {
+    const env = setup({ fine: false, reduced: false })
+    render(<ParticleText text="WENHAO" interaction="tap-burst" />)
+    expect(screen.getByRole('button').querySelector('canvas')).toBeInTheDocument()
+    flushUntilSettled(env)
+    fireEvent.pointerMove(screen.getByRole('button'), { clientX: 1, clientY: 0 })
+    expect(env.frames.size).toBe(0)
+    fireEvent.click(screen.getByRole('button'))
+    expect(env.frames.size).toBe(1)
+    flushUntilSettled(env)
+  })
+
+  it('uses only the static accessible fallback under reduced motion', () => {
+    const env = setup({ fine: false, reduced: true })
+    render(<ParticleText text="WENHAO" interaction="tap-burst" />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'WENHAO' }).querySelector('canvas')).not.toBeInTheDocument()
-    expect(env.getContext).not.toHaveBeenCalled()
+    expect(env.frames.size).toBe(0)
+  })
+
+  it.each([
+    { canvasFailure: 'missing-context' as const, observerThrows: false },
+    { canvasFailure: 'sample-error' as const, observerThrows: false },
+    { canvasFailure: 'none' as const, observerThrows: true },
+  ])('falls back without leaking work after a rendering primitive fails', (options) => {
+    const env = setup(options)
+    expect(() => render(<ParticleText text="WENHAO" />)).not.toThrow()
+    expect(screen.getByRole('img', { name: 'WENHAO' })).toHaveTextContent('WENHAO')
+    expect(env.frames.size).toBe(0)
     expect(env.instances).toHaveLength(0)
+    expect(document.querySelector('.particle-text')).toHaveClass('is-fallback')
   })
 })
