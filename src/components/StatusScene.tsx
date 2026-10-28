@@ -8,6 +8,11 @@ import "./status-scene.css";
 
 const darkParticleColors = ["#f7f5ff", "#ded9f6", "#b8afd9", "#e9aecf"];
 const lightParticleColors = ["#201f2a", "#39344f", "#6b5b91", "#9b567d"];
+const heroStatements = [
+  '记录设计与技术的现场',
+  '把想法做成看得见的作品',
+  '在商业与创作之间持续实践',
+] as const;
 
 export function StatusScene({ theme }: { theme: Theme }) {
   const { reducedMotion, fineHover } = useMotionProfile();
@@ -57,11 +62,7 @@ export function StatusScene({ theme }: { theme: Theme }) {
           <p className="scene-role-line">
             AI 设计师 <span>/</span> 电商运营 <span>/</span> 前端开发
           </p>
-          <p className="scene-statement"><TextType texts={[
-            "记录设计与技术的现场",
-            "把想法做成看得见的作品",
-            "在商业与创作之间持续实践",
-          ]} /></p>
+          <p className="scene-statement"><TextType texts={heroStatements} loop /></p>
           <div className="scene-actions">
             <a href="#featured" className="scene-primary">
               开始阅读 <span aria-hidden="true">→</span>

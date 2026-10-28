@@ -120,6 +120,7 @@ describe('AI commerce homepage positioning', () => {
     expect(scene).toContain('aria-hidden="true"')
     expect(scene).toContain('useMotionProfile')
     expect(scene).toContain('在商业与创作之间持续实践')
+    expect(scene).toContain('<TextType texts={heroStatements} loop />')
 
     const content = readSource('src/content/site.ts')
     const styles = readSource('src/styles.css')
