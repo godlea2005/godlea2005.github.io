@@ -22,6 +22,15 @@ describe('editorial card navigation', () => {
   beforeEach(() => authMock.useAuth.mockReturnValue(auth()))
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
+  it('keeps search and theme controls in one vertically centered 44px capsule', () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    const search = screen.getByRole('button', { name: '打开搜索' })
+    const theme = screen.getByRole('button', { name: /切换至.+模式/ })
+    expect(search.querySelector('[aria-hidden="true"]')).toHaveClass('floating-action-icon')
+    expect(theme.querySelector('[aria-hidden="true"]')).toHaveClass('floating-action-icon')
+    expect(search.closest('.floating-actions')).toContainElement(theme)
+  })
+
   it.each(['Control', 'Meta'])('ignores %s+K while Visual Notes owns the modal and preserves both focus lifecycles', async (modifier) => {
     render(<><FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} /><VisualNotes /></>)
     const noteTrigger = screen.getByRole('button', { name: '查看：雨夜工作室窗口' })

@@ -61,6 +61,13 @@ afterEach(() => {
 })
 
 describe('shared editorial page shells', () => {
+  it('defines centered fixed boxes without relocating the action capsule', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/floating-header.css'), 'utf8')
+    expect(css).toMatch(/\.floating-actions button\s*\{[^}]*height:\s*44px[^}]*display:\s*grid[^}]*place-items:\s*center/s)
+    expect(css).toMatch(/\.floating-action-icon\s*\{[^}]*width:\s*24px[^}]*height:\s*24px[^}]*place-items:\s*center/s)
+    expect(css).toMatch(/\.floating-actions\s*\{[^}]*justify-self:\s*end/s)
+    expect(css).toMatch(/@media \(max-width:\s*1080px\)[\s\S]*?\.floating-search\s*\{[^}]*grid-template-columns:\s*24px[^}]*column-gap:\s*0/s)
+  })
   it.each([
     ['tools', <ToolNavigationPage />],
     ['guestbook', <GuestbookPage />],

@@ -51,10 +51,10 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
       <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={setNavigationOpen} onNavigate={closeNavigation} />
       <div className="floating-actions">
         <button ref={searchTriggerRef} className="floating-search" type="button" onClick={() => setSearchOpen(true)} aria-label="打开搜索">
-          <span aria-hidden="true">⌕</span><kbd>⌘ / Ctrl K</kbd>
+          <span className="floating-action-icon" aria-hidden="true">⌕</span><kbd>⌘ / Ctrl K</kbd>
         </button>
         <button className="floating-theme" type="button" onClick={onToggleTheme} aria-label={`切换至${theme === 'dark' ? '浅色' : '深色'}模式`}>
-          <span aria-hidden="true">{theme === 'dark' ? '☼' : '◐'}</span>
+          <span className="floating-action-icon" aria-hidden="true">{theme === 'dark' ? '☼' : '◐'}</span>
         </button>
       </div>
     </header>
