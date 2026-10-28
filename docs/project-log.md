@@ -206,3 +206,9 @@
 - 独立复跑聚焦 `10` 文件 `62/62`、完整 `43` 文件 `439/439`；`npm.cmd run build`、三个 Edge Function 的 `npm.cmd run check:edge`、`git diff --check` 均通过。构建仍有已有的大分块提示：主包 `520.15 kB`、音乐页 `527.36 kB`。
 - Playwright CLI 在真实 `600×900` 深色页面测得作品卡图片 `181.55px`、文案 `352.45px` 双列，无横向溢出；`1024×900` 深浅主题逐项走过阅读页→工具/留言/电商及相反加载顺序。已滚动 `700px` 的文章、项目和索引切换后均回到 `0`；首页锚点、后退/前进、视觉随记模态下 Ctrl/Cmd+K 抑制及关闭后搜索恢复通过。控制台 error/warning `0/0`；动态请求仅本机音乐资源，LRC 一次取消后重试 `200`、MP3 `206`，没有意外远端请求。
 - 安全预览为 `http://127.0.0.1:5174/`（Vite PID `34612`，启动包装 PID `3260`），仅绑定本机且进程级 Supabase public 环境值为空白。首次尝试的 `5173` 被占用，本轮未终止该端口上的任何进程。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未查看、打印或修改 `.env*` 内容，未触碰或暂存用户的 `output/`，未登录、写入后端、上传、调用付费接口、打开外站、推送或部署。详见忽略目录中的 `final-fix-report.md`。
+## 2026-10-28 — Motion and loading polish 本地自动验证（浏览器待补）
+
+- 实现范围 `91f1259..2d63987`（含 `91f1259`；基线 HEAD `2d639879c75f82b7400dc9a2e2af2e1250383e45`）。聚焦命令 `npm.cmd test -- tests/route-loading-screen.test.tsx tests/particle-text.test.tsx tests/text-type.test.tsx tests/card-navigation.test.tsx tests/homepage-content.test.tsx tests/homepage-editorial.test.tsx tests/cross-page-shell.test.tsx tests/app-scroll.test.tsx tests/motion-profile.test.tsx tests/gradient-waves.test.tsx`：10 文件、75/75 通过；`npm.cmd test`：44 文件、464/464 通过。分别出现 9 和 15 条 jsdom Canvas `getContext()` 未实现提示；未见未处理拒绝、计时器泄漏或孤立动画帧警告。
+- `npm.cmd run build` 通过（218 模块）；保留大于 500 kB 的分块警告：index 524.28 kB、MusicPage 527.36 kB。`npm.cmd run check:edge` 的三个入口均通过；`git diff --check` 通过。
+- 使用进程级空白 Supabase public 值在 `127.0.0.1:4179` 启动预览并确认 HTTP 200，随后停止进程树。Playwright CLI 启动无输出且未建立会话，因此五个加载路由、缓存回访、遮罩及控件几何、焦点隔离、隐藏标签、粒子与打字循环、减少动态、粗指针、Canvas/observer 后备、双主题四尺寸、溢出及浏览器控制台均未进行真实浏览器验证；不能认定通过。自动化结果不替代这些检查。
+- 未读取或编辑 `.env*`，未触碰或暂存用户原有的 `output/`；未操作后端、认证、密钥、远程 Git 或生产环境。未测试真实登录、持久化、生成、上传、付费 API 或外部导航。
