@@ -208,6 +208,14 @@
 - 安全预览为 `http://127.0.0.1:5174/`（Vite PID `34612`，启动包装 PID `3260`），仅绑定本机且进程级 Supabase public 环境值为空白。首次尝试的 `5173` 被占用，本轮未终止该端口上的任何进程。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未查看、打印或修改 `.env*` 内容，未触碰或暂存用户的 `output/`，未登录、写入后端、上传、调用付费接口、打开外站、推送或部署。详见忽略目录中的 `final-fix-report.md`。
 ## 2026-10-28 — Motion and loading polish 本地自动验证（浏览器待补）
 
+### 浏览器补验（替代下方“未进行真实浏览器验证”的状态）
+
+- Playwright CLI 本地 Chromium，127.0.0.1:4181，外部请求阻断。五个路由在各自新上下文延迟页面模块 1200ms：遮罩均为 `[0,0,1440,1000]`、z-index 1000、文案正确，左上命中遮罩；Tab 焦点留在 body，遮罩期间 shell 兄弟节点 inert，退出后 shell 子节点 inert 均恢复。加载至退出分别 2379、3048、2404、2500、2477ms（包含导航及延迟，不能作为精确最低时长）；同上下文返回首页再访问五条路由，150ms 检查均无遮罩。预先存在的关闭导航及音乐面板仍保持各自 inert。
+- 深浅主题各测 1440×1000、1024×900、768×1024、390×844：搜索与主题图标中心分别为 43px（1440）或 37px（其余）；1440 的快捷键中心亦为 43px，其他尺寸快捷键隐藏。按钮高度均 44px，搜索按钮宽度 95.66px 或 44px，主题按钮宽度 44px；胶囊右侧边距分别约 100.34、12、12、12px。文档宽度等于视口，无横向溢出。这里只测量了胶囊按钮，未逐个审计所有页面控件或裁切。
+- 粒子标题从 forming 到 settled；鼠标移入、点击、Enter、Space 后均再次进入 forming，键盘焦点保留。Canvas 获取、像素采样、ResizeObserver 构造分别注入失败时显示可读 WENHAO fallback，无页面异常；减少动态为无 canvas 静态标题，粗指针上下文标题可读并进入 settled。未逐粒子量化局部位移、每次完整回聚、空闲帧或粗指针点击。
+- 22 秒内观测到最终语句完整出现三次，三次均逐字删至空后从“记”重新开始；模拟 hidden 700ms 时当前文字不变，恢复后继续变化。加载中模拟 visibilitychange 后出现 is-page-hidden，进度动画状态 paused；恢复后类移除并正常完成。波浪测试误取伪元素，粒子帧暂停未实测，不能据此声明通过。
+- 工具路由减少动态时静态 wordmark 与底色完整；注入 Canvas/采样失败时遮罩文案、静态 WENHAO 和渐变完整、无页面异常。总导航耗时普通 1811ms、减少动态 1268ms（含网络和页面初始化，不足以独立证明 120ms 退出或无最低延迟）。捕获的路由和标题测试 console warning/error 与 page exception 为零；未完整覆盖退出中 Tab、指针阻断及所有主题交互。预览与浏览器已关闭，4181 无监听；仅临时目录存放测试脚本与浏览器产物，`output/` 未触碰。
+
 - 实现范围 `91f1259..2d63987`（含 `91f1259`；基线 HEAD `2d639879c75f82b7400dc9a2e2af2e1250383e45`）。聚焦命令 `npm.cmd test -- tests/route-loading-screen.test.tsx tests/particle-text.test.tsx tests/text-type.test.tsx tests/card-navigation.test.tsx tests/homepage-content.test.tsx tests/homepage-editorial.test.tsx tests/cross-page-shell.test.tsx tests/app-scroll.test.tsx tests/motion-profile.test.tsx tests/gradient-waves.test.tsx`：10 文件、75/75 通过；`npm.cmd test`：44 文件、464/464 通过。分别出现 9 和 15 条 jsdom Canvas `getContext()` 未实现提示；未见未处理拒绝、计时器泄漏或孤立动画帧警告。
 - `npm.cmd run build` 通过（218 模块）；保留大于 500 kB 的分块警告：index 524.28 kB、MusicPage 527.36 kB。`npm.cmd run check:edge` 的三个入口均通过；`git diff --check` 通过。
 - 使用进程级空白 Supabase public 值在 `127.0.0.1:4179` 启动预览并确认 HTTP 200，随后停止进程树。Playwright CLI 启动无输出且未建立会话，因此五个加载路由、缓存回访、遮罩及控件几何、焦点隔离、隐藏标签、粒子与打字循环、减少动态、粗指针、Canvas/observer 后备、双主题四尺寸、溢出及浏览器控制台均未进行真实浏览器验证；不能认定通过。自动化结果不替代这些检查。
