@@ -6,12 +6,14 @@ import { RouteScrollBoundary } from './components/RouteScrollBoundary'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
 import { isSiteSubpageRoute, parseSiteRoute } from './lib/siteRoutes'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
+import { createHeavyLazyRoute, isHeavyRouteId } from './lib/heavyRouteLoading'
+import { RouteLoadingScreen } from './components/RouteLoadingScreen'
 
-const MusicPage = lazy(() => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
-const GuestbookPage = lazy(() => import('./components/GuestbookPage').then((module) => ({ default: module.GuestbookPage })))
-const CommerceStudioPage = lazy(() => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
-const CommerceAdminPage = lazy(() => import('./commerce/CommerceAdminPage').then((module) => ({ default: module.CommerceAdminPage })))
-const ToolNavigationPage = lazy(() => import('./components/ToolNavigationPage').then((module) => ({ default: module.ToolNavigationPage })))
+const MusicPage = createHeavyLazyRoute('music', () => import('./components/MusicPage').then((module) => ({ default: module.MusicPage })))
+const GuestbookPage = createHeavyLazyRoute('guestbook', () => import('./components/GuestbookPage').then((module) => ({ default: module.GuestbookPage })))
+const CommerceStudioPage = createHeavyLazyRoute('ai-commerce', () => import('./commerce/CommerceStudioPage').then((module) => ({ default: module.CommerceStudioPage })))
+const CommerceAdminPage = createHeavyLazyRoute('commerce-admin', () => import('./commerce/CommerceAdminPage').then((module) => ({ default: module.CommerceAdminPage })))
+const ToolNavigationPage = createHeavyLazyRoute('tools', () => import('./components/ToolNavigationPage').then((module) => ({ default: module.ToolNavigationPage })))
 const WritingIndexPage = lazy(() => import('./editorial/WritingIndexPage').then((module) => ({ default: module.WritingIndexPage })))
 const ArticlePage = lazy(() => import('./editorial/ArticlePage').then((module) => ({ default: module.ArticlePage })))
 const WorkIndexPage = lazy(() => import('./editorial/WorkIndexPage').then((module) => ({ default: module.WorkIndexPage })))
@@ -32,6 +34,7 @@ function App() {
   const commerceAdminPage = route.kind === 'static' && route.page === 'commerce-admin'
   const toolsPage = route.kind === 'static' && route.page === 'tools'
   const subpage = isSiteSubpageRoute(route)
+  const heavyRoute = route.kind === 'static' && isHeavyRouteId(route.page) ? route.page : null
 
   useLayoutEffect(() => applyTheme(theme), [theme])
   useEffect(() => {
@@ -58,9 +61,8 @@ function App() {
       <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
       <TargetCursor />
 
-      <Suspense fallback={<main className={commercePage || commerceAdminPage ? 'commerce-loading' : 'music-loading'}>
-        {musicPage ? 'LOADING AUDIO FIELD' : guestbookPage ? 'CONNECTING OPEN CHANNEL' : commercePage ? 'OPENING COMMERCE LAB' : commerceAdminPage ? 'OPENING OPERATOR CONSOLE' : toolsPage ? 'OPENING TOOL INDEX' : '载入现场笔记'}
-      </main>}>
+      <RouteLoadingScreen key={heavyRoute ?? 'non-heavy'} route={heavyRoute} />
+      <Suspense fallback={heavyRoute ? null : <main className="route-loading-inline" role="status" aria-live="polite">载入现场笔记</main>}>
         <RouteScrollBoundary pageHash={pageHash}>
           {musicPage ? <MusicPage /> : guestbookPage ? <GuestbookPage /> : commercePage ? <CommerceStudioPage /> : commerceAdminPage ? <CommerceAdminPage /> : toolsPage ? <ToolNavigationPage /> : route.kind === 'static' && route.page === 'writing' ? <WritingIndexPage /> : route.kind === 'article' ? <ArticlePage slug={route.slug} /> : route.kind === 'static' && route.page === 'work' ? <WorkIndexPage /> : route.kind === 'project' ? <ProjectPage slug={route.slug} /> : <HomePage theme={theme} />}
         </RouteScrollBoundary>

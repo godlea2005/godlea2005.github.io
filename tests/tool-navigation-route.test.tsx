@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
+import { readFileSync } from 'node:fs'
 
 const authMock = vi.hoisted(() => ({ useAuth: vi.fn() }))
 
@@ -32,6 +33,23 @@ const auth = (isAdmin = false): AuthContextValue => ({
 })
 
 describe('tools route and site navigation', () => {
+  it('eagerly imports the loader styles and keeps the full-screen overlay outside Suspense', () => {
+    const app = readFileSync('src/App.tsx', 'utf8')
+    const loader = readFileSync('src/components/RouteLoadingScreen.tsx', 'utf8')
+    const css = readFileSync('src/components/route-loading-screen.css', 'utf8')
+    expect(loader).toContain("import './route-loading-screen.css'")
+    expect(css).toContain('env(safe-area-inset-top)')
+    expect(css).toContain('env(safe-area-inset-right)')
+    expect(css).toContain('env(safe-area-inset-bottom)')
+    expect(css).toContain('env(safe-area-inset-left)')
+    expect(css).toContain('animation-play-state: paused')
+    expect(app).toContain('<RouteLoadingScreen')
+    expect(app.indexOf('<RouteLoadingScreen')).toBeLessThan(app.indexOf('<Suspense'))
+    expect(app).not.toContain("'commerce-loading'")
+    expect(app).not.toContain('className="commerce-loading"')
+    expect(app).not.toContain("'music-loading'")
+  })
+
   beforeEach(() => authMock.useAuth.mockReturnValue(auth()))
   afterEach(() => {
     cleanup()
@@ -84,6 +102,8 @@ describe('tools route and site navigation', () => {
   it('mounts tools as a subpage with a default-mode music dock', async () => {
     window.location.hash = '#tools'
     const view = render(<App />)
+    expect(screen.getByRole('status', { name: '正在打开工具导航' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument(), { timeout: 4000 })
     expect(await screen.findByRole('heading', { name: '工具导航' })).toBeInTheDocument()
     expect(view.container.querySelector('.site-shell')).not.toHaveClass('is-home', 'is-commerce')
     expect(screen.queryByText('HOME')).not.toBeInTheDocument()
@@ -117,6 +137,8 @@ describe('tools route and site navigation', () => {
   it('preserves the guestbook OAuth-return override and music dock visibility rules', async () => {
     window.history.replaceState({}, '', '/?auth=guestbook#article/ai-speeds-up-judgment')
     const oauthReturn = render(<App />)
+    expect(screen.getByRole('status', { name: '正在连接留言频道' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument(), { timeout: 4000 })
     expect(await screen.findByRole('heading', { name: '留言板' })).toBeInTheDocument()
     expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-mode', 'default')
     expect(screen.getByTestId('music-dock-mode')).toHaveAttribute('data-guestbook', 'true')
