@@ -220,3 +220,16 @@
 - `npm.cmd run build` 通过（218 模块）；保留大于 500 kB 的分块警告：index 524.28 kB、MusicPage 527.36 kB。`npm.cmd run check:edge` 的三个入口均通过；`git diff --check` 通过。
 - 使用进程级空白 Supabase public 值在 `127.0.0.1:4179` 启动预览并确认 HTTP 200，随后停止进程树。Playwright CLI 启动无输出且未建立会话，因此五个加载路由、缓存回访、遮罩及控件几何、焦点隔离、隐藏标签、粒子与打字循环、减少动态、粗指针、Canvas/observer 后备、双主题四尺寸、溢出及浏览器控制台均未进行真实浏览器验证；不能认定通过。自动化结果不替代这些检查。
 - 未读取或编辑 `.env*`，未触碰或暂存用户原有的 `output/`；未操作后端、认证、密钥、远程 Git 或生产环境。未测试真实登录、持久化、生成、上传、付费 API 或外部导航。
+
+## 2026-10-29 — Motion/loading Task 5 第二轮修复及定向浏览器收口
+
+- 基线 `fb959167cf8b91825a1c803d2500bfab3e147b8b`。实测发现全局 reduced-motion `transition-duration:.01ms!important` 覆盖加载层 120ms 淡出；仅给 `.route-loading-screen.is-reduced-motion.is-leaving` 的 `transition: opacity 120ms linear` 增加 `!important`，不削弱全局策略、不改普通模式。新增源样式回归锁定多类选择器、精确 opacity-only/120ms/linear/important、无 transform 及普通 360ms 双属性。
+- TDD：`npm.cmd test -- tests/route-loading-screen.test.tsx` 修复前为 1 failed/11 passed，断言明确缺少 important（此前一次缓存 EPERM、一次测试 URL 路径错误已隔离修正，不作为 RED）；修复后执行上一节同一 10 文件聚焦命令为 76/76，完整 `npm.cmd test` 为 44 文件 465/465。测试进程 TEMP/TMP 指向临时 QA 目录以避开受限缓存重命名错误。聚焦/完整分别保留原有 9/15 条 jsdom Canvas 未实现提示，无泄漏或未处理拒绝警告。
+- `npm.cmd run build` 通过、218 模块，仍为 index 524.28 kB / MusicPage 527.36 kB 已有大包提示；`npm.cmd run check:edge` 三入口通过，`git diff --check` 通过。
+- Playwright CLI 在本机 127.0.0.1:4182 安全预览（进程级空白 Supabase public 值、所有非 127.0.0.1 页面请求阻断）新上下文延迟工具页模块。真实 `.route-loading-waves` Animation/currentTime：隐藏前 325.304ms，隐藏稳定后 341.804ms，继续隐藏 600ms 仍为 341.804ms，恢复 300ms 后 616.572ms；playState paused→running。对应加载层 canvas clearRect 绘制数 30→31→31→41，证实形成中的粒子隐藏暂停、显示恢复并正常完成。隐藏为模拟 document.hidden/visibilitychange，不宣称操作系统后台节流测试。
+- 正常退出 computed transition 为 `opacity 0.36s, transform 0.36s`，ease/ease，is-leaving 到移除 362.1ms。导航前 emulate reduce 后，computed 为 `opacity 0.12s linear`、property opacity、duration 0.12s、transform none，移除差 122.6ms（非整次导航耗时）。仅验证这一受控工具路由的精确退出；最低延迟/缓存及其他路由仍以前轮证据和自动测试支持。
+- 退出中连续两次真实 Tab 后 activeElement=BODY，shell 全部非遮罩直接子节点 inert；真实点击 (50,50) 捕获 target 为 `route-loading-screen is-leaving`，同一时刻仍在退出且背景不可交互。移除后四个 shell 子节点 inert 均 false，搜索按钮真实 focus 成功。无背景 header/route/music 控件获得焦点或点击。
+- 精细指针 1440×1000：记录 6055 个粒子绘制坐标，指针 70px 内 490 粒子位移均值 5.136px、最大 8.916px；130px 外 5094 粒子最大 0.156px（有限形成的残差，非显著远端扰动）。移开并回聚后 800ms，draws 85→85、ParticleText RAF callbacks 83→83、pending 0→0；无页面异常。另测 hover/click/Enter/Space 各形成后回到 settled，click/键盘保持焦点；390×844 真实 hasTouch/isMobile 上下文 tap 后 forming→settled，非无限循环。
+- 四尺寸×深浅主题共八组补测全部可见胶囊后代的元素/文字 Range 矩形及真实裁切祖先，裁切与横向溢出均零；按钮最小 44×44px。胶囊 [x,y,w,h] 分别为 [1188.344,16,151.656,54]、[912,10,100,54]、[656,10,100,54]、[278,10,100,54]，主题不影响几何。图标及 kbd 的 scrollHeight 分别超过本身 line box 3–5px/2px，但 overflow visible、文字在所有裁切祖先内，不能将其误报为裁切；390px 浅色截图也已检查。
+- 本轮不重跑真实后端/认证/上传/生成/付费 API/外站或全站所有控件审计；前轮 Canvas/采样/observer fallback、五路由及打字循环证据保留。有限时间窗观测不保证所有设备/浏览器。全部临时脚本、快照及截图仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-motion-loading-qa`；未读写 `.env*`、未触碰或暂存 `output/`，无后端、密钥、远程 Git 或生产变更。
+- 清理：停止本轮预览会话后，在浏览器所在主机环境确认 CLI default 已关闭、list 无浏览器，4182 无监听；关闭命令曾两次权限审核超时，普通受限环境无法观察主机会话，最终在同一主机环境完成关闭及复核。自查仅样式、回归测试、项目日志进入提交。

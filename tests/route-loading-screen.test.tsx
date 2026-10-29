@@ -1,4 +1,6 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHeavyLazyRoute, resetHeavyRouteLoadingForTests } from '../src/lib/heavyRouteLoading'
@@ -24,6 +26,17 @@ afterEach(() => {
 })
 
 describe('heavy route loading', () => {
+  it('keeps the scoped 120ms opacity fade above the global important reduced-motion duration', () => {
+    const globalCss = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
+    const loaderCss = readFileSync(resolve(process.cwd(), 'src/components/route-loading-screen.css'), 'utf8')
+    expect(globalCss).toMatch(/transition-duration:\s*\.01ms\s*!important/)
+    // Both declarations are important; this multi-class selector beats the global universal selector.
+    const rule = loaderCss.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.route-loading-screen\.is-reduced-motion\.is-leaving\s*\{([^}]+)\}/)?.[1]
+    expect(rule).toMatch(/(?:^|;)\s*transition:\s*opacity 120ms linear\s*!important\s*;/)
+    expect(rule).toMatch(/(?:^|;)\s*transform:\s*none\s*;/)
+    expect(loaderCss).toContain('transition: opacity 360ms ease, transform 360ms ease;')
+  })
+
   it('keeps the first module pending, mounts content behind a 360ms exit, then stays cached', async () => {
     vi.useFakeTimers()
     const loader = vi.fn(async () => ({ default: () => <p>commerce ready</p> }))

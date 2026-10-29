@@ -29,7 +29,8 @@
 }
 
 .route-loading-screen.is-reduced-motion.is-leaving {
-  transition: opacity 120ms linear;
+  /* Preserve the opacity-only exit above the global reduced-motion duration cap. */
+  transition: opacity 120ms linear !important;
   transform: none;
 }
 
