@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthContextValue } from '../src/auth/AuthProvider'
@@ -21,6 +21,28 @@ const auth = (isAdmin = false): AuthContextValue => ({
 describe('editorial card navigation', () => {
   beforeEach(() => authMock.useAuth.mockReturnValue(auth()))
   afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it.each(['Control', 'Meta'])('blocks %s+K throughout route loading and restores search afterward', async (modifier) => {
+    const header = <FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />
+    const { rerender } = render(<div className="site-shell">{header}<div className="route-loading-screen" /></div>)
+    document.body.focus()
+    const before = document.activeElement
+    for (const className of ['route-loading-screen', 'route-loading-screen is-leaving']) {
+      rerender(<div className="site-shell">{header}<div className={className} /></div>)
+      const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: modifier === 'Control', metaKey: modifier === 'Meta', bubbles: true, cancelable: true })
+      act(() => { window.dispatchEvent(event) })
+      expect(event.defaultPrevented).toBe(true)
+      expect(screen.queryByRole('dialog', { name: '搜索本站', hidden: true })).not.toBeInTheDocument()
+      expect(document.querySelector('.site-search-layer')).toBeNull()
+      expect(document.activeElement).toBe(before)
+    }
+    rerender(<div className="site-shell">{header}</div>)
+    await userEvent.keyboard(`{${modifier}>}k{/${modifier}}`)
+    const dialog = screen.getByRole('dialog', { name: '搜索本站' })
+    expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: '打开搜索' })).toHaveFocus()
+  })
 
   it('keeps search and theme controls in one vertically centered 44px capsule', () => {
     render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
