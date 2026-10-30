@@ -1,116 +1,113 @@
 import userEvent from '@testing-library/user-event'
-import { readFileSync } from 'node:fs'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ToolNavigationPage } from '../src/components/ToolNavigationPage'
-import { toolCatalogMetadata } from '../src/content/tools'
 
 afterEach(cleanup)
 
+const categories = () => screen.getAllByRole('button', { name: /个工具/ })
+const category = (title: string) => screen.getByRole('button', { name: new RegExp(title) })
+
 describe('ToolNavigationPage', () => {
-  it('keeps the full catalog and review hint visible through filtering and empty results', async () => {
+  it('shows compact metadata, unique counts, and a recoverable empty state', async () => {
     const user = userEvent.setup()
     render(<ToolNavigationPage />)
-    const hint = screen.getByText(`已收录 ${toolCatalogMetadata.totalTools} 个工具`, { exact: false })
-    expect(within(hint).getByText(toolCatalogMetadata.lastReviewed)).toHaveAttribute('datetime', toolCatalogMetadata.lastReviewed)
-    expect(hint).toHaveTextContent('最近核对')
-
-    await user.click(screen.getByRole('button', { name: '跨境电商' }))
-    expect(screen.getAllByRole('link')).toHaveLength(2)
-    expect(hint).toHaveTextContent(`已收录 ${toolCatalogMetadata.totalTools} 个工具`)
-    await user.type(screen.getByRole('searchbox', { name: '搜索工具' }), '不存在的工具')
-    expect(screen.queryAllByRole('link')).toHaveLength(0)
-    expect(hint).toBeVisible()
-    expect(hint).toHaveTextContent(`已收录 ${toolCatalogMetadata.totalTools} 个工具`)
-  })
-
-  it('gives every tools-page control a minimum 44px hit area', async () => {
-    const style = document.createElement('style')
-    style.textContent = readFileSync('src/components/tool-navigation.css', 'utf8')
-    document.head.append(style)
-    try {
-      const user = userEvent.setup()
-      render(<ToolNavigationPage />)
-      const search = screen.getByRole('searchbox', { name: '搜索工具' })
-      const controls = [...screen.getAllByRole('button'), ...screen.getAllByRole('link'), search]
-      for (const control of controls) {
-        expect(parseFloat(getComputedStyle(control).minHeight)).toBeGreaterThanOrEqual(44)
-      }
-      await user.type(search, '不存在的工具')
-      expect(parseFloat(getComputedStyle(screen.getByRole('button', { name: '清除筛选' })).minHeight)).toBeGreaterThanOrEqual(44)
-    } finally {
-      style.remove()
-    }
-  })
-
-  it('searches tool names and shows a recoverable empty state', async () => {
-    const user = userEvent.setup()
-    render(<ToolNavigationPage />)
-
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('main')).toHaveClass('editorial-page')
+    expect(document.querySelector('.editorial-page-intro')).not.toBeNull()
+    expect(screen.getByText('WENHAO / TOOL COLLECTION')).toBeVisible()
+    expect(screen.getByText('把真正好用的工具，放在离想法更近的地方。')).toBeVisible()
+    const hint = screen.getByText('已收录 68 个工具', { exact: false })
+    expect(hint).toHaveTextContent('最近核对 2026-10-30')
+    expect(hint.querySelector('time')).toHaveAttribute('datetime', '2026-10-30')
+    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('匹配 68 个工具 / 10 个分类')
     const search = screen.getByRole('searchbox', { name: '搜索工具' })
     await user.type(search, 'Photopea')
-    expect(screen.getByRole('link', { name: /Photopea/ })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /GitHub/ })).not.toBeInTheDocument()
-    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('搜索“Photopea”')
-
+    expect(screen.getAllByRole('link', { name: /Photopea/ })).toHaveLength(2)
+    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('匹配 1 个工具 / 2 个分类')
     await user.clear(search)
-    await user.click(screen.getByRole('button', { name: '跨境电商' }))
     await user.type(search, '不存在的工具')
-    expect(screen.getByText(/没有找到/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '清除筛选' }))
+    expect(screen.getByText('没有找到匹配的工具')).toBeVisible()
+    expect(hint).toBeVisible()
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: '清除搜索' }))
     expect(search).toHaveValue('')
-    expect(screen.getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('link', { name: /Photopea/ })).toBeInTheDocument()
+    expect(category('工具箱')).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('uses a pressed category button and secure external links', async () => {
+  it('starts with exactly two expanded sections and linked inert closed panels', async () => {
     const user = userEvent.setup()
     render(<ToolNavigationPage />)
+    expect(categories()).toHaveLength(10)
+    for (const button of categories()) {
+      const open = /我的常用|工具箱/.test(button.textContent ?? '')
+      expect(button).toHaveAttribute('aria-expanded', String(open))
+      const panel = document.getElementById(button.getAttribute('aria-controls')!)
+      expect(panel).not.toBeNull()
+      expect(panel).toHaveAttribute('aria-hidden', String(!open))
+      if (!open) expect(panel).toHaveAttribute('inert')
+    }
+    await user.click(category('AI 聊天网站'))
+    expect(category('AI 聊天网站')).toHaveAttribute('aria-expanded', 'true')
+    expect(category('工具箱')).toHaveAttribute('aria-expanded', 'true')
+    await user.click(category('AI 聊天网站'))
+    const panel = document.getElementById(category('AI 聊天网站').getAttribute('aria-controls')!)!
+    expect(panel).toHaveAttribute('inert')
+    for (const link of panel.querySelectorAll('a')) expect(link).toHaveAttribute('tabindex', '-1')
+  })
 
+  it('auto-expands matches and restores the exact pre-search set after query changes and bulk actions', async () => {
+    const user = userEvent.setup()
+    render(<ToolNavigationPage />)
+    await user.click(category('我的常用'))
+    await user.click(category('AI 聊天网站'))
+    const search = screen.getByRole('searchbox', { name: '搜索工具' })
+    await user.type(search, '图片')
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true)
+    await user.click(screen.getByRole('button', { name: '全部收起' }))
+    expect(search).toHaveValue('图片')
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'false')).toBe(true)
+    await user.click(screen.getByRole('button', { name: '全部展开' }))
+    expect(search).toHaveValue('图片')
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true)
+    await user.type(search, 'Ollama')
+    expect(screen.getByText('没有找到匹配的工具')).toBeVisible()
+    await user.clear(search)
+    for (const button of categories()) {
+      expect(button).toHaveAttribute('aria-expanded', String(/工具箱|AI 聊天网站/.test(button.textContent ?? '')))
+    }
+    await user.type(search, 'Ollama')
+    expect(category('AI 工具网站')).toHaveAttribute('aria-expanded', 'true')
+    await user.clear(search)
+    expect(category('AI 工具网站')).toHaveAttribute('aria-expanded', 'false')
+    expect(category('AI 聊天网站')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('handles whitespace as a non-search and supports bulk actions at rest', async () => {
+    const user = userEvent.setup()
+    render(<ToolNavigationPage />)
+    const search = screen.getByRole('searchbox', { name: '搜索工具' })
+    await user.type(search, '  ')
+    expect(category('AI 工具网站')).toHaveAttribute('aria-expanded', 'false')
+    await user.click(screen.getByRole('button', { name: '全部展开' }))
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true)
+    await user.type(search, 'Ollama')
+    await user.clear(search)
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true)
+    await user.click(screen.getByRole('button', { name: '全部收起' }))
+    expect(categories().every((button) => button.getAttribute('aria-expanded') === 'false')).toBe(true)
+  })
+
+  it('renders secure compact cards without legacy decoration', async () => {
+    const user = userEvent.setup()
+    render(<ToolNavigationPage />)
+    await user.click(screen.getByRole('button', { name: '全部展开' }))
     for (const link of screen.getAllByRole('link')) {
       expect(link).toHaveAttribute('target', '_blank')
-      expect(link).toHaveAttribute('rel', 'noreferrer')
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer')
       expect(link).toHaveAttribute('data-target-cursor')
-      expect(link).toHaveAttribute('data-cursor-label', '打开工具')
     }
-
-    const categoryButton = screen.getByRole('button', { name: '跨境电商' })
-    await user.click(categoryButton)
-    expect(categoryButton).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('link', { name: /Photopea/ })).not.toBeInTheDocument()
-
-    const link = screen.getByRole('link', { name: /Ozon/ })
-    expect(link).toHaveAttribute('href', 'https://seller.ozon.ru/')
-    expect(screen.getByRole('link', { name: /Wildberries/ })).toBeInTheDocument()
-
-    const section = screen.getByRole('region', { name: /跨境电商/ })
-    expect(within(section).getByText('2 个工具')).toBeInTheDocument()
-  })
-
-  it('presents numbered editorial entries with an explicit external state', () => {
-    render(<ToolNavigationPage />)
-    const firstSection = document.querySelector('.tool-category-section') as HTMLElement
-    const firstLink = within(firstSection).getAllByRole('link')[0]
-    expect(firstLink).toHaveClass('editorial-surface')
-    expect(firstLink.querySelector('.tool-card-number')).toHaveTextContent('01')
-    expect(firstLink.querySelector('.tool-card-external')).toHaveTextContent('EXTERNAL LINK')
-  })
-
-  it('announces the selected category when equal-count categories change', async () => {
-    const user = userEvent.setup()
-    render(<ToolNavigationPage />)
-
-    const status = document.querySelector('[aria-live="polite"]')
-    expect(status).not.toBeNull()
-
-    await user.click(screen.getByRole('button', { name: 'AI 创作' }))
-    const firstAnnouncement = status?.textContent
-    expect(firstAnnouncement).toContain('AI 创作')
-    expect(firstAnnouncement).toContain('2 个工具')
-
-    await user.click(screen.getByRole('button', { name: '跨境电商' }))
-    expect(status).toHaveTextContent('跨境电商')
-    expect(status).toHaveTextContent('2 个工具')
-    expect(status?.textContent).not.toBe(firstAnnouncement)
+    expect(document.querySelector('.tool-category-rail, .tool-card-mark, .tool-card-tags, .tool-card-number, .tool-card-bottom')).toBeNull()
+    expect(screen.queryByText('EXTERNAL LINK')).not.toBeInTheDocument()
   })
 })

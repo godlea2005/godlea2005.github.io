@@ -51,7 +51,7 @@ export function buildSiteSearchEntries({ includeAdmin = false }: { includeAdmin?
     title: tool.name,
     detail: tool.description,
     href: tool.href,
-    terms: [tool.name, tool.host, tool.description, tool.note, category.title, ...tool.tags],
+    terms: [tool.name, tool.host, tool.description, tool.note ?? '', category.title, ...tool.tags],
     external: true,
   })))
 

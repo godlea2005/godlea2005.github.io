@@ -1,8 +1,6 @@
 import { expect, it } from 'vitest'
 import {
   countUniqueTools,
-  filterToolCategories,
-  toolCategoryOptions,
   filterToolSections,
   toolCatalogMetadata,
   toolCategories,
@@ -66,7 +64,7 @@ it('uses unique stable IDs and source-derived primary and featured records', () 
     for (const tool of section.tools) {
       const source = toolEntries.find(({ id }) => id === tool.id)!
       expect(tool).toMatchObject(source)
-      if (section.id === 'featured') expect(tool).toBe(source)
+      expect(tool).toBe(source)
     }
   }
   expect(toolSections[0].tools.map(({ name }) => name)).toEqual([
@@ -98,12 +96,11 @@ it('searches every supported field, preserves metadata, and removes empty sectio
   expect(toolEntries).toHaveLength(68)
 })
 
-it('temporarily derives the old page view from the personal entries', () => {
-  const view = filterToolCategories(toolCategories, { query: '', category: 'all' })
-  expect(view.flatMap(({ tools }) => tools).map(({ id }) => id))
-    .toEqual(toolSections[0].tools.map(({ id }) => id))
-  expect(view.flatMap(({ tools }) => tools).every(({ mark, note }) => mark.trim() && note.trim())).toBe(true)
-  expect(toolCategoryOptions.map(({ label }) => label)).toContain('AI 创作')
-  expect(filterToolCategories(toolCategories, { query: 'Ozon', category: 'cross-border' })[0].tools[0].href)
-    .toBe('https://seller.ozon.ru/')
+it('uses approved category titles without compatibility decorations', () => {
+  expect(toolCategories.map(({ title }) => title)).toEqual([
+    '工具箱', 'AI 聊天网站', 'AI 工具网站', 'BOT 开源框架', '前端组件与开发',
+    '学习与灵感', '二次元资源站', 'API 接口', '跨境电商',
+  ])
+  expect(toolCategories.flatMap(({ tools }) => tools).every((tool) => !('mark' in tool))).toBe(true)
+  expect(toolCategories.flatMap(({ tools }) => tools).some((tool) => tool.note === undefined)).toBe(true)
 })

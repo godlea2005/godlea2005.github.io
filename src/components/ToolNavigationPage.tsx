@@ -1,27 +1,54 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
-  filterToolCategories,
+  countUniqueTools,
+  filterToolSections,
   toolCatalogMetadata,
-  toolCategories,
-  toolCategoryOptions,
-  type ToolCategoryId,
+  toolSections,
+  type ToolSectionId,
 } from '../content/tools'
+import { ToolCategoryAccordion } from './tool-navigation/ToolCategoryAccordion'
+import { ToolDirectoryToolbar } from './tool-navigation/ToolDirectoryToolbar'
 import './tool-navigation.css'
+
+const DEFAULT_OPEN_IDS = new Set<ToolSectionId>(['featured', 'toolbox'])
 
 export function ToolNavigationPage() {
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<ToolCategoryId | 'all'>('all')
-  const visibleCategories = useMemo(
-    () => filterToolCategories(toolCategories, { query, category }),
-    [query, category],
-  )
-  const matchCount = visibleCategories.reduce((count, item) => count + item.tools.length, 0)
-  const categoryLabel = toolCategoryOptions.find((option) => option.id === category)?.label ?? '全部'
-  const searchQuery = query.trim()
+  const [expandedIds, setExpandedIds] = useState(() => new Set(DEFAULT_OPEN_IDS))
+  const preSearchExpandedIds = useRef(new Set(DEFAULT_OPEN_IDS))
+  const visibleSections = useMemo(() => filterToolSections(toolSections, query), [query])
+  const matchCount = useMemo(() => countUniqueTools(visibleSections), [visibleSections])
 
-  const clearFilters = () => {
-    setQuery('')
-    setCategory('all')
+  const handleQueryChange = (nextQuery: string) => {
+    const wasSearching = Boolean(query.trim())
+    const willSearch = Boolean(nextQuery.trim())
+    if (!wasSearching && willSearch) preSearchExpandedIds.current = new Set(expandedIds)
+    setQuery(nextQuery)
+    if (willSearch) {
+      setExpandedIds(new Set(filterToolSections(toolSections, nextQuery).map(({ id }) => id)))
+    } else if (wasSearching) {
+      setExpandedIds(new Set(preSearchExpandedIds.current))
+    }
+  }
+
+  const toggleSection = (id: ToolSectionId) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const setVisibleExpanded = (open: boolean) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      for (const { id } of visibleSections) {
+        if (open) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
   }
 
   return (
@@ -29,94 +56,31 @@ export function ToolNavigationPage() {
       <section className="tool-navigation-intro editorial-page-intro frame">
         <div className="tool-navigation-heading">
           <div>
-            <p className="tool-navigation-index editorial-index">FIELD NOTES / TOOL INDEX</p>
+            <p className="tool-navigation-index editorial-index">WENHAO / TOOL COLLECTION</p>
             <h1 id="tools-title">工具导航</h1>
           </div>
           <div>
-            <p className="tool-navigation-intro-copy">从真实工作流里留下的工具，不追新，只留会反复打开的。</p>
+            <p className="tool-navigation-intro-copy">把真正好用的工具，放在离想法更近的地方。</p>
             <p className="tool-catalog-hint">
               已收录 {toolCatalogMetadata.totalTools} 个工具 · 最近核对 <time dateTime={toolCatalogMetadata.lastReviewed}>{toolCatalogMetadata.lastReviewed}</time>
             </p>
           </div>
         </div>
-        <label className="tool-search-label">
-          <span>搜索工具</span>
-          <div className="tool-search-field">
-            <span aria-hidden="true">⌕</span>
-            <input
-              type="search"
-              role="searchbox"
-              aria-label="搜索工具"
-              placeholder="名称、用途、标签或网站"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <small aria-hidden="true" style={{ color: 'var(--quiet)', fontSize: 9, fontFamily: '"SFMono-Regular", Consolas, monospace', letterSpacing: '.08em' }}>/ INDEX</small>
-          </div>
-        </label>
+        <ToolDirectoryToolbar query={query} matchCount={matchCount} sectionCount={visibleSections.length}
+          onQueryChange={handleQueryChange} onExpandAll={() => setVisibleExpanded(true)}
+          onCollapseAll={() => setVisibleExpanded(false)} />
       </section>
-
-      <nav className="tool-category-rail frame" aria-label="工具分类">
-        {toolCategoryOptions.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={category === option.id}
-            onClick={() => setCategory(option.id)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </nav>
-
       <section className="tool-navigation-results frame" aria-label="工具结果">
-        <p className="tool-results-summary" aria-live="polite">{categoryLabel}{searchQuery ? `，搜索“${searchQuery}”` : ''}：匹配 <strong>{matchCount}</strong> 个工具<span aria-hidden="true"> / </span>{visibleCategories.length} 个分类</p>
-        {visibleCategories.length === 0 ? (
+        {visibleSections.length === 0 ? (
           <div className="tool-empty-state editorial-surface">
             <span aria-hidden="true">∅</span>
             <h2>没有找到匹配的工具</h2>
             <p>试试其他关键词，或者回到完整目录。</p>
-            <button className="editorial-action" type="button" onClick={clearFilters}>清除筛选</button>
+            <button className="editorial-action" type="button" onClick={() => handleQueryChange('')}>清除搜索</button>
           </div>
-        ) : visibleCategories.map((item) => (
-          <section className="tool-category-section" key={item.id} aria-labelledby={`${item.id}-title`}>
-            <header className="tool-category-header">
-              <span className="tool-category-number">{item.number}</span>
-              <div>
-                <h2 id={`${item.id}-title`}>{item.title}</h2>
-                <p>{item.description}</p>
-              </div>
-              <span className="tool-category-count">{item.tools.length} 个工具</span>
-            </header>
-            <div className="tool-card-grid">
-              {item.tools.map((tool, index) => (
-                <a
-                  className="tool-card editorial-surface"
-                  key={tool.id}
-                  href={tool.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  data-target-cursor=""
-                  data-cursor-label="打开工具"
-                >
-                  <div className="tool-card-top">
-                    <span className="tool-card-mark" aria-hidden="true">{tool.mark}</span>
-                    <span className="tool-card-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                  </div>
-                  <h3>{tool.name}</h3>
-                  <p className="tool-card-description">{tool.description}</p>
-                  <ul className="tool-card-tags" aria-label={`${tool.name} 标签`}>
-                    {tool.tags.map((tag) => <li key={tag}>{tag}</li>)}
-                  </ul>
-                  <div className="tool-card-bottom">
-                    <span className="tool-card-host">{tool.host}</span>
-                    <p>{tool.note}</p>
-                    <span className="tool-card-external">EXTERNAL LINK <span aria-hidden="true">↗</span></span>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </section>
+        ) : visibleSections.map((section) => (
+          <ToolCategoryAccordion key={section.id} section={section}
+            open={expandedIds.has(section.id)} onToggle={toggleSection} />
         ))}
       </section>
     </main>

@@ -19,7 +19,7 @@ export type ToolCategory = {
   number: string
   title: string
   description: string
-  tools: readonly (ToolEntry & { note: string; mark: string })[]
+  tools: readonly ToolEntry[]
 }
 export type ToolSection = Omit<ToolCategory, 'id' | 'tools'> & { id: ToolSectionId; tools: readonly ToolEntry[] }
 
@@ -786,22 +786,19 @@ export const toolEntries: readonly ToolEntry[] = [
 
 const categoryDefinitions: readonly Omit<ToolCategory, 'tools'>[] = [
   { id: 'toolbox', number: '01', title: '工具箱', description: '网络测试、图片处理与日常实用工具。' },
-  { id: 'ai-chat', number: '02', title: 'AI 聊天', description: '用于问答、写作与分析的 AI 助手。' },
-  { id: 'ai-tools', number: '03', title: 'AI 工具', description: '模型评测、创作、设计与本地部署资源。' },
-  { id: 'bot-frameworks', number: '04', title: '机器人框架', description: '聊天机器人的部署、协议与扩展开发。' },
-  { id: 'frontend-dev', number: '05', title: '前端开发', description: '界面设计、组件、动效与开发工作流。' },
+  { id: 'ai-chat', number: '02', title: 'AI 聊天网站', description: '用于问答、写作与分析的 AI 助手。' },
+  { id: 'ai-tools', number: '03', title: 'AI 工具网站', description: '模型评测、创作、设计与本地部署资源。' },
+  { id: 'bot-frameworks', number: '04', title: 'BOT 开源框架', description: '聊天机器人的部署、协议与扩展开发。' },
+  { id: 'frontend-dev', number: '05', title: '前端组件与开发', description: '界面设计、组件、动效与开发工作流。' },
   { id: 'learning-inspiration', number: '06', title: '学习与灵感', description: '编程学习、阅读与参考资料收藏。' },
-  { id: 'anime', number: '07', title: '动漫', description: '动漫更新、漫画阅读与作品索引。' },
-  { id: 'api', number: '08', title: 'API 服务', description: '面向应用开发的数据与检索接口。' },
+  { id: 'anime', number: '07', title: '二次元资源站', description: '动漫更新、漫画阅读与作品索引。' },
+  { id: 'api', number: '08', title: 'API 接口', description: '面向应用开发的数据与检索接口。' },
   { id: 'cross-border', number: '09', title: '跨境电商', description: '面向俄罗斯市场的跨境电商平台与卖家经营入口。' },
 ]
 
 export const toolCategories: readonly ToolCategory[] = categoryDefinitions.map((category) => ({
   ...category,
-  // Temporary legacy-consumer view; remove note/mark decoration after page migration.
-  tools: toolEntries.filter((tool) => tool.categoryId === category.id).map((tool) => ({
-    ...tool, note: tool.note ?? '', mark: tool.name.slice(0, 2).toUpperCase(),
-  })),
+  tools: toolEntries.filter((tool) => tool.categoryId === category.id),
 }))
 
 export const toolSections: readonly ToolSection[] = [
@@ -837,32 +834,3 @@ export const filterToolSections = (sections: readonly ToolSection[], query: stri
 
 export const countUniqueTools = (sections: readonly ToolSection[]) =>
   new Set(sections.flatMap((section) => section.tools.map((tool) => tool.id))).size
-
-// Temporary old-page adapter; remove when the page migrates to toolSections.
-// Display records are derived from toolEntries, not a second maintained catalog.
-const legacyGroups: readonly { id: ToolCategoryId; label: string; ids: readonly string[] }[] = [
-  { id: 'ai-tools', label: 'AI 创作', ids: ['chatgpt', 'midjourney'] },
-  { id: 'cross-border', label: '跨境电商', ids: ['ozon', 'wildberries'] },
-  { id: 'toolbox', label: '图像与素材', ids: ['photopea', 'unsplash'] },
-  { id: 'frontend-dev', label: '工作流与开发', ids: ['github', 'vercel'] },
-  { id: 'learning-inspiration', label: '灵感与阅读', ids: ['are-na', 'readwise-reader'] },
-]
-export const toolCategoryOptions: readonly { id: ToolCategoryId | 'all'; label: string }[] = [
-  { id: 'all', label: '全部' }, ...legacyGroups.map(({ id, label }) => ({ id, label })),
-]
-export const filterToolCategories = (
-  categories: readonly ToolCategory[],
-  { query, category }: { query: string; category: ToolCategoryId | 'all' },
-) => {
-  const available = new Set(categories.flatMap(({ tools }) => tools.map(({ id }) => id)))
-  const sections = legacyGroups.filter(({ id }) => category === 'all' || id === category).map((group, index) => ({
-    id: group.id, number: String(index + 1).padStart(2, '0'), title: group.label,
-    description: categoryDefinitions.find(({ id }) => id === group.id)!.description,
-    tools: toolEntries.filter(({ id }) => available.has(id) && group.ids.includes(id)),
-  }))
-  return filterToolSections(sections, query).map((section) => ({
-    ...section, tools: section.tools.map((tool) => ({
-      ...tool, mark: tool.name.slice(0, 2).toUpperCase(), note: tool.note ?? tool.description,
-    })),
-  }))
-}
