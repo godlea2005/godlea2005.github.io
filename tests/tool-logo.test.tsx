@@ -19,15 +19,27 @@ describe('ToolLogo', () => {
     expect(image).toHaveAttribute('height', '28')
   })
 
-  it('replaces an error or timeout with deterministic initials and resets for a new host', () => {
+  it('replaces an error or timeout with deterministic initials and resets a pending timer for a new host', () => {
     vi.useFakeTimers()
-    const view = render(<ToolLogo name="StarDots" logoHost="broken.example" categoryId="toolbox" />)
-    fireEvent.error(view.container.querySelector('img')!)
-    expect(screen.getByText('ST')).toBeVisible()
+    const view = render(<ToolLogo name="StarDots" logoHost="stardots.io" categoryId="toolbox" />)
+    act(() => vi.advanceTimersByTime(2500))
     view.rerender(<ToolLogo name="GitHub" logoHost="github.com" categoryId="frontend-dev" />)
     expect(view.container.querySelector('img')).toHaveAttribute('src', 'https://favicon.im/github.com')
+    act(() => vi.advanceTimersByTime(2500))
+    expect(view.container.querySelector('img')).toHaveAttribute('src', 'https://favicon.im/github.com')
+    expect(screen.queryByText('GI')).not.toBeInTheDocument()
     act(() => vi.advanceTimersByTime(5000))
     expect(screen.getByText('GI')).toBeVisible()
+  })
+
+  it.each([
+    ['A', 'AA'],
+    ['ßa', 'SS'],
+  ])('keeps initials exactly two characters for %s', (name, expected) => {
+    const view = render(<ToolLogo name={name} logoHost="broken.example" categoryId="toolbox" />)
+    fireEvent.error(view.container.querySelector('img')!)
+    expect(screen.getByText(expected)).toBeVisible()
+    expect(expected).toHaveLength(2)
   })
 
   it('does not replace a successfully loaded image when the timeout expires', () => {

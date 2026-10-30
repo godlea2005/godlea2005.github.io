@@ -3,8 +3,14 @@ import type { ToolCategoryId } from '../../content/tools'
 
 export type ToolLogoProps = { name: string; logoHost: string; categoryId: ToolCategoryId }
 
-const initialsFor = (name: string) => Array.from(name.trim().replace(/[^\p{L}\p{N}]+/gu, ''))
-  .slice(0, 2).join('').toLocaleUpperCase('en-US') || 'WH'
+const initialsFor = (name: string) => {
+  const normalized = Array.from(name.trim().replace(/[^\p{L}\p{N}]+/gu, ''))
+    .join('').toLocaleUpperCase('en-US')
+  const initials = Array.from(normalized).slice(0, 2)
+  if (initials.length === 0) return 'WH'
+  if (initials.length === 1) initials.push(initials[0])
+  return initials.join('')
+}
 
 export function ToolLogo({ name, logoHost, categoryId }: ToolLogoProps) {
   const [failed, setFailed] = useState(false)
