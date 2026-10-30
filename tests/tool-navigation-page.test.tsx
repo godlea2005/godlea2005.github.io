@@ -10,6 +10,23 @@ const categories = () => screen.getAllByRole('button', { name: /个工具/ })
 const category = (title: string) => screen.getByRole('button', { name: new RegExp(title) })
 
 describe('ToolNavigationPage', () => {
+  it('keeps rendered search, bulk, category, card and empty-state hit areas at least 44px', async () => {
+    const style = document.createElement('style')
+    style.textContent = readFileSync('src/components/tool-navigation.css', 'utf8')
+    document.head.append(style)
+    try {
+      const user = userEvent.setup()
+      render(<ToolNavigationPage />)
+      const assertTargets = () => {
+        const targets = screen.getAllByRole('button').concat(screen.queryAllByRole('link'), [screen.getByRole('searchbox')])
+        for (const target of targets) expect(parseFloat(getComputedStyle(target).minHeight)).toBeGreaterThanOrEqual(44)
+      }
+      assertTargets()
+      await user.type(screen.getByRole('searchbox'), 'no-such-tool-xyz')
+      expect(screen.getByRole('button', { name: '清除搜索' })).toBeVisible()
+      assertTargets()
+    } finally { style.remove() }
+  })
   it('defines compact density, accessible controls, responsive grids, and motion safety', () => {
     const css = readFileSync('src/components/tool-navigation.css', 'utf8')
     expect(css).not.toMatch(/min-height:\s*(?:292|322)px/)

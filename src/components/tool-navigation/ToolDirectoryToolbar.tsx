@@ -24,6 +24,7 @@ export function ToolDirectoryToolbar(props: ToolDirectoryToolbarProps) {
       </div>
       <p className="tool-results-summary" aria-live="polite">
         匹配 <strong>{props.matchCount}</strong> 个工具 / {props.sectionCount} 个分类
+        {props.query.trim() && <> · 搜索“{props.query.trim()}”</>}
       </p>
     </section>
   )

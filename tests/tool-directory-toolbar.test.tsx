@@ -5,6 +5,17 @@ import { ToolDirectoryToolbar } from '../src/components/tool-navigation/ToolDire
 
 afterEach(cleanup)
 
+it('announces the trimmed query even when replacement results have identical counts', () => {
+  const props = { query: '  Ollama  ', matchCount: 1, sectionCount: 1,
+    onQueryChange: vi.fn(), onExpandAll: vi.fn(), onCollapseAll: vi.fn() }
+  const view = render(<ToolDirectoryToolbar {...props} />)
+  const summary = view.container.querySelector('[aria-live="polite"]')!
+  expect(summary).toHaveTextContent('“Ollama”')
+  view.rerender(<ToolDirectoryToolbar {...props} query=" Tavily " />)
+  expect(summary).toHaveTextContent('“Tavily”')
+  expect(summary).not.toHaveTextContent('Ollama')
+})
+
 it('forwards search and bulk actions while announcing supplied unique counts', async () => {
   const user = userEvent.setup()
   const props = { query: '', matchCount: 68, sectionCount: 10,
