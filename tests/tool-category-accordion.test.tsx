@@ -9,9 +9,9 @@ afterEach(cleanup)
 it('defers cards until first opening and retains inaccessible cards when closed again', async () => {
   const user = userEvent.setup()
   const onToggle = vi.fn()
-  const section = toolSections.find(({ id }) => id === 'ai-chat')!
+  const section = { ...toolSections.find(({ id }) => id === 'ai-chat')!, title: 'AI 聊天网站' }
   const view = render(<ToolCategoryAccordion section={section} open={false} onToggle={onToggle} />)
-  const trigger = screen.getByRole('button', { name: /AI 聊天.*5 个工具/ })
+  const trigger = screen.getByRole('button', { name: /AI 聊天网站.*5 个工具/ })
   const panel = screen.getByRole('region', { hidden: true })
   expect(trigger).toHaveAttribute('aria-expanded', 'false')
   expect(trigger).toHaveAttribute('aria-controls', panel.id)
