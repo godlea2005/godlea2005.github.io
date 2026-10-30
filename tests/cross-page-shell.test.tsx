@@ -155,10 +155,11 @@ describe('shared editorial page shells', () => {
     const main = container.querySelector('main')!
     expect(main).toHaveClass('editorial-page')
     const intro = main.querySelector('.editorial-page-intro')!
-    expect(within(intro as HTMLElement).getByText('FIELD NOTES / TOOL INDEX')).toHaveClass('editorial-index')
+    expect(within(intro as HTMLElement).getByText('WENHAO / TOOL COLLECTION')).toHaveClass('editorial-index')
     expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getByRole('searchbox', { name: '搜索工具' })).toBeInTheDocument()
-    expect(screen.getByRole('navigation', { name: '工具分类' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '工具目录控制' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /我的常用/ })).toHaveAttribute('aria-expanded', 'true')
     expect(main.querySelectorAll('.tool-card.editorial-surface').length).toBeGreaterThan(0)
   })
 

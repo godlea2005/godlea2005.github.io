@@ -201,7 +201,7 @@ describe('TargetCursor', () => {
     expect(hero).not.toContain('data-target-cursor')
     expect(writing).not.toContain('data-target-cursor')
     expect(work).not.toContain('data-target-cursor')
-    for (const file of ['components/CardNav.tsx', 'components/FeaturedNotes.tsx', 'editorial/TiltedCard.tsx', 'components/ToolNavigationPage.tsx']) {
+    for (const file of ['components/CardNav.tsx', 'components/FeaturedNotes.tsx', 'editorial/TiltedCard.tsx', 'components/tool-navigation/ToolCard.tsx']) {
       expect(readFileSync(resolve(process.cwd(), 'src', file), 'utf8')).toContain('data-target-cursor')
     }
   })
