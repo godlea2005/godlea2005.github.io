@@ -1,4 +1,5 @@
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ToolNavigationPage } from '../src/components/ToolNavigationPage'
@@ -9,6 +10,25 @@ const categories = () => screen.getAllByRole('button', { name: /个工具/ })
 const category = (title: string) => screen.getByRole('button', { name: new RegExp(title) })
 
 describe('ToolNavigationPage', () => {
+  it('defines compact density, accessible controls, responsive grids, and motion safety', () => {
+    const css = readFileSync('src/components/tool-navigation.css', 'utf8')
+    expect(css).not.toMatch(/min-height:\s*(?:292|322)px/)
+    expect(css).toMatch(/\.tool-navigation-heading h1\s*\{[^}]*font-size:\s*clamp\(48px,\s*5vw,\s*64px\)/s)
+    expect(css).toMatch(/\.tool-card-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s)
+    expect(css).toMatch(/@media \(max-width:\s*1080px\)[\s\S]*repeat\(2,/s)
+    expect(css).toMatch(/@media \(max-width:\s*640px\)[\s\S]*grid-template-columns:\s*1fr/s)
+    expect(css).toMatch(/\.tool-card\s*\{[^}]*min-height:\s*148px/s)
+    expect(css).toMatch(/\.tool-search-field\s*\{[^}]*min-height:\s*44px/s)
+    expect(css).toMatch(/\.tool-directory-actions button\s*\{[^}]*min-height:\s*44px/s)
+    expect(css).toMatch(/\.tool-category-accordion h2 button\s*\{[^}]*min-height:\s*44px/s)
+    expect(css).toMatch(/\.tool-category-panel\s*\{[^}]*grid-template-rows:\s*0fr/s)
+    expect(css).toMatch(/\.tool-category-panel\[data-open="true"\]\s*\{[^}]*grid-template-rows:\s*1fr/s)
+    expect(css).toMatch(/-webkit-line-clamp:\s*2/)
+    expect(css).not.toMatch(/\.tool-card:hover\s*\{[^}]*scale\(/s)
+    expect(css).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/)
+    expect(css).not.toMatch(/^\s*\.editorial-[^{]*\{/m)
+  })
+
   it('shows compact metadata, unique counts, and a recoverable empty state', async () => {
     const user = userEvent.setup()
     render(<ToolNavigationPage />)
