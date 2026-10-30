@@ -1,8 +1,11 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToolLogo } from '../src/components/tool-navigation/ToolLogo'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('ToolLogo', () => {
   it('loads the requested favicon lazily without repeating the visible tool name', () => {

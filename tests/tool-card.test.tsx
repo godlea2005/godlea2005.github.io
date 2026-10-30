@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import { ToolCard } from '../src/components/tool-navigation/ToolCard'
 
 const tool = {
@@ -7,6 +7,8 @@ const tool = {
   description: '收录可配置的 React 动效、文本与背景组件。', note: '不应显示的长注记',
   tags: ['前端组件'], logoHost: 'reactbits.dev', categoryId: 'frontend-dev', featured: false,
 } as const
+
+afterEach(cleanup)
 
 describe('ToolCard', () => {
   it('renders only the compact visible hierarchy and a safe target-cursor link', () => {
