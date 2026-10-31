@@ -32,6 +32,24 @@ afterEach(() => {
 })
 
 describe('TargetCursor', () => {
+  it('keeps the native pointer visible alongside the target frame', () => {
+    setMedia(true)
+    const stylesheet = document.createElement('style')
+    stylesheet.textContent = readFileSync(resolve(process.cwd(), 'src/components/target-cursor.css'), 'utf8')
+    document.head.append(stylesheet)
+    try {
+      render(<><a href="#tools" data-target-cursor="">Visible pointer</a><TargetCursor /></>)
+      const target = screen.getByRole('link', { name: 'Visible pointer' })
+      fireEvent.pointerOver(target)
+      const frame = screen.getByTestId('target-cursor')
+      expect(frame).toHaveAttribute('data-visible', 'true')
+      expect(getComputedStyle(target).cursor).toBe('pointer')
+      expect(getComputedStyle(frame).pointerEvents).toBe('none')
+      expect(stylesheet.textContent).not.toMatch(/cursor:\s*none/)
+    } finally {
+      stylesheet.remove()
+    }
+  })
   it('clears the active frame when a modal is inserted and resumes only after it closes', async () => {
     setMedia(true)
     const content = (modal: boolean) => <>

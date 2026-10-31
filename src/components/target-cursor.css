@@ -11,7 +11,7 @@
 }
 
 [data-target-cursor].target-cursor-active {
-  cursor: none;
+  cursor: pointer;
 }
 
 .target-cursor-corner {
