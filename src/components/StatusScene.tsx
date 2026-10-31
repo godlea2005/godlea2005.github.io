@@ -46,39 +46,22 @@ export function StatusScene({ theme }: { theme: Theme }) {
       <div className="status-scene-scrim" aria-hidden="true" />
       <div className="status-scene-inner frame">
         <div className="scene-copy">
-          <p className="scene-eyebrow">
-            文昊的个人空间 <span>持续探索，认真创造</span>
-          </p>
-          <h1 id="home-title" aria-label="WENHAO 博客">
+          <h1 id="home-title" aria-label="WENHAO">
             <ParticleText
               text={site.englishName}
               colors={theme === "light" ? lightParticleColors : darkParticleColors}
               interaction={fineHover ? 'repel-and-burst' : 'tap-burst'}
             />
-            <span className="scene-blog">
-              博客<span aria-hidden="true">.</span>
-            </span>
           </h1>
           <p className="scene-role-line">
-            AI 设计师 <span>/</span> 电商运营 <span>/</span> 前端开发
+            AI 工程师
           </p>
           <p className="scene-statement"><TextType texts={heroStatements} loop /></p>
-          <div className="scene-actions">
-            <a href="#featured" className="scene-primary">
-              开始阅读 <span aria-hidden="true">→</span>
-            </a>
-            <a href="#work" className="scene-secondary">
-              查看作品 <span aria-hidden="true">→</span>
-            </a>
-          </div>
         </div>
         <div className="scene-lower-edge">
-          <a href="#featured">
+          <a href="#home-guide">
             向下探索 <span aria-hidden="true">↓</span>
           </a>
-          <p>
-            <i /> 开放交流与合作
-          </p>
         </div>
       </div>
     </section>

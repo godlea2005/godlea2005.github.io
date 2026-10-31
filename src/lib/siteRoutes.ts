@@ -24,6 +24,7 @@ const staticPageByHash: Record<string, StaticPage> = {
 }
 
 export const parseSiteRoute = (hash: string): SiteRoute => {
+  if (hash.startsWith('#writing?')) return { kind: 'static', page: 'writing' }
   const article = hash.match(/^#article\/([a-z0-9]+(?:-[a-z0-9]+)*)$/)
   if (article) return { kind: 'article', slug: article[1] }
 

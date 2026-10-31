@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildSiteSearchEntries, searchSite } from '../editorial/search'
 import { ModalSurface } from './ModalSurface'
 import './site-search-dialog.css'
@@ -15,11 +15,14 @@ export function SiteSearchDialog({ open, onClose, includeAdmin }: SiteSearchDial
   const [query, setQuery] = useState('')
   const entries = useMemo(() => buildSiteSearchEntries({ includeAdmin }), [includeAdmin])
   const groups = searchSite(entries, query)
+  const resultsRef = useRef<HTMLDivElement>(null)
+  const hasQuery = Boolean(query.trim())
+  const goToFirst = () => resultsRef.current?.querySelector<HTMLAnchorElement>('a[href]')?.click()
   useEffect(() => { if (open) setQuery('') }, [open])
   if (!open) return null
   return <ModalSurface className="site-search-layer" label="搜索本站" onClose={onClose}>
     <header className="site-search-heading">
-      <div><p>FIELD NOTES / INDEX</p><h2>去哪里看看？</h2></div>
+      <div><h2>搜索本站</h2></div>
       <button type="button" onClick={onClose} aria-label="关闭搜索">×</button>
     </header>
     <div className="site-search-input-wrap">
@@ -32,14 +35,16 @@ export function SiteSearchDialog({ open, onClose, includeAdmin }: SiteSearchDial
           placeholder="搜索文章、作品、工具或主题…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); goToFirst() } }}
         />
       </label>
       {query && <button type="button" className="site-search-clear" onClick={() => setQuery('')}>清除</button>}
+      <button type="button" className="site-search-go" aria-label="前往首个搜索结果" disabled={!hasQuery || !groups.length} onClick={goToFirst}>→</button>
     </div>
     <p className="site-search-count" role="status">
-      {groups.length ? `${groups.reduce((count, group) => count + group.items.length, 0)} 个相关入口` : '暂时没有找到相关内容。'}
+      {hasQuery ? (groups.length ? `${groups.reduce((count, group) => count + group.items.length, 0)} 个相关入口 · ${query.trim()}` : '暂时没有找到相关内容。') : '输入关键词，寻找一篇文章或一个好工具。'}
     </p>
-    {groups.length ? <div className="site-search-results">
+    {hasQuery && (groups.length ? <div className="site-search-results" ref={resultsRef}>
       {groups.map((group) => <section key={group.type} aria-labelledby={`search-group-${group.type}`}>
         <h3 id={`search-group-${group.type}`}>{groupLabels[group.type]}</h3>
         <ul>{group.items.map((item) => <li key={item.href}>
@@ -52,7 +57,7 @@ export function SiteSearchDialog({ open, onClose, includeAdmin }: SiteSearchDial
       <a href="#writing" onClick={onClose}>浏览文章</a>
       <a href="#work" onClick={onClose}>查看作品</a>
       <a href="#tools" onClick={onClose}>打开工具导航</a>
-    </div>}
-    <small className="site-search-hint">Esc 关闭 · Tab 切换 · Enter 前往</small>
+    </div>)}
+    <small className="site-search-hint"><kbd>ESC 关闭</kbd><kbd>ENTER 前往</kbd><kbd>Ctrl K 切换</kbd></small>
   </ModalSurface>
 }

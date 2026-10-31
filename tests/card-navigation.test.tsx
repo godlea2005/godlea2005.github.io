@@ -41,16 +41,14 @@ describe('editorial card navigation', () => {
     const dialog = screen.getByRole('dialog', { name: '搜索本站' })
     expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
-    expect(screen.getByRole('button', { name: '打开搜索' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: '打开设置' })).toHaveFocus()
   })
 
-  it('keeps search and theme controls in one vertically centered 44px capsule', () => {
+  it('keeps search and three theme choices in the settings popover', async () => {
     render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    const search = screen.getByRole('button', { name: '打开搜索' })
-    const theme = screen.getByRole('button', { name: /切换至.+模式/ })
-    expect(search.querySelector('[aria-hidden="true"]')).toHaveClass('floating-action-icon')
-    expect(theme.querySelector('[aria-hidden="true"]')).toHaveClass('floating-action-icon')
-    expect(search.closest('.floating-actions')).toContainElement(theme)
+    await userEvent.click(screen.getByRole('button', { name: '打开设置' }))
+    expect(screen.getByRole('button', { name: /搜索/ })).toBeInTheDocument()
+    for (const name of ['浅色', '深色', '跟随系统']) expect(screen.getByRole('radio', { name })).toBeInTheDocument()
   })
 
   it.each(['Control', 'Meta'])('ignores %s+K while Visual Notes owns the modal and preserves both focus lifecycles', async (modifier) => {
@@ -69,7 +67,7 @@ describe('editorial card navigation', () => {
     await userEvent.keyboard(`{${modifier}>}k{/${modifier}}`)
     expect(screen.getByRole('dialog', { name: '搜索本站' })).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
-    expect(screen.getByRole('button', { name: '打开搜索' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: '打开设置' })).toHaveFocus()
   })
 
   it('expands three labeled groups, highlights the exact current route, and restores trigger focus on Escape', async () => {
@@ -82,7 +80,7 @@ describe('editorial card navigation', () => {
     expect(within(nav).getByRole('heading', { name: '阅读' })).toBeInTheDocument()
     expect(within(nav).getByRole('heading', { name: '探索' })).toBeInTheDocument()
     expect(within(nav).getByRole('heading', { name: '连接' })).toBeInTheDocument()
-    expect(within(nav).getByRole('link', { name: '文章' })).toHaveAttribute('href', '#featured')
+    expect(within(nav).getByRole('link', { name: '文章' })).toHaveAttribute('href', '#writing')
     expect(within(nav).getByRole('link', { name: '工具导航' })).toHaveAttribute('aria-current', 'page')
 
     await userEvent.keyboard('{Escape}')
@@ -124,7 +122,7 @@ describe('editorial card navigation', () => {
     expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
 
-    const searchTrigger = screen.getByRole('button', { name: '打开搜索' })
+    const searchTrigger = screen.getByRole('button', { name: '打开设置' })
     expect(searchTrigger).toHaveFocus()
     expect(searchTrigger).toBeVisible()
     expect(screen.getByRole('button', { name: '打开导航' })).toHaveAttribute('aria-expanded', 'false')
@@ -144,15 +142,20 @@ describe('editorial card navigation', () => {
 
   it('opens search from the compact actions and renders search destinations without target-cursor opt-in', async () => {
     render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: '打开搜索' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /搜索/ }))
     const dialog = screen.getByRole('dialog', { name: '搜索本站' })
     expect(within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })).toHaveFocus()
-    expect(within(dialog).getByRole('link', { name: /文章/ })).not.toHaveAttribute('data-target-cursor')
+    const input = within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })
+    expect(within(dialog).queryByRole('link')).not.toBeInTheDocument()
+    await userEvent.type(input, '文章')
+    for (const link of within(dialog).getAllByRole('link')) expect(link).not.toHaveAttribute('data-target-cursor')
   })
 
   it('keeps the clear-search action outside the input label and preserves its accessible name', async () => {
     render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: '打开搜索' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /搜索/ }))
     const dialog = screen.getByRole('dialog', { name: '搜索本站' })
     const input = within(dialog).getByRole('textbox', { name: '搜索作品、笔记或标签' })
     await userEvent.type(input, 'not-a-match')
@@ -161,5 +164,31 @@ describe('editorial card navigation', () => {
     expect(clear.closest('label')).toBeNull()
     await userEvent.click(clear)
     expect(input).toHaveValue('')
+  })
+  it('opens only one overlay and restores announcement focus to settings', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', {name:'打开导航'}))
+    await userEvent.click(screen.getByRole('button', {name:'打开设置'}))
+    expect(screen.getByRole('button',{name:'打开导航'})).toHaveAttribute('aria-expanded','false')
+    await userEvent.click(screen.getByRole('button',{name:'公告'}))
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('button',{name:'关闭公告'})).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button',{name:'打开设置'})).toHaveFocus()
+  })
+  it('toggles search with Ctrl+K and opens first result with Enter', async () => {
+    render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
+    await userEvent.keyboard('{Control>}k{/Control}')
+    await userEvent.keyboard('{Control>}k{/Control}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input,'工具导航')
+    const destination = screen.getByRole('link',{name:/工具导航/})
+    const clicked = vi.fn((event: Event) => event.preventDefault())
+    destination.addEventListener('click',clicked)
+    await userEvent.keyboard('{Enter}')
+    expect(clicked).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

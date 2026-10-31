@@ -67,7 +67,7 @@ export function CardNav({ groups = navigationGroups, currentHash, open, onOpenCh
           <ul>
             {group.destinations.map((destination, destinationIndex) => {
               const current = isRouteCurrent(parseSiteRoute(currentHash), destination.href)
-              return <li key={destination.href}>
+              return <li key={destination.title}>
                 <a
                   href={destination.href}
                   aria-label={destination.title}

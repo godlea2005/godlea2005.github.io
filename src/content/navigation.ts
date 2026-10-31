@@ -1,4 +1,3 @@
-import { site } from './site'
 import { articleSummaries, projectSummaries } from '../editorial'
 import { toolCategories } from './tools'
 
@@ -21,8 +20,8 @@ export const navigationGroups: readonly NavigationGroup[] = [
     title: '阅读',
     index: '01',
     destinations: [
-      { title: '文章', href: '#featured', detail: '设计、内容与技术实践' },
-      { title: '现场笔记', href: '#visual-notes', detail: '正在发生的观察' },
+      { title: '文章', href: '#writing', detail: '设计、内容与技术实践' },
+      { title: '现场笔记', href: '#writing', detail: '正在发生的观察' },
       { title: '归档', href: '#writing', detail: '文章与笔记索引' },
     ],
   },
@@ -43,7 +42,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
     destinations: [
       { title: '留言', href: '#guestbook', detail: '留下想法，交流近况' },
       { title: '音乐', href: '#music', detail: '音乐与声音可视化' },
-      { title: '关于与联系', href: '#about', detail: `了解这个空间 · ${site.contacts.email}` },
+      { title: '关于与联系', href: '#about', detail: '打开联系卡片，聊想法与近况' },
     ],
   },
 ] as const
@@ -56,7 +55,7 @@ export const publicPageDestinations: readonly NavigationDestination[] = [
   { title: '工具导航', href: '#tools', detail: '常用工具与工作流入口' },
   { title: '留言', href: '#guestbook', detail: '留下想法，交流近况' },
   { title: '音乐', href: '#music', detail: '音乐与声音可视化' },
-  { title: '关于与联系', href: '#about', detail: `了解这个空间并联系我：${site.contacts.email}` },
+  { title: '关于与联系', href: '#about', detail: '打开联系卡片，留言交流想法与近况' },
 ] as const
 
 export const articleSearchContent = articleSummaries

@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { articleSummaries } from './index'
+import { guideCategories, guideTags } from '../components/home-guide/model'
 import './editorial-pages.css'
 
 export function WritingIndexPage() {
-  const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const tags = ['设计实践', '电商内容']
+  const readFilter = () => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1])
+    return params.get('category') ?? params.get('tag')
+  }
+  const [selectedTag, setSelectedTag] = useState<string | null>(readFilter)
+  const tags = [...new Set([...guideCategories.map(category => category.name), ...guideTags])]
+  useEffect(() => { const sync = () => setSelectedTag(readFilter()); window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync) }, [])
   const articles = useMemo(
     () => {
       const chronological = [...articleSummaries].sort((a, b) => b.date.localeCompare(a.date))

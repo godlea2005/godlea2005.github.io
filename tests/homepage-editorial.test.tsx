@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { articleSummaries, projectSummaries } from '../src/editorial'
 import { site } from '../src/content/site'
 import { HomePage } from '../src/components/HomePage'
+import { FeaturedNotes } from '../src/components/FeaturedNotes'
+import { SelectedWork } from '../src/components/SelectedWork'
+import { CommerceHomeSection } from '../src/components/CommerceHomeSection'
+import { WritingPreview } from '../src/components/WritingPreview'
+import { AboutSection } from '../src/components/AboutSection'
 
 vi.mock('../src/components/GradientWaves/GradientWaves', () => ({
   default: () => <div data-testid="gradient-waves" />,
@@ -89,21 +94,17 @@ describe('WENHAO Field Notes homepage', () => {
 
     expect(regions).toEqual([
       'home-title',
-      'featured-title',
-      'selected-work-title',
-      'commerce-home-title',
-      'visual-notes-title',
-      'writing-preview-title',
-      'about-title',
+      'home-guide-title',
     ])
     expect(container.querySelectorAll('#about')).toHaveLength(1)
     expect(container.querySelector('footer#site-footer')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /开始阅读/ })).toHaveAttribute('href', '#featured')
-    expect(container.querySelector('section#featured')).toHaveAttribute('aria-labelledby', 'featured-title')
+    expect(screen.getByRole('link', { name: /向下探索/ })).toHaveAttribute('href', '#home-guide')
+    expect(container.querySelectorAll('.home-guide-card')).toHaveLength(4)
+    expect(container.querySelector('section#featured')).toBeNull()
   })
 
   it('links three complete featured notes and all personal projects to real routes', () => {
-    const { container } = render(<HomePage theme="light" />)
+    const { container } = render(<><FeaturedNotes /><SelectedWork /></>)
     const featured = container.querySelector('#featured') as HTMLElement
     const cards = featured.querySelectorAll('article')
 
@@ -124,7 +125,7 @@ describe('WENHAO Field Notes homepage', () => {
   })
 
   it('shows a compact commerce lab and a dated writing index without old demo copy', () => {
-    const { container } = render(<HomePage theme="dark" />)
+    const { container } = render(<><CommerceHomeSection /><WritingPreview /></>)
     const commerce = container.querySelector('.commerce-home') as HTMLElement
     const writing = container.querySelector('#writing-preview') as HTMLElement
 
@@ -151,7 +152,7 @@ describe('WENHAO Field Notes homepage', () => {
   })
 
   it('uses the supplied role, current status and real contact destinations', () => {
-    const { container } = render(<HomePage theme="dark" />)
+    const { container } = render(<AboutSection />)
     const about = container.querySelector('#about') as HTMLElement
 
     expect(within(about).getByText(/AI 设计师/)).toBeInTheDocument()

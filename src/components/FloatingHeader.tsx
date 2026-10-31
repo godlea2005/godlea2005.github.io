@@ -1,20 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { navigationGroups } from '../content/navigation'
-import type { Theme } from '../lib/theme'
+import type { Theme, ThemePreference } from '../lib/theme'
 import { CardNav } from './CardNav'
 import { SiteSearchDialog } from './SiteSearchDialog'
+import { SiteSettings } from './SiteSettings'
+import { SiteAnnouncements } from './SiteAnnouncements'
 import './floating-header.css'
 
 type FloatingHeaderProps = {
   theme: Theme
   pageHash: string
   onToggleTheme: () => void
+  themePreference?: ThemePreference
+  onThemePreferenceChange?: (preference: ThemePreference) => void
 }
 
-export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeaderProps) {
+export function FloatingHeader({ theme, pageHash, onToggleTheme, themePreference, onThemePreferenceChange }: FloatingHeaderProps) {
   const { isAdmin } = useAuth()
-  const searchTriggerRef = useRef<HTMLButtonElement>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [announcementOpen, setAnnouncementOpen] = useState(false)
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const groups = useMemo(() => isAdmin ? navigationGroups.map((group) => group.id === 'connect'
@@ -22,6 +27,8 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
     : group) : navigationGroups, [isAdmin])
   const closeNavigation = useCallback(() => setNavigationOpen(false), [])
   const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const focusSettings = () => document.querySelector<HTMLButtonElement>('.settings-trigger')?.focus()
+  const openSearch = () => { focusSettings(); setSettingsOpen(false); setNavigationOpen(false); setAnnouncementOpen(false); setSearchOpen(true) }
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -29,10 +36,11 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
         event.preventDefault()
         if (document.querySelector('.route-loading-screen')) return
         // A visible modal already owns the keyboard and focus lifecycle.
-        if (document.querySelector('[aria-modal="true"]')) return
-        searchTriggerRef.current?.focus()
+        if (document.querySelector('[aria-modal="true"]:not([aria-label="搜索本站"])')) return
+        focusSettings()
         setNavigationOpen(false)
-        setSearchOpen(true)
+        setSettingsOpen(false)
+        setSearchOpen(current => !current)
       }
     }
     window.addEventListener('keydown', keyboard)
@@ -42,6 +50,8 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
   useEffect(() => {
     setNavigationOpen(false)
     setSearchOpen(false)
+    setSettingsOpen(false)
+    setAnnouncementOpen(false)
   }, [isAdmin, pageHash])
 
   return <>
@@ -49,16 +59,12 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeade
       <a className="floating-brand" href="#top" aria-label="文昊，回到首页">
         <span aria-hidden="true">W</span><strong>WENHAO</strong><i aria-hidden="true">.</i>
       </a>
-      <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={setNavigationOpen} onNavigate={closeNavigation} />
+      <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={open => { setNavigationOpen(open); if (open) setSettingsOpen(false) }} onNavigate={closeNavigation} />
       <div className="floating-actions">
-        <button ref={searchTriggerRef} className="floating-search" type="button" onClick={() => setSearchOpen(true)} aria-label="打开搜索">
-          <span className="floating-action-icon" aria-hidden="true">⌕</span><kbd>⌘ / Ctrl K</kbd>
-        </button>
-        <button className="floating-theme" type="button" onClick={onToggleTheme} aria-label={`切换至${theme === 'dark' ? '浅色' : '深色'}模式`}>
-          <span className="floating-action-icon" aria-hidden="true">{theme === 'dark' ? '☼' : '◐'}</span>
-        </button>
+        <SiteSettings open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) setNavigationOpen(false) }} onSearch={openSearch} onAnnouncements={() => { focusSettings(); setSettingsOpen(false); setNavigationOpen(false); setSearchOpen(false); setAnnouncementOpen(true) }} preference={themePreference ?? theme} onPreferenceChange={value => { if (onThemePreferenceChange) onThemePreferenceChange(value); else if (value !== theme) onToggleTheme() }} />
       </div>
     </header>
     <SiteSearchDialog open={searchOpen} onClose={closeSearch} includeAdmin={isAdmin} />
+    {announcementOpen && <SiteAnnouncements onClose={() => setAnnouncementOpen(false)} />}
   </>
 }

@@ -48,14 +48,14 @@ describe('AI commerce homepage positioning', () => {
     expect(particleTextSpy).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'WENHAO', interaction }))
   })
 
-  it('uses the approved hero copy and routes both calls to action', () => {
+  it('uses the compact approved hero without legacy calls to action', () => {
     render(<StatusScene theme="dark" />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'WENHAO 博客' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'WENHAO' })).toBeInTheDocument()
     expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })).toBeInTheDocument()
-    expect(screen.getByText(/AI 设计师/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '开始阅读' })).toHaveAttribute('href', '#featured')
-    expect(screen.getByRole('link', { name: '查看作品' })).toHaveAttribute('href', '#work')
+    expect(screen.getByText('AI 工程师')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '开始阅读' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '查看作品' })).not.toBeInTheDocument()
     expect(screen.getByText('WENHAO')).toBeInTheDocument()
     expect(screen.getByTestId('gradient-waves')).toBeInTheDocument()
   })
@@ -105,13 +105,14 @@ describe('AI commerce homepage positioning', () => {
     expect(app).toContain("route.page === 'music'")
     expect(app).toContain("route.page === 'guestbook'")
     expect(app).toContain('<GlobalMusicDock')
-    expect(app).toContain('useState<Theme>(() => getInitialTheme())')
-    expect(app).toContain('useLayoutEffect(() => applyTheme(theme), [theme])')
+    expect(app).toContain('useThemePreference()')
+    const themeHook = readSource('src/lib/useThemePreference.ts')
+    expect(themeHook).toContain('applyTheme(theme, false)')
     expect(app).not.toContain('id="about"')
 
     const homepage = readSource('src/components/HomePage.tsx')
     expect(homepage).toContain('<StatusScene theme={theme} />')
-    expect(homepage).toContain('<VisualNotes />')
+    expect(homepage).toContain('<HomeGuide />')
     expect(homepage).toContain('<SiteFooter />')
 
     const scene = readSource('src/components/StatusScene.tsx')

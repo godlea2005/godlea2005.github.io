@@ -777,7 +777,7 @@ describe('AI commerce route and navigation', () => {
 
   it('opens useful local search from the keyboard and restores focus on close', async () => {
     render(<FloatingHeader theme="dark" pageHash="#top" onToggleTheme={vi.fn()} />)
-    const search = screen.getByRole('button', { name: '打开搜索' })
+    const search = screen.getByRole('button', { name: '打开设置' })
     search.focus()
     await userEvent.keyboard('{Control>}k{/Control}')
     const input = screen.getByRole('textbox', { name: '搜索作品、笔记或标签' })

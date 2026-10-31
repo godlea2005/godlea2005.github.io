@@ -1,11 +1,11 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { HomePage } from './components/HomePage'
 import { FloatingHeader } from './components/FloatingHeader'
 import { TargetCursor } from './components/TargetCursor'
 import { RouteScrollBoundary } from './components/RouteScrollBoundary'
 import { GlobalMusicDock } from './music/GlobalMusicDock'
 import { isSiteSubpageRoute, parseSiteRoute } from './lib/siteRoutes'
-import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
+import { useThemePreference } from './lib/useThemePreference'
 import { createHeavyLazyRoute, isHeavyRouteId } from './lib/heavyRouteLoading'
 import { RouteLoadingScreen } from './components/RouteLoadingScreen'
 
@@ -25,7 +25,7 @@ const resolvePageHash = () => {
 }
 
 function App() {
-  const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
+  const { theme, preference, setPreference } = useThemePreference()
   const [pageHash, setPageHash] = useState(resolvePageHash)
   const route = parseSiteRoute(pageHash)
   const musicPage = route.kind === 'static' && route.page === 'music'
@@ -36,7 +36,6 @@ function App() {
   const subpage = isSiteSubpageRoute(route)
   const heavyRoute = route.kind === 'static' && isHeavyRouteId(route.page) ? route.page : null
 
-  useLayoutEffect(() => applyTheme(theme), [theme])
   useEffect(() => {
     // Hash routes own their scroll position; preserve the browser's setting on teardown.
     const previousRestoration = window.history.scrollRestoration
@@ -53,12 +52,12 @@ function App() {
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
+    setPreference(next)
   }
 
   return (
     <div className={`site-shell${!subpage ? ' is-home' : ''}${commercePage || commerceAdminPage ? ' is-commerce' : ''}`}>
-      <FloatingHeader theme={theme} pageHash={pageHash} onToggleTheme={toggleTheme} />
+      <FloatingHeader theme={theme} themePreference={preference} onThemePreferenceChange={setPreference} pageHash={pageHash} onToggleTheme={toggleTheme} />
       <TargetCursor />
 
       <RouteLoadingScreen key={heavyRoute ?? 'non-heavy'} route={heavyRoute} />
