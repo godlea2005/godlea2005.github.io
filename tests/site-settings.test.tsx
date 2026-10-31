@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { SiteSettings } from '../src/components/SiteSettings'
 import { getInitialPreference, resolveTheme } from '../src/lib/theme'
 import { useThemePreference } from '../src/lib/useThemePreference'
@@ -39,4 +40,12 @@ it('tracks system changes without replacing the saved system preference', () => 
   expect(localStorage.getItem('wenhao-theme')).toBe('light')
   view.unmount()
   expect(listeners.size).toBe(0)
+})
+it('closes the nonmodal settings when keyboard focus leaves its root', async () => {
+  const close = vi.fn()
+  render(<><SiteSettings open onOpenChange={close} onSearch={vi.fn()} onAnnouncements={vi.fn()} preference="dark" onPreferenceChange={vi.fn()} /><button>背景入口</button></>)
+  screen.getByRole('radio',{name:'跟随系统'}).focus()
+  await userEvent.tab()
+  expect(screen.getByRole('button',{name:'背景入口'})).toHaveFocus()
+  expect(close).toHaveBeenCalledWith(false)
 })

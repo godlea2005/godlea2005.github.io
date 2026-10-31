@@ -5,7 +5,7 @@ import { articleSummaries } from '../src/editorial'
 import { guideCategories, writingFilterHref } from '../src/components/home-guide/model'
 import { parseSiteRoute } from '../src/lib/siteRoutes'
 
-afterEach(() => { cleanup(); vi.useRealTimers(); window.location.hash = '' })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); window.location.hash = '' })
 it('expands one guide at a time and closes the active guide', () => {
   render(<HomeGuide />)
   const stats = screen.getByRole('button', { name: '展开站点数据' })
@@ -49,4 +49,23 @@ it('opens contact on a direct about anchor and exposes genuine tag filters', () 
   expect(screen.getByRole('button', { name: '收起订阅与联系' })).toHaveAttribute('aria-expanded', 'true')
   fireEvent.click(screen.getByRole('button', { name: '展开内容索引' }))
   expect(screen.getByRole('link', { name: /设计实践/ })).toHaveAttribute('href', writingFilterHref('category','设计实践'))
+})
+it('keeps carousel paused when hover leaves but keyboard focus remains', () => {
+  vi.useFakeTimers()
+  const view = render(<HomeGuide />)
+  const stage = view.container.querySelector('.guide-post-stage')!
+  fireEvent.pointerEnter(stage)
+  fireEvent.focus(screen.getByRole('button',{name:'下一篇预览'}))
+  fireEvent.pointerLeave(stage)
+  act(() => vi.advanceTimersByTime(8600))
+  expect(view.container.querySelector('.guide-post-cover:not([hidden]) strong')?.textContent).toBe(articleSummaries[0].title)
+})
+it('uses a static carousel for reduced motion while keeping manual controls', () => {
+  vi.useFakeTimers()
+  vi.spyOn(window,'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList)
+  const view = render(<HomeGuide />)
+  act(() => vi.advanceTimersByTime(8600))
+  expect(view.container.querySelector('.guide-post-cover:not([hidden]) strong')?.textContent).toBe(articleSummaries[0].title)
+  fireEvent.click(screen.getByRole('button',{name:'下一篇预览'}))
+  expect(view.container.querySelector('.guide-post-cover:not([hidden]) strong')?.textContent).toBe(articleSummaries[1].title)
 })

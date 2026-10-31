@@ -17,7 +17,7 @@ export function SiteSettings({ open, onOpenChange, onSearch, onAnnouncements, pr
     document.addEventListener('keydown', key)
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', key) }
   }, [open, onOpenChange])
-  return <div className="site-settings" ref={root}>
+  return <div className="site-settings" ref={root} onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget)) onOpenChange(false) }}>
     <button className="settings-trigger" ref={trigger} type="button" aria-label="打开设置" aria-expanded={open} aria-controls="site-settings-panel" onClick={() => onOpenChange(!open)}><SiteIcon name="settings" /></button>
     {open && <div className="settings-panel" id="site-settings-panel" role="region" aria-label="站点设置">
       <button type="button" className="settings-row" onClick={() => { trigger.current?.focus(); onSearch() }}><SiteIcon name="search" /><span>搜索</span><kbd>Ctrl K</kbd></button>

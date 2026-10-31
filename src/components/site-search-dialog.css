@@ -7,6 +7,8 @@
 .site-search-input-label { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .site-search-input-label > span { display: none; }
 .site-search-input-label input { width: 100%; min-width: 0; min-height: 60px; border: 0; background: transparent; outline: none; color: var(--ink); font: inherit; font-size: 20px; }
+.site-search-input-label input:focus-visible { outline: none; }
+.site-search-input-wrap:focus-within { outline: 2px solid var(--accent); outline-offset: 4px; }
 .site-search-clear { min-height: 44px; min-width: 44px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
 .site-search-go { width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%; background: var(--soft); border: 0; color: var(--ink); font-size: 25px; cursor: pointer; }
 .site-search-go:disabled { opacity: .4; cursor: default; }

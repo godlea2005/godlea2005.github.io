@@ -19,7 +19,9 @@ export function HomeGuide() {
   const [active, setActive] = useState<GuideId | null>(() => window.location.hash === '#about' ? 'contact' : null)
   const [slide, setSlide] = useState(0)
   const [metric, setMetric] = useState(0)
-  const [paused, setPaused] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const [focusWithin, setFocusWithin] = useState(false)
+  const paused = hovered || focusWithin
   const [visible, setVisible] = useState(false)
   const root = useRef<HTMLElement>(null)
   const swipe = useRef<{ x: number; y: number } | null>(null)
@@ -53,7 +55,7 @@ export function HomeGuide() {
             {card.id === 'stats' && <><ArchiveArt /><span className="guide-art-readout"><small>{metrics[metric].label}</small><b>{metrics[metric].value}</b></span></>}
             {card.id === 'index' && <IndexArt />}
             {card.id === 'contact' && <ContactArt />}
-            {card.id === 'posts' && <div className="guide-post-stage" onPointerEnter={() => setPaused(true)} onPointerLeave={() => { setPaused(false); swipe.current = null }} onFocus={() => setPaused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false) }}
+            {card.id === 'posts' && <div className="guide-post-stage" onPointerEnter={() => setHovered(true)} onPointerLeave={() => { setHovered(false); swipe.current = null }} onFocus={() => setFocusWithin(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false) }}
               onPointerDown={event => { swiped.current = false; if (event.button === 0) swipe.current = { x: event.clientX, y: event.clientY } }}
               onPointerCancel={() => { swipe.current = null }}
               onPointerUp={event => { const start = swipe.current; swipe.current = null; if (start && Math.abs(event.clientX - start.x) > 50 && Math.abs(event.clientX - start.x) > Math.abs(event.clientY - start.y)) { swiped.current = true; nextSlide(event.clientX < start.x ? 1 : -1) } }}
