@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   getProfile: vi.fn(),
   requireLogin: vi.fn(),
+  refresh: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('../src/auth/AuthProvider', () => ({ useAuth: mocks.useAuth }))
@@ -21,7 +22,7 @@ vi.mock('../src/auth/AuthProvider', () => ({ useAuth: mocks.useAuth }))
 vi.mock('../src/guestbook/guestbookRepository', () => ({
   guestbookRepository: {
     mode: 'local', list: mocks.list, getProfile: mocks.getProfile,
-    refresh: vi.fn().mockResolvedValue([]), create: vi.fn(), update: vi.fn(),
+    refresh: mocks.refresh, create: vi.fn(), update: vi.fn(),
     remove: vi.fn(), moderate: vi.fn(), saveProfile: vi.fn().mockResolvedValue(undefined),
   },
   detectClientMeta: () => ({ browser: 'Test', platform: 'Test' }),
@@ -61,13 +62,35 @@ afterEach(() => {
 })
 
 describe('shared editorial page shells', () => {
+  it('keeps refresh icon and button geometry stable throughout a delayed synchronization', async () => {
+    let resolveRefresh!: (messages: []) => void
+    mocks.refresh.mockReturnValueOnce(new Promise<[]>(resolve => { resolveRefresh = resolve }))
+    render(<GuestbookPage />)
+    const refresh = screen.getByRole('button', { name: '立即刷新消息' })
+    fireEvent.click(refresh)
+    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-busy', 'true')
+    expect(refresh).toHaveTextContent('↻')
+    expect(screen.getByRole('button', { name: '正在同步消息' })).toBe(refresh)
+    await act(async () => resolveRefresh([]))
+    expect(refresh).toBeEnabled()
+    expect(refresh).toHaveAttribute('aria-busy', 'false')
+    expect(refresh).toHaveTextContent('↻')
+  })
   it('defines centered fixed boxes without relocating the action capsule', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/components/floating-header.css'), 'utf8')
     expect(css).toMatch(/\.floating-actions button\s*\{[^}]*height:\s*44px[^}]*display:\s*grid[^}]*place-items:\s*center/s)
     const settingsCss = readFileSync(resolve(process.cwd(), 'src/components/site-settings.css'), 'utf8')
-    expect(settingsCss).toMatch(/\.floating-actions \.settings-trigger\s*\{[^}]*width:\s*52px[^}]*height:\s*52px/s)
+    expect(css).toContain('--header-control-height: 52px')
+    expect(css).toContain('--header-control-radius: 999px')
+    expect(css).toMatch(/\.floating-brand,\s*\.card-nav-trigger,\s*\.floating-actions \.settings-trigger\s*\{[^}]*height:\s*var\(--header-control-height\)/s)
+    expect(settingsCss).toMatch(/\.floating-actions \.settings-trigger\s*\{[^}]*width:\s*var\(--settings-control-width\)/s)
+    expect(css).not.toContain('width: min(1240px')
+    expect(css).toContain('left: max(20px, env(safe-area-inset-left))')
+    expect(css).toContain('right: max(20px, env(safe-area-inset-right))')
+    expect(settingsCss).not.toContain('transform: rotate(90deg); background: var(--soft)')
     expect(css).toMatch(/\.floating-actions\s*\{[^}]*justify-self:\s*end/s)
-    expect(settingsCss).toContain('max-width: calc(100vw - 24px)')
+    expect(settingsCss).toContain('max-width: calc(100vw - 48px - env(safe-area-inset-left) - env(safe-area-inset-right))')
   })
   it.each([
     ['tools', <ToolNavigationPage />],

@@ -193,7 +193,7 @@ function GuestbookPageContent() {
       <section className="guestbook-board editorial-surface" aria-label="留言板">
         <header className="guestbook-board-header">
           <div><h2>留言板</h2><span>· {messages.length} 条留言</span></div>
-          <div><span>同步于 {syncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><button type="button" onClick={() => void refresh()} disabled={syncing} aria-label="立即刷新消息">{syncing ? '同步中' : '↻'}</button></div>
+          <div><span>同步于 {syncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><button type="button" className="guestbook-sync" onClick={() => void refresh()} disabled={syncing} aria-busy={syncing} aria-label={syncing ? '正在同步消息' : '立即刷新消息'}><span className="guestbook-sync-icon" aria-hidden="true">↻</span></button></div>
         </header>
 
         {announcementOpen && <aside className="guestbook-announcement" aria-label="公告">
@@ -218,6 +218,7 @@ function GuestbookPageContent() {
 
         <GuestbookComposer
           identity={identity}
+          avatarUrl={auth.avatarUrl}
           replyTo={replyTo}
           sending={sending}
           onOpenIdentity={() => setIdentityOpen(true)}

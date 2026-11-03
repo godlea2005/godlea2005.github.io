@@ -57,7 +57,7 @@ export function FloatingHeader({ theme, pageHash, onToggleTheme, themePreference
   return <>
     <header className="floating-header">
       <a className="floating-brand" href="#top" aria-label="文昊，回到首页">
-        <span aria-hidden="true">W</span><strong>WENHAO</strong><i aria-hidden="true">.</i>
+        <img className="floating-brand-avatar" src="/wenhao-avatar.png" alt="" width="36" height="36" /><strong>WENHAO</strong><i aria-hidden="true">.</i>
       </a>
       <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={open => { setNavigationOpen(open); if (open) setSettingsOpen(false) }} onNavigate={closeNavigation} />
       <div className="floating-actions">

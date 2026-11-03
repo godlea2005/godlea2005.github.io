@@ -5,7 +5,7 @@ import { SiteSettings } from '../src/components/SiteSettings'
 import { getInitialPreference, resolveTheme } from '../src/lib/theme'
 import { useThemePreference } from '../src/lib/useThemePreference'
 
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); vi.restoreAllMocks() })
 it('exposes search, announcements and three explicit theme choices', () => {
   const search = vi.fn(), notice = vi.fn(), setPreference = vi.fn(), setOpen = vi.fn()
   render(<SiteSettings open onOpenChange={setOpen} onSearch={search} onAnnouncements={notice} preference="dark" onPreferenceChange={setPreference} />)
@@ -48,4 +48,35 @@ it('closes the nonmodal settings when keyboard focus leaves its root', async () 
   await userEvent.tab()
   expect(screen.getByRole('button',{name:'背景入口'})).toHaveFocus()
   expect(close).toHaveBeenCalledWith(false)
+})
+
+it('retains an inert closing panel, reverses a rapid reopen and cleans the exit timer', () => {
+  vi.useFakeTimers()
+  const props = { onOpenChange: vi.fn(), onSearch: vi.fn(), onAnnouncements: vi.fn(), preference: 'light' as const, onPreferenceChange: vi.fn() }
+  const view = render(<SiteSettings {...props} open />)
+  view.rerender(<SiteSettings {...props} open={false} />)
+  expect(screen.queryByRole('region', { name: '站点设置' })).not.toBeInTheDocument()
+  expect(view.container.querySelector('.settings-panel')).toHaveAttribute('inert')
+  act(() => vi.advanceTimersByTime(100))
+  view.rerender(<SiteSettings {...props} open />)
+  act(() => vi.advanceTimersByTime(240))
+  expect(screen.getByRole('region', { name: '站点设置' })).toBeInTheDocument()
+  view.rerender(<SiteSettings {...props} open={false} />)
+  act(() => vi.advanceTimersByTime(240))
+  expect(view.container.querySelector('.settings-panel')).not.toBeInTheDocument()
+  view.unmount()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('does not schedule an exit for a never-opened menu and closes immediately with reduced motion', () => {
+  vi.useFakeTimers()
+  vi.spyOn(window,'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList)
+  const props = { onOpenChange: vi.fn(), onSearch: vi.fn(), onAnnouncements: vi.fn(), preference: 'system' as const, onPreferenceChange: vi.fn() }
+  const view = render(<SiteSettings {...props} open={false} />)
+  expect(vi.getTimerCount()).toBe(0)
+  view.rerender(<SiteSettings {...props} open />)
+  expect(view.container.querySelector('.settings-theme-options')).toHaveStyle('--theme-index: 2')
+  view.rerender(<SiteSettings {...props} open={false} />)
+  expect(view.container.querySelector('.settings-panel')).not.toBeInTheDocument()
+  expect(vi.getTimerCount()).toBe(0)
 })

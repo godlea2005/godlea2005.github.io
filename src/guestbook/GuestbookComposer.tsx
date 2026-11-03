@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { GuestIdentity, GuestbookMessage } from './types'
+import { GuestAvatar } from './GuestAvatar'
 
 const emojis = ['✦', '👋', '✨', '💡', '🎧', '🫶', '🚀', '🌙', '🧠', '🪄', '👏', '🙂']
 const draftKey = 'wenhao-guestbook:draft'
 
 export function GuestbookComposer({
   identity,
+  avatarUrl,
   replyTo,
   sending,
   onOpenIdentity,
@@ -14,6 +16,7 @@ export function GuestbookComposer({
   onNotice,
 }: {
   identity: GuestIdentity
+  avatarUrl?: string
   replyTo: GuestbookMessage | null
   sending: boolean
   onOpenIdentity: () => void
@@ -91,7 +94,7 @@ export function GuestbookComposer({
       </div>
       <div className="composer-send">
         <span>{content.length}/300</span>
-        <button className="identity-button" type="button" onClick={onOpenIdentity}><i>{identity.nickname ? identity.nickname.slice(0, 1).toUpperCase() : '?'}</i>{identity.nickname || '游客资料'}</button>
+        <button className="identity-button" type="button" onClick={onOpenIdentity}><i aria-hidden="true"><GuestAvatar name={identity.nickname} url={avatarUrl} /></i>{identity.nickname || '游客资料'}</button>
         <button className="send-button" type="submit" disabled={sending}>{sending ? '发送中' : '发送'}</button>
       </div>
     </div>

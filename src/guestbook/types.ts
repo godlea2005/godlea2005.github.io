@@ -12,6 +12,7 @@ export type ClientMeta = {
 }
 
 export type GuestbookMessage = {
+  avatarUrl?: string
   id: string
   author: string
   emailHash: string
@@ -41,6 +42,7 @@ export interface GuestbookRepository {
 }
 
 export type GuestbookAuthState = {
+  avatarUrl?: string
   configured: boolean
   ready: boolean
   userId: string | null

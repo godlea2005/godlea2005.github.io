@@ -53,12 +53,19 @@
   border-bottom: 1px solid var(--guest-line);
 }
 
-.guestbook-board-header > div { display: flex; align-items: baseline; gap: 7px; }
+.guestbook-board-header > div { display: flex; align-items: center; gap: 7px; }
 .guestbook-board-header h2 { margin: 0; font-size: 20px; letter-spacing: -.04em; }
 .guestbook-board-header span { color: var(--muted); font-size: 10px; }
 .guestbook-board-header button { width: 30px; height: 30px; display: grid; place-items: center; color: var(--muted); border: 1px solid transparent; border-radius: 50%; background: transparent; cursor: pointer; }
 .guestbook-board-header button:hover { color: var(--ink); border-color: var(--guest-line); }
 .guestbook-board-header button:disabled { opacity: .4; }
+.guestbook-board-header .guestbook-sync { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; white-space: nowrap; }
+.guestbook-board-header .guestbook-sync-icon { display: block; font-size: 24px; line-height: 1; color: inherit; }
+.guestbook-sync[aria-busy="true"] .guestbook-sync-icon { animation: guestbook-sync-spin 1s linear infinite; }
+@keyframes guestbook-sync-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .guestbook-sync[aria-busy="true"] .guestbook-sync-icon { animation: none; } }
+.message-avatar, .identity-button i { overflow: hidden; }
+.message-avatar img, .identity-button i img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
 .guestbook-announcement {
   position: relative;

@@ -1,0 +1,8 @@
+# Local brand assets and directory focus repair
+
+- User supplied an exact transparent PNG and asked to replace the header W and browser favicon without rounded/square avatar masks or background. Used the same full image, resized only to 256px and 64px PNG via `scripts/prepare-brand-assets.ps1`; source image untouched. Generated assets retain RGBA and corner alpha=0, 146542/11936 bytes.
+- Header decorative image uses contain, zero radius/border and transparent background; existing home-link accessible name is preserved. At <=380px, display the unframed 44px image without truncating brand text or hiding the avatar. No publication.
+- Directory focus issue was a cascade collision: page-wide focus-visible outline outranked the input reset and drew an inner rectangle. Keep a stable outer focus-within border/shadow, specifically disable the inner outline, and use a system Highlight outer outline under forced-colors.
+- Full check before forced-colors supplement: 53 files / 513 tests passed; build passed. Supplement verified by focused tests and rebuild. Existing Canvas emulation and bundle-size notices remain.
+- Browser: default desktop search field measured 619.996×45.239px before and after click; input outline none, outer 3px shadow present. Figma search produced one result; Tab/Shift+Tab returned keyboard focus. At 390px header image measured 30px, border radius 0, no overlap; 320px uses transparent 44px image. Viewport reset afterward. Favicon declaration points to the new PNG. Forced-colors rule verified in source regression, not by OS emulation.
+- Independent review identified forced-colors focus risk; addressed with the outer Highlight rule. No backend changes, pushes, deployments or edits to `output/`.
