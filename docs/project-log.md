@@ -271,3 +271,6 @@
 - 发布前重新运行完整测试：55 文件 / 521 测试通过；TypeScript/Vite 生产构建通过；diff whitespace 检查通过。保留已有 Canvas 仿真与大分块提示。
 - 各修改已分别独立审查；高对比度焦点、低动效叠卡、滚动坐标和布局轨道问题已修复。数据库头像迁移已按用户单独授权完成，本次不重新执行 SQL。
 - 确认 Pages 仍为 legacy main `/`，域名 `geniusli.cn`；源码与部署工作树分离，发布前远端版本分别为 `2e12d3d` / `e1360e4`。只提交源码/测试/文档及指定素材，排除 `output/`、本地环境文件及构建缓存。保留工作树和旧哈希静态资源，方便后续迭代与缓存兼容。
+- 发布完成：源码 `dbf1f75`；静态发布 `36e62a0097cbe37c8a2b89c695f4cc30b0c7bc38`；GitHub Pages run `41592235814` success，Pages 状态 built。正式首页 HTTP 200，已引用 `index-DTRjkO5h.js` / `index-D9EnkZ3U.css`；头像 PNG、favicon PNG、工具 CSS、留言 JS 均 HTTP 200。构建生成的第三方 shader 模板字符串含原有空白，未手工改动哈希资源以消除生成文件 diff-whitespace 提示；源码 whitespace 检查通过。
+- 正式 Chrome 验收：留言板载入 28 条，14 个头像图片全部 complete/naturalWidth>0。实际刷新后同步按钮保持 43.993×43.993px、↻ 图标，未提交或修改留言。工具页显示 68 工具；点击搜索后输入框内部 outline none，外框 3px shadow，高度 45.239px。未重新登录、未触发 AI 生成/付费接口。未重新覆盖所有首页动效/低动效组合，沿用发布前本地验证。
+- 旧首页备份位于主工作区 `.deploy-backups/20261103-dbf1f75/index.html`；旧静态哈希文件保留。源码仅剩用户 `output/` 未跟踪，部署工作树保持干净。
