@@ -274,3 +274,10 @@
 - 发布完成：源码 `dbf1f75`；静态发布 `36e62a0097cbe37c8a2b89c695f4cc30b0c7bc38`；GitHub Pages run `41592235814` success，Pages 状态 built。正式首页 HTTP 200，已引用 `index-DTRjkO5h.js` / `index-D9EnkZ3U.css`；头像 PNG、favicon PNG、工具 CSS、留言 JS 均 HTTP 200。构建生成的第三方 shader 模板字符串含原有空白，未手工改动哈希资源以消除生成文件 diff-whitespace 提示；源码 whitespace 检查通过。
 - 正式 Chrome 验收：留言板载入 28 条，14 个头像图片全部 complete/naturalWidth>0。实际刷新后同步按钮保持 43.993×43.993px、↻ 图标，未提交或修改留言。工具页显示 68 工具；点击搜索后输入框内部 outline none，外框 3px shadow，高度 45.239px。未重新登录、未触发 AI 生成/付费接口。未重新覆盖所有首页动效/低动效组合，沿用发布前本地验证。
 - 旧首页备份位于主工作区 `.deploy-backups/20261103-dbf1f75/index.html`；旧静态哈希文件保留。源码仅剩用户 `output/` 未跟踪，部署工作树保持干净。
+
+## 2026-11-03 — 私有访问统计发布
+
+- 用户提供 Cloudflare Web Analytics 公开站点 token 并明确要求“发布”。只在 HTTPS 正式域名加载一次官方模块脚本；本地开发、预览和认证回调不加载。不添加公开计数器、个人身份字段或自定义上报事件。
+- 重新通过 56 文件 / 525 项测试及生产构建；源码 `0bf28fd` 已推送，静态发布 `c3a400df119420c7aca28b081bf13a58df2a3fc3`，GitHub Pages run `41599739774` success。
+- 正式首页和新入口 `index-DOmz9wlt.js` 均 HTTP 200；首页引用新入口，线上包包含官方脚本地址和正确公开配置。浏览器工具在最终验收期间变为不可用，未验证浏览器实际上报或私有后台入库，不声称已有访问数或 hash 路由统计。
+- 旧首页备份 `.deploy-backups/20261103-analytics-0bf28fd/index.html`，保留旧静态文件。未修改数据库、域名设置或用户 `output/`。站长可在正常访问正式站后到自己的 Cloudflare Web Analytics 查看后续数据。

@@ -50,3 +50,10 @@ Self-review: all spec requirements are covered by one bounded loader task. No ho
 ## Publication authorized (2026-11-03)
 
 The user explicitly requested “发布” after local handoff. Re-ran all 56 files / 525 tests and production build successfully before release. Official beacon URL returned HTTP 200 and its code supports locating the `data-cf-beacon` script when document.currentScript is unavailable for modules. Publish using the existing GitHub Pages static worktree; no Cloudflare account/DNS or database changes. Preserve user `output/` and old static resources.
+
+### Publication result
+
+- Source commit `0bf28fd` pushed to `codex/commerce-workbench-rebuild`; static release `c3a400df119420c7aca28b081bf13a58df2a3fc3` pushed to `main`. GitHub Pages run `41599739774` completed successfully.
+- Production `https://geniusli.cn/` returned HTTP 200 and references `index-DOmz9wlt.js`. The exact production entry returned HTTP 200 and contains the official beacon URL and supplied public configuration token.
+- Previous index backed up under `.deploy-backups/20261103-analytics-0bf28fd/index.html`; old hashed static resources preserved. No backend, DNS, account settings or user `output/` changes.
+- Browser tooling became unavailable during final runtime inspection. The deployed code and HTTP resources are verified, but actual browser beacon delivery and receipt in the private Cloudflare dashboard are not verified. Owner should check Web Analytics after normal production visits; do not claim existing counts or hash-route breakdown.
