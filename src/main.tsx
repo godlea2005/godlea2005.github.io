@@ -4,6 +4,7 @@ import App from './App'
 import './styles.css'
 import { AuthProvider } from './auth/AuthProvider'
 import { MusicProvider } from './music/MusicProvider'
+import { installWebAnalytics } from './lib/webAnalytics'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -14,3 +15,5 @@ createRoot(document.getElementById('root')!).render(
     </AuthProvider>
   </StrictMode>,
 )
+
+installWebAnalytics()

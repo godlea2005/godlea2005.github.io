@@ -1,0 +1,36 @@
+.text-type {
+  display: inline-flex;
+  align-items: baseline;
+  min-height: 1.5em;
+  white-space: nowrap;
+}
+
+.text-type-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.text-type-caret {
+  display: inline-block;
+  width: 1px;
+  height: 0.9em;
+  margin-left: 0.12em;
+  background: currentColor;
+  opacity: 0.65;
+  animation: text-type-blink 1s steps(1) infinite;
+}
+
+@keyframes text-type-blink {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-type-caret { animation: none; }
+}

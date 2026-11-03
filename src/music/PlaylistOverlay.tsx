@@ -1,23 +1,16 @@
-import { useEffect } from 'react'
+import { ModalSurface } from '../components/ModalSurface'
 import { useMusic } from './MusicProvider'
 import { CloseIcon, PauseIcon, PlayIcon } from './icons'
 
 export function PlaylistOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const music = useMusic()
 
-  useEffect(() => {
-    if (!open) return
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose, open])
+  if (!open) return null
 
-  return <div className={open ? 'playlist-layer is-open' : 'playlist-layer'} aria-hidden={!open}>
-    <button className="playlist-scrim" type="button" onClick={onClose} aria-label="关闭歌单" tabIndex={open ? 0 : -1} />
-    <aside className="playlist-panel" aria-label="播放列表">
+  return <ModalSurface className="playlist-layer is-open" panelClassName="playlist-panel" label="播放列表" onClose={onClose}>
       <header>
         <div><small>PLAYLIST / {String(music.tracks.length).padStart(2, '0')}</small><h2>歌单切换</h2><p>PRIVATE AUDIO ARCHIVE</p></div>
-        <button type="button" onClick={onClose} aria-label="关闭歌单"><CloseIcon size={24} /></button>
+        <button type="button" data-modal-focus onClick={onClose} aria-label="关闭歌单"><CloseIcon size={24} /></button>
       </header>
       <div className="playlist-tracks">
         {music.tracks.map((item, index) => {
@@ -36,6 +29,5 @@ export function PlaylistOverlay({ open, onClose }: { open: boolean; onClose: () 
         })}
       </div>
       <footer><span>LOCAL FILES</span><span>LOSSLESS SIGNAL</span></footer>
-    </aside>
-  </div>
+  </ModalSurface>
 }

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const gradientWavesSpy = vi.hoisted(() => vi.fn())
+const particleTextSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('../src/components/GradientWaves/GradientWaves', () => ({
   default: (props: Record<string, unknown>) => {
@@ -13,7 +14,10 @@ vi.mock('../src/components/GradientWaves/GradientWaves', () => ({
 }))
 
 vi.mock('../src/components/ParticleText/ParticleText', () => ({
-  ParticleText: ({ text }: { text: string }) => <span data-testid="particle-text">{text}</span>,
+  ParticleText: (props: { text: string; interaction?: string }) => {
+    particleTextSpy(props)
+    return <span data-testid="particle-text">{props.text}</span>
+  },
 }))
 
 import { CommerceHomeSection } from '../src/components/CommerceHomeSection'
@@ -25,37 +29,50 @@ const defaultMatchMedia = window.matchMedia
 afterEach(() => {
   cleanup()
   gradientWavesSpy.mockClear()
+  particleTextSpy.mockClear()
   window.matchMedia = defaultMatchMedia
 })
 
 describe('AI commerce homepage positioning', () => {
-  it('uses the approved hero copy and routes both calls to action', () => {
-    render(<StatusScene />)
+  it.each([
+    { fine: true, reduced: false, interaction: 'repel-and-burst' },
+    { fine: false, reduced: false, interaction: 'tap-burst' },
+    { fine: false, reduced: true, interaction: 'tap-burst' },
+  ])('delegates title interaction and reduced-motion fallback for $fine/$reduced', ({ fine, reduced, interaction }) => {
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)' ? reduced : fine,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })) as typeof window.matchMedia
+    render(<StatusScene theme="dark" />)
+    expect(screen.getByTestId('particle-text')).toBeInTheDocument()
+    expect(particleTextSpy).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'WENHAO', interaction }))
+  })
 
-    expect(screen.getByRole('heading', { level: 1, name: 'AI 电商视觉，先把策略想清楚。' })).toBeInTheDocument()
-    expect(screen.getByText('面向 Ozon、Wildberries、抖音与淘宝/天猫，根据产品图生成主图创意、详情页分镜和可执行作图提示词。')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '免费分析一个产品' })).toHaveAttribute('href', '#ai-commerce')
-    expect(screen.getByRole('link', { name: '查看示例方案' })).toHaveAttribute('href', '#commerce-examples')
-    expect(screen.getByTestId('particle-text')).toHaveTextContent('WENHAO')
+  it('uses the compact approved hero without legacy calls to action', () => {
+    render(<StatusScene theme="dark" />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'WENHAO' })).toBeInTheDocument()
+    expect(screen.getByText('记录设计与技术的现场', { selector: '.text-type-accessible' })).toBeInTheDocument()
+    expect(screen.getByText('AI 工程师')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '开始阅读' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '查看作品' })).not.toBeInTheDocument()
+    expect(screen.getByText('WENHAO')).toBeInTheDocument()
     expect(screen.getByTestId('gradient-waves')).toBeInTheDocument()
   })
 
-  it('makes the four markets, three-step workflow and demo result tangible', () => {
+  it('keeps commerce as one compact laboratory entry', () => {
     render(<CommerceHomeSection />)
 
     for (const platform of ['Ozon', 'Wildberries', '抖音', '淘宝/天猫']) {
       expect(screen.getByText(platform)).toBeInTheDocument()
     }
-    for (const step of ['上传产品资料', '选择市场平台', '获得主图与详情页方案']) {
-      expect(screen.getByText(step)).toBeInTheDocument()
+    for (const verb of ['理解产品', '判断市场', '组织画面']) {
+      expect(screen.getByText(verb)).toBeInTheDocument()
     }
-    expect(screen.getByText('演示案例')).toBeInTheDocument()
-    expect(screen.getByText('主图方向')).toBeInTheDocument()
-    expect(screen.getByText('详情页分镜')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: '作图提示词' })).toBeInTheDocument()
-    expect(screen.getByText('快速出汽场景')).toBeInTheDocument()
-    expect(screen.getByText('折叠收纳展示')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '进入 AI 电商工作台' })).toHaveAttribute('href', '#ai-commerce')
+    expect(screen.queryByText('演示案例')).not.toBeInTheDocument()
+    expect(screen.queryByText('主图方向')).not.toBeInTheDocument()
+    expect(screen.queryByText('详情页分镜')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '进入 AI 电商实验室' })).toHaveAttribute('href', '#ai-commerce')
 
     const demoSource = readSource('src/content/site.ts') + readSource('src/components/CommerceHomeSection.tsx')
     expect(demoSource).not.toMatch(/20\s*(?:秒|s)|双电压/i)
@@ -73,7 +90,7 @@ describe('AI commerce homepage positioning', () => {
       dispatchEvent: vi.fn(),
     })
 
-    render(<StatusScene />)
+    render(<StatusScene theme="dark" />)
 
     await waitFor(() => expect(gradientWavesSpy).toHaveBeenLastCalledWith(expect.objectContaining({
       speed: 0,
@@ -82,28 +99,29 @@ describe('AI commerce homepage positioning', () => {
     })))
   })
 
-  it('keeps the approved homepage order, routes and decorative effects in source', () => {
+  it('keeps subpage routes, theme ownership and hero effects in source', () => {
     const app = readSource('src/App.tsx')
-    const hero = app.indexOf('<StatusScene')
-    const commerce = app.indexOf('<CommerceHomeSection')
-    const cases = app.indexOf('<StudioMap')
-    const archive = app.indexOf('<ProjectArchive')
-    const notes = app.indexOf('notes-section')
-
-    expect(hero).toBeGreaterThan(-1)
-    expect(commerce).toBeGreaterThan(hero)
-    expect(cases).toBeGreaterThan(commerce)
-    expect(archive).toBeGreaterThan(cases)
-    expect(notes).toBeGreaterThan(archive)
-    expect(app).toContain("pageHash === '#music'")
-    expect(app).toContain("pageHash === '#guestbook'")
+    expect(app).toContain('<HomePage theme={theme} />')
+    expect(app).toContain("route.page === 'music'")
+    expect(app).toContain("route.page === 'guestbook'")
     expect(app).toContain('<GlobalMusicDock')
+    expect(app).toContain('useThemePreference()')
+    const themeHook = readSource('src/lib/useThemePreference.ts')
+    expect(themeHook).toContain('applyTheme(theme, false)')
+    expect(app).not.toContain('id="about"')
+
+    const homepage = readSource('src/components/HomePage.tsx')
+    expect(homepage).toContain('<StatusScene theme={theme} />')
+    expect(homepage).toContain('<HomeGuide />')
+    expect(homepage).toContain('<SiteFooter />')
 
     const scene = readSource('src/components/StatusScene.tsx')
     expect(scene).toContain('GradientWaves')
     expect(scene).toContain('ParticleText')
     expect(scene).toContain('aria-hidden="true"')
-    expect(scene).toContain('prefers-reduced-motion: reduce')
+    expect(scene).toContain('useMotionProfile')
+    expect(scene).toContain('在商业与创作之间持续实践')
+    expect(scene).toContain('<TextType texts={heroStatements} loop />')
 
     const content = readSource('src/content/site.ts')
     const styles = readSource('src/styles.css')

@@ -85,6 +85,18 @@ const makeClient = (options: {
   let reservationIndex = 0
   const client = {
     auth: {
+      getSession: vi.fn().mockImplementation(async () => ({
+        data: { session: options.authUser === null ? null : {
+          access_token: 'fixture-session', expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: options.authUser ?? { id: 'user-1' },
+        } }, error: null,
+      })),
+      refreshSession: vi.fn().mockImplementation(async () => ({
+        data: { session: options.authUser === null ? null : {
+          access_token: 'fixture-refreshed', expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: options.authUser ?? { id: 'user-1' },
+        } }, error: null,
+      })),
       getUser: vi.fn().mockResolvedValue({
         data: { user: options.authUser === undefined ? { id: 'user-1' } : options.authUser },
         error: options.authError ?? null,
@@ -183,6 +195,7 @@ describe('commerce repository', () => {
     const result = await repository.uploadAssets('project-1', [file], progress)
 
     expect(client.functions.invoke).toHaveBeenNthCalledWith(1, 'commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: {
         action: 'reserve', projectId: 'project-1', fileName: '产品 图.png', mimeType: 'image/png', sizeBytes: 3,
       },
@@ -194,6 +207,7 @@ describe('commerce repository', () => {
       { contentType: 'image/png' },
     )
     expect(client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: { action: 'finalize', assetId: 'asset-1' },
     })
     expect(client.functions.invoke.mock.invocationCallOrder[0]).toBeLessThan(storage.uploadToSignedUrl.mock.invocationCallOrder[0])
@@ -223,7 +237,7 @@ describe('commerce repository', () => {
     const progress = vi.fn()
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(mock.client.functions.invoke).toHaveBeenCalledTimes(1)
     expect(progress).toHaveBeenLastCalledWith({
@@ -246,6 +260,7 @@ describe('commerce repository', () => {
 
     expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
     expect(mock.client.functions.invoke).toHaveBeenLastCalledWith('commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: { action: 'finalize', assetId: 'asset-1' },
     })
     expect(mock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(1)
@@ -268,15 +283,17 @@ describe('commerce repository', () => {
 
     expect(retryMock.client.functions.invoke).toHaveBeenCalledTimes(3)
     expect(retryMock.client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: { action: 'finalize', assetId: 'asset-1' },
     })
     expect(retryMock.client.functions.invoke).toHaveBeenNthCalledWith(3, 'commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: { action: 'finalize', assetId: 'asset-1' },
     })
     expect(retryMock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(1)
   })
 
-  it('decodes reserve FunctionsHttpError bodies and stops before Storage', async () => {
+  it('stops before Storage when reserve still rejects authentication after refresh', async () => {
     const reserveFailure = {
       name: 'FunctionsHttpError',
       message: 'Edge Function returned a non-2xx status code',
@@ -285,13 +302,15 @@ describe('commerce repository', () => {
         headers: { 'content-type': 'application/json' },
       }),
     }
-    const mock = makeClient({ functionResponses: [{ data: null, error: reserveFailure }] })
+    const mock = makeClient({ functionResponse: { data: null, error: reserveFailure } })
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
       .rejects.toMatchObject({ code: 'AUTH_REQUIRED', cause: reserveFailure })
 
     expect(mock.storage.uploadToSignedUrl).not.toHaveBeenCalled()
+    expect(mock.client.auth.refreshSession).toHaveBeenCalledTimes(1)
+    expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
   })
 
   it.each([
@@ -303,7 +322,7 @@ describe('commerce repository', () => {
     repository = createCommerceRepository(mock.client as never)
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], vi.fn()))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(mock.storage.uploadToSignedUrl).not.toHaveBeenCalled()
   })
@@ -320,7 +339,7 @@ describe('commerce repository', () => {
     const progress = vi.fn()
 
     await expect(repository.uploadAssets('project-1', [new File(['x'], 'a.png', { type: 'image/png' })], progress))
-      .rejects.toThrow('网络或服务暂时不可用')
+      .rejects.toThrow('服务权限或配置异常')
 
     expect(progress).toHaveBeenLastCalledWith({
       completedFiles: 0, totalFiles: 1, currentFile: { name: 'a.png', state: 'failed' },
@@ -353,6 +372,7 @@ describe('commerce repository', () => {
       .rejects.toMatchObject({ code: 'RATE_LIMITED', cause: finalizeFailure })
 
     expect(mock.client.functions.invoke).toHaveBeenNthCalledWith(2, 'commerce-upload', {
+      headers: { Authorization: expect.any(String) },
       body: { action: 'finalize', assetId: 'asset-1' },
     })
     expect(mock.client.functions.invoke).toHaveBeenCalledTimes(2)
@@ -373,7 +393,7 @@ describe('commerce repository', () => {
       new File(['png'], 'c.png', { type: 'image/png' }),
     ]
 
-    await expect(repository.uploadAssets('project-1', files, progress)).rejects.toThrow('网络或服务暂时不可用')
+    await expect(repository.uploadAssets('project-1', files, progress)).rejects.toThrow('服务权限或配置异常')
 
     expect(progress).toHaveBeenNthCalledWith(2, {
       completedFiles: 1, totalFiles: 3, currentFile: { name: 'a.png', state: 'ready' },
@@ -394,7 +414,7 @@ describe('commerce repository', () => {
     repository = createCommerceRepository(sixMock.client as never)
 
     await expect(repository.uploadAssets('project-1', sixFiles, vi.fn())).resolves.toHaveLength(6)
-    expect(sixMock.client.auth.getUser).toHaveBeenCalledTimes(1)
+    expect(sixMock.client.auth.getUser).toHaveBeenCalledTimes(13)
     expect(sixMock.storage.uploadToSignedUrl).toHaveBeenCalledTimes(6)
     expect(sixMock.client.functions.invoke).toHaveBeenCalledTimes(12)
 
@@ -466,6 +486,7 @@ describe('commerce repository', () => {
     await expect(repository.startGeneration('project-1', 'request-1')).resolves.toEqual({ generationId: 'generation-1', status: 'queued' })
 
     expect(client.functions.invoke).toHaveBeenCalledWith('analyze-commerce', {
+      headers: { Authorization: expect.any(String) },
       body: { projectId: 'project-1', idempotencyKey: 'request-1' },
     })
   })
@@ -475,7 +496,7 @@ describe('commerce repository', () => {
     [410, { code: 'ASSETS_EXPIRED', message: 'assets expired' }, 'ASSETS_EXPIRED'],
     [429, { code: 'RATE_LIMITED', message: 'too many requests' }, 'RATE_LIMITED'],
     [401, { code: 'AUTH_REQUIRED', message: 'login required' }, 'AUTH_REQUIRED'],
-    [403, { code: 'FORBIDDEN', message: 'forbidden' }, 'AUTH_REQUIRED'],
+    [403, { code: 'FORBIDDEN', message: 'forbidden' }, 'SERVICE_ERROR'],
   ])('decodes FunctionsHttpError Response bodies for HTTP %s', async (status, body, expectedCode) => {
     const error = {
       name: 'FunctionsHttpError',
@@ -493,7 +514,7 @@ describe('commerce repository', () => {
   })
 
   it.each([
-    [{ code: '28000', message: 'commerce authentication required' }, '登录已失效'],
+    [{ code: '28000', message: 'commerce authentication required' }, '登录状态需要恢复'],
     [{ code: 'P0001', message: 'insufficient credits' }, '可用次数不足'],
     [{ code: 'P0001', message: 'daily generation limit reached' }, '请求过于频繁'],
     [{ message: 'asset expired' }, '图片已过期'],

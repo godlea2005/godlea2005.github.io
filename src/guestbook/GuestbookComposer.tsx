@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { GuestIdentity, GuestbookMessage } from './types'
+import { GuestAvatar } from './GuestAvatar'
 
 const emojis = ['✦', '👋', '✨', '💡', '🎧', '🫶', '🚀', '🌙', '🧠', '🪄', '👏', '🙂']
 const draftKey = 'wenhao-guestbook:draft'
 
 export function GuestbookComposer({
   identity,
+  avatarUrl,
   replyTo,
   sending,
   onOpenIdentity,
@@ -14,6 +16,7 @@ export function GuestbookComposer({
   onNotice,
 }: {
   identity: GuestIdentity
+  avatarUrl?: string
   replyTo: GuestbookMessage | null
   sending: boolean
   onOpenIdentity: () => void
@@ -84,14 +87,14 @@ export function GuestbookComposer({
     />
     <div className="composer-toolbar">
       <div className="composer-tools">
-        <button type="button" onClick={() => setEmojiOpen((value) => !value)} aria-expanded={emojiOpen}>☺ <span>表情</span></button>
-        <button type="button" onClick={() => fileRef.current?.click()}>▧ <span>图片</span></button>
+        <button type="button" aria-label="表情" onClick={() => setEmojiOpen((value) => !value)} aria-expanded={emojiOpen}>☺ <span>表情</span></button>
+        <button type="button" aria-label="图片" onClick={() => fileRef.current?.click()}>▧ <span>图片</span></button>
         <input ref={fileRef} hidden type="file" accept="image/*" onChange={(event) => chooseImage(event.target.files?.[0])} />
         {emojiOpen && <div className="emoji-panel" aria-label="选择表情">{emojis.map((emoji) => <button type="button" key={emoji} onClick={() => { setContent((value) => `${value}${emoji}`.slice(0, 300)); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
       </div>
       <div className="composer-send">
         <span>{content.length}/300</span>
-        <button className="identity-button" type="button" onClick={onOpenIdentity}><i>{identity.nickname ? identity.nickname.slice(0, 1).toUpperCase() : '?'}</i>{identity.nickname || '游客资料'}</button>
+        <button className="identity-button" type="button" onClick={onOpenIdentity}><i aria-hidden="true"><GuestAvatar name={identity.nickname} url={avatarUrl} /></i>{identity.nickname || '游客资料'}</button>
         <button className="send-button" type="submit" disabled={sending}>{sending ? '发送中' : '发送'}</button>
       </div>
     </div>

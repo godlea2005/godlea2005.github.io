@@ -1,0 +1,18 @@
+.status-scene { position: relative; isolation: isolate; min-height: 100svh; overflow: hidden; background: var(--bg); }
+.status-scene-background,.status-scene-scrim { position: absolute; inset: 0; z-index: -2; pointer-events: none; }
+.status-scene-background .gradient-waves-container,.status-scene-background canvas { position: absolute; inset: 0; }
+.status-scene-background { opacity: .9; }
+.status-scene-scrim { z-index: -1; background: linear-gradient(0deg,var(--bg),transparent 45%),linear-gradient(#0b0b142b,#0b0b1440); }
+.status-scene-inner { min-height: 100svh; padding-top: max(150px,20svh); padding-bottom: 24px; display: flex; flex-direction: column; justify-content: center; position: relative; }
+.scene-copy { width: 100%; text-align: center; margin: auto 0; padding-bottom: 80px; }
+.scene-copy h1 { display: flex; justify-content: center; margin: 0 auto 22px; line-height: 1; }
+.scene-copy .particle-text { width: min(100%,1000px); height: clamp(110px,18vw,215px); flex-shrink: 0; }
+.scene-copy .particle-text-fallback { font-size: clamp(62px,13vw,174px); color: var(--ink); }
+.scene-role-line { margin: 0 0 15px; color: var(--ink); font-size: clamp(18px,2vw,25px); font-weight: 450; letter-spacing: .12em; }
+.scene-statement { margin: 0; color: var(--muted); font-size: 14px; line-height: 2; }
+.scene-lower-edge { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 11px; }
+.scene-lower-edge a { min-height: 44px; display: flex; align-items: center; gap: 18px; }
+.scene-lower-edge a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+:root[data-theme="light"] .status-scene-background { opacity: .72; }
+:root[data-theme="light"] .status-scene-scrim { background: linear-gradient(0deg,var(--bg),transparent 55%),linear-gradient(#f2f0ea44,#f2f0ea22); }
+@media(max-width:760px) { .status-scene-inner { padding-top: 140px; }.scene-copy { padding-bottom: 70px; }.scene-copy .particle-text { height: 120px; }.scene-copy h1 { margin-bottom: 28px; }.scene-statement { font-size: 12px; }.scene-role-line { font-size: 18px; } }

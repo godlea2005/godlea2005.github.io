@@ -1,5 +1,6 @@
 import { supabase, supabaseConfigured } from '../lib/supabase'
 import type { CreateGuestbookMessage, GuestIdentity, GuestbookMessage, GuestbookRepository, MessageStatus } from './types'
+import { safeAvatarUrl } from './avatar'
 
 const storageKey = 'wenhao-guestbook:v1'
 const identityKey = 'wenhao-guestbook:identity'
@@ -121,6 +122,7 @@ class LocalGuestbookRepository implements GuestbookRepository {
 }
 
 type MessageRow = {
+  avatar_url?: string | null
   id: string
   author: string
   website: string | null
@@ -154,6 +156,7 @@ class SupabaseGuestbookRepository implements GuestbookRepository {
       : undefined
     return {
       id: row.id,
+      avatarUrl: safeAvatarUrl(row.avatar_url),
       author: row.author,
       emailHash: row.author.replace(/\s/g, '').slice(0, 2).toUpperCase(),
       website: row.website ?? '',
@@ -169,9 +172,13 @@ class SupabaseGuestbookRepository implements GuestbookRepository {
   }
 
   async list() {
-    const { data, error } = await this.client.rpc('list_guestbook_messages')
-    if (error) throw error
-    return ((data ?? []) as MessageRow[]).map((row) => this.mapRow(row))
+    let result = await this.client.rpc('list_guestbook_messages_with_avatars')
+    // Deploy frontend and database independently without breaking existing guestbooks.
+    if (result.error && ['PGRST202', '42883'].includes(result.error.code)) {
+      result = await this.client.rpc('list_guestbook_messages')
+    }
+    if (result.error) throw result.error
+    return ((result.data ?? []) as MessageRow[]).map((row) => this.mapRow(row))
   }
 
   async refresh() { return this.list() }

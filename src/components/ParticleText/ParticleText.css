@@ -17,7 +17,29 @@
 
 .particle-text canvas {
   z-index: 2;
-  touch-action: none;
+  pointer-events: none;
+}
+
+.particle-text canvas[hidden] {
+  display: none;
+}
+
+.particle-text-trigger {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.particle-text-trigger:focus-visible {
+  outline: 2px solid var(--accent, #a78bfa);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .particle-text-trigger { cursor: pointer; }
 }
 
 .particle-text-fallback {
@@ -30,7 +52,8 @@
   transition: opacity .2s ease;
 }
 
-.particle-text.is-ready .particle-text-fallback {
+.particle-text.is-forming .particle-text-fallback,
+.particle-text.is-settled .particle-text-fallback {
   opacity: 0;
 }
 

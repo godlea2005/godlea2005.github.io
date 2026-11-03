@@ -1,0 +1,12 @@
+.commerce-page {
+  --commerce-accent: var(--signal-green);
+  --commerce-panel-solid: var(--editorial-surface);
+  --commerce-drawer: var(--bg2);
+  --commerce-shadow: rgba(0, 0, 0, 0.2);
+}
+:root[data-theme="light"] .commerce-page {
+  --commerce-accent: var(--signal-green);
+  --commerce-panel-solid: var(--editorial-surface);
+  --commerce-drawer: var(--bg2);
+  --commerce-shadow: rgba(43, 37, 28, 0.09);
+}

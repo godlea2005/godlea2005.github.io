@@ -1,122 +1,70 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
-import { site } from '../content/site'
-import type { Theme } from '../lib/theme'
+import { navigationGroups } from '../content/navigation'
+import type { Theme, ThemePreference } from '../lib/theme'
+import { CardNav } from './CardNav'
+import { SiteSearchDialog } from './SiteSearchDialog'
+import { SiteSettings } from './SiteSettings'
+import { SiteAnnouncements } from './SiteAnnouncements'
 import './floating-header.css'
 
 type FloatingHeaderProps = {
   theme: Theme
   pageHash: string
   onToggleTheme: () => void
+  themePreference?: ThemePreference
+  onThemePreferenceChange?: (preference: ThemePreference) => void
 }
 
-const baseMenuGroups = [
-  { label: '文章', items: [['归档', '#archive'], ['标签图谱', '#notes'], ['文章列表', '#notes']] },
-  { label: '联系我', items: [['友链', '#about'], ['留言', '#guestbook'], ['社群', '#about']] },
-  { label: '我的', items: [['日历', '#notes'], ['相册', '#archive'], ['赞助', '#about'], ['音乐', '#music'], ['关于', '#about']] },
-]
-
-export function FloatingHeader({ theme, pageHash, onToggleTheme }: FloatingHeaderProps) {
+export function FloatingHeader({ theme, pageHash, onToggleTheme, themePreference, onThemePreferenceChange }: FloatingHeaderProps) {
   const { isAdmin } = useAuth()
-  const rootRef = useRef<HTMLElement>(null)
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [activeMenu, setActiveMenu] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [announcementOpen, setAnnouncementOpen] = useState(false)
+  const [navigationOpen, setNavigationOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const homeActive = pageHash !== '#music' && pageHash !== '#guestbook' && pageHash !== '#ai-commerce' && pageHash !== '#commerce-admin'
-  const menuGroups = baseMenuGroups.map((group) => group.label === '我的' && isAdmin
-    ? { ...group, items: [...group.items, ['管理后台', '#commerce-admin']] }
-    : group)
+  const groups = useMemo(() => isAdmin ? navigationGroups.map((group) => group.id === 'connect'
+    ? { ...group, destinations: [...group.destinations, { title: '管理后台', href: '#commerce-admin', detail: '运营与服务管理' }] }
+    : group) : navigationGroups, [isAdmin])
+  const closeNavigation = useCallback(() => setNavigationOpen(false), [])
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const focusSettings = () => document.querySelector<HTMLButtonElement>('.settings-trigger')?.focus()
+  const openSearch = () => { focusSettings(); setSettingsOpen(false); setNavigationOpen(false); setAnnouncementOpen(false); setSearchOpen(true) }
 
   useEffect(() => {
-    const closeOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setActiveMenu(null)
-        setMobileOpen(false)
+    const keyboard = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        if (document.querySelector('.route-loading-screen')) return
+        // A visible modal already owns the keyboard and focus lifecycle.
+        if (document.querySelector('[aria-modal="true"]:not([aria-label="搜索本站"])')) return
+        focusSettings()
+        setNavigationOpen(false)
+        setSettingsOpen(false)
+        setSearchOpen(current => !current)
       }
     }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setActiveMenu(null)
-      setMobileOpen(false)
-      setSearchOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOutside)
-      window.removeEventListener('keydown', closeOnEscape)
-    }
+    window.addEventListener('keydown', keyboard)
+    return () => window.removeEventListener('keydown', keyboard)
   }, [])
 
   useEffect(() => {
-    setActiveMenu(null)
-    setMobileOpen(false)
+    setNavigationOpen(false)
+    setSearchOpen(false)
+    setSettingsOpen(false)
+    setAnnouncementOpen(false)
   }, [isAdmin, pageHash])
 
-  const closeNavigation = () => {
-    setActiveMenu(null)
-    setMobileOpen(false)
-  }
-
-  return (
-    <>
-      <header className="floating-header" ref={rootRef}>
-        <a className="floating-brand glass-pill" href="#top" onClick={closeNavigation} aria-label="文昊，回到首页">
-          <span>W</span><strong>{site.name}</strong><i>.</i>
-        </a>
-
-        <nav className={`floating-nav glass-pill${mobileOpen ? ' is-mobile-open' : ''}`} id="floating-nav" aria-label="主导航">
-          <div className="floating-nav-primary">
-            <a className={homeActive ? 'is-current' : ''} href="#top" onClick={closeNavigation}><span aria-hidden="true">⌂</span>主页</a>
-            <a className={pageHash === '#ai-commerce' ? 'is-current' : ''} href="#ai-commerce" onClick={closeNavigation}>AI 电商设计</a>
-            <a href="#archive" onClick={closeNavigation}>个人主站 <sup>↗</sup></a>
-            <a href="#notes" onClick={closeNavigation}>工具导航</a>
-            {menuGroups.map((group) => (
-              <div className={`floating-nav-group${activeMenu === group.label ? ' is-open' : ''}`} key={group.label}>
-                <button
-                  type="button"
-                  onClick={() => setActiveMenu((current) => current === group.label ? null : group.label)}
-                  aria-expanded={activeMenu === group.label}
-                >
-                  {group.label}<i aria-hidden="true">⌄</i>
-                </button>
-                <div className="floating-dropdown" aria-hidden={activeMenu !== group.label}>
-                  {group.items.map(([name, href]) => <a href={href} key={name} onClick={closeNavigation}>{name}<span>↗</span></a>)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </nav>
-
-        <div className="floating-actions glass-pill">
-          <button className="floating-search" type="button" onClick={() => setSearchOpen(true)} aria-label="打开搜索">
-            <kbd>Ctrl K</kbd><span aria-hidden="true">⌕</span>
-          </button>
-          <button className="floating-theme" type="button" onClick={onToggleTheme} aria-label={`切换至${theme === 'dark' ? '浅色' : '深色'}模式`}>
-            <span aria-hidden="true">{theme === 'dark' ? '☼' : '◐'}</span>
-          </button>
-          <button
-            className="floating-menu-toggle"
-            type="button"
-            onClick={() => setMobileOpen((open) => !open)}
-            aria-expanded={mobileOpen}
-            aria-controls="floating-nav"
-          >
-            {mobileOpen ? '关闭' : '目录'}<i aria-hidden="true" />
-          </button>
-        </div>
-      </header>
-
-      {searchOpen && (
-        <div className="search-layer" role="dialog" aria-modal="true" aria-label="搜索">
-          <div>
-            <button type="button" onClick={() => setSearchOpen(false)} aria-label="关闭搜索">×</button>
-            <p>SEARCH / WENHAO</p>
-            <input autoFocus placeholder="搜索作品、笔记或标签" onKeyDown={(event) => { if (event.key === 'Escape') setSearchOpen(false) }} />
-            <small>首版搜索入口已就绪，内容索引将在接入 CMS 后启用。</small>
-          </div>
-        </div>
-      )}
-    </>
-  )
+  return <>
+    <header className="floating-header">
+      <a className="floating-brand" href="#top" aria-label="文昊，回到首页">
+        <img className="floating-brand-avatar" src="/wenhao-avatar.png" alt="" width="36" height="36" /><strong>WENHAO</strong><i aria-hidden="true">.</i>
+      </a>
+      <CardNav groups={groups} currentHash={pageHash} open={navigationOpen} onOpenChange={open => { setNavigationOpen(open); if (open) setSettingsOpen(false) }} onNavigate={closeNavigation} />
+      <div className="floating-actions">
+        <SiteSettings open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (open) setNavigationOpen(false) }} onSearch={openSearch} onAnnouncements={() => { focusSettings(); setSettingsOpen(false); setNavigationOpen(false); setSearchOpen(false); setAnnouncementOpen(true) }} preference={themePreference ?? theme} onPreferenceChange={value => { if (onThemePreferenceChange) onThemePreferenceChange(value); else if (value !== theme) onToggleTheme() }} />
+      </div>
+    </header>
+    <SiteSearchDialog open={searchOpen} onClose={closeSearch} includeAdmin={isAdmin} />
+    {announcementOpen && <SiteAnnouncements onClose={() => setAnnouncementOpen(false)} />}
+  </>
 }

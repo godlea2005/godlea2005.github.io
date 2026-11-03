@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react'
-import { commerceHome, profile, site } from '../content/site'
-import GradientWaves from './GradientWaves/GradientWaves'
-import { ParticleText } from './ParticleText/ParticleText'
+import { site } from "../content/site";
+import type { Theme } from "../lib/theme";
+import { useMotionProfile } from "../lib/useMotionProfile";
+import GradientWaves from "./GradientWaves/GradientWaves";
+import { ParticleText } from "./ParticleText/ParticleText";
+import { TextType } from "./TextType";
+import "./status-scene.css";
 
-export function StatusScene() {
-  const [reducedMotion, setReducedMotion] = useState(false)
+const darkParticleColors = ["#f7f5ff", "#ded9f6", "#b8afd9", "#e9aecf"];
+const lightParticleColors = ["#201f2a", "#39344f", "#6b5b91", "#9b567d"];
+const heroStatements = [
+  '记录设计与技术的现场',
+  '把想法做成看得见的作品',
+  '在商业与创作之间持续实践',
+] as const;
 
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const syncPreference = () => setReducedMotion(media.matches)
-    syncPreference()
-    media.addEventListener('change', syncPreference)
-    return () => media.removeEventListener('change', syncPreference)
-  }, [])
+export function StatusScene({ theme }: { theme: Theme }) {
+  const { reducedMotion, fineHover } = useMotionProfile();
 
   return (
     <section className="status-scene" aria-labelledby="home-title">
@@ -34,7 +37,7 @@ export function StatusScene() {
           detail="medium"
           brightness={1.0}
           opacity={1.0}
-          mouseInteraction={!reducedMotion}
+          mouseInteraction={fineHover && !reducedMotion}
           parallaxStrength={0.5}
           grain={!reducedMotion}
           grainIntensity={0.05}
@@ -43,34 +46,24 @@ export function StatusScene() {
       <div className="status-scene-scrim" aria-hidden="true" />
       <div className="status-scene-inner frame">
         <div className="scene-copy">
-          <p className="scene-index"><span>001</span> AI COMMERCE DESIGN STUDIO <i>●</i></p>
-          <h1 id="home-title" aria-label={commerceHome.title}><span aria-hidden="true">AI 电商视觉，</span><span aria-hidden="true">先把策略想清楚。</span></h1>
-          <p className="scene-statement">{commerceHome.description}</p>
-          <div className="scene-actions">
-            <a href="#ai-commerce" className="scene-primary">免费分析一个产品 <span aria-hidden="true">↘</span></a>
-            <a href="#commerce-examples" className="scene-secondary">查看示例方案 <span aria-hidden="true">↓</span></a>
-          </div>
-          <div className="scene-author">
-            <span>DESIGNED &amp; OPERATED BY</span>
-            <strong>{site.name}</strong>
-            <p>{profile.roles.join(' / ')}</p>
-          </div>
+          <h1 id="home-title" aria-label="WENHAO">
+            <ParticleText
+              text={site.englishName}
+              colors={theme === "light" ? lightParticleColors : darkParticleColors}
+              interaction={fineHover ? 'repel-and-burst' : 'tap-burst'}
+            />
+          </h1>
+          <p className="scene-role-line">
+            AI 工程师
+          </p>
+          <p className="scene-statement"><TextType texts={heroStatements} loop /></p>
         </div>
-        <div className="scene-stage" aria-label="AI 电商视觉策略工作台示意">
-          <div className="stage-grid" />
-          <div className="stage-status"><span>MARKET VISUAL SYSTEM / 01</span><b>READY</b></div>
-          <div className="stage-platforms" aria-hidden="true"><span>OZON</span><span>WB</span><span>DY</span><span>TMALL</span></div>
-          <div className="stage-product" aria-hidden="true"><i /><i /><i /><b>PRODUCT<br />SIGNAL</b></div>
-          <ol className="stage-output">
-            <li><span>01</span><b>HERO DIRECTION</b><i>主图策略</i></li>
-            <li><span>02</span><b>DETAIL STORYBOARD</b><i>详情分镜</i></li>
-            <li><span>03</span><b>IMAGE PROMPT</b><i>作图提示词</i></li>
-          </ol>
-          <div className="scene-signature"><small>AUTHOR SIGNAL</small><ParticleText text={site.englishName} /></div>
-          <div className="coordinates"><span>STRATEGY → VISUAL</span><span>CN / RU</span></div>
+        <div className="scene-lower-edge">
+          <a href="#home-guide">
+            向下探索 <span aria-hidden="true">↓</span>
+          </a>
         </div>
-        <aside className="status-card"><p><span>✦</span>{profile.statusTitle}</p><div><i>“</i><span>{profile.status}</span></div><small>STATUS / {site.availability}</small></aside>
       </div>
     </section>
-  )
+  );
 }

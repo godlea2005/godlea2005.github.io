@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import type { GuestbookAuthState } from './types'
+import { accountAvatar } from './avatar'
 
 type GuestbookAuthContextValue = GuestbookAuthState & {
   connect: (provider: 'github' | 'google') => Promise<void>
@@ -17,6 +18,7 @@ export function GuestbookAuthProvider({ children }: { children: ReactNode }) {
     configured: auth.configured,
     ready: auth.ready,
     userId: auth.user?.id ?? null,
+    avatarUrl: auth.isAnonymous ? undefined : accountAvatar(auth.user),
     isAnonymous: auth.isAnonymous,
     isOwner: auth.isAdmin,
     provider: auth.provider,

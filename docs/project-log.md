@@ -160,3 +160,124 @@
 - 认证模块增加已有账号冲突和防循环回归覆盖；主项目 Vitest 14 个测试文件共 248/248 通过，Edge Function 类型检查与生产构建通过。构建仍仅保留已有 `MusicPage` 527.28 kB chunk 提醒。
 - 独立代码审查结果为 Critical 0、Important 0、Minor 0。源码合并提交为 `24993f1`，GitHub Pages 发布提交为 `5efe0ae`，Pages workflow `33762017717` 成功完成。
 - Playwright 已在 `https://geniusli.cn/#ai-commerce` 完成真实 GitHub OAuth 回归：已有账号自动进入 AI 电商工作台，额度可读取，“我的”菜单显示“管理后台”，证明正式会话与站长身份均生效；浏览器控制台 error/warning 为 0/0。
+
+## 2026-09-12 — 首页与 AI 电商工作台重构发布
+
+- 首页改为全屏 GradientWaves 与 WENHAO 粒子标题，导航收敛为五项浮动入口，并保留站内搜索、深浅主题和移动目录交互；AI 电商工作台改为“产品 → 市场 → 确认”三步布局、抽屉式历史记录与紧凑音乐入口。
+- 生成流程统一为 reducer 状态机，认证请求显式携带 Bearer token 并最多静默恢复一次；OAuth 整页跳转仅短期保存同账号的纯文字草稿，绝不保存 File、base64 或令牌。上传失败、生成启动前认证失效、项目清理、跨账号与过期轮询均有回归保护。
+- 源码提交为 `c951c2f`，部署提交为 `78fa017`；GitHub Pages workflow `34629989920` 成功完成。发布域名和 `CNAME` 保持为 `geniusli.cn`。
+- 2026-09-12 01:53（Asia/Shanghai）线上 Playwright 冒烟通过：`https://geniusli.cn/` 与 `/#ai-commerce` 均加载新资源 `index-Cd4erOnG.js`、`index-C5wdz3mu.css`；1440、1024、390px 深浅主题无横向溢出，页面标题正确，浏览器控制台 error/warning 为 0/0，音乐 LRC 返回 200、MP3 范围请求返回 206。
+- 发布前主项目 19 个测试文件共 300/300 通过，TypeScript 与 Vite 生产构建通过；构建仍只有既有的两个大于 500 kB 分块提醒。此次线上冒烟没有触发真实 OAuth 授权或会消耗额度的 AI 生成。
+
+## 2026-10-21 — 工具导航目录本地验证
+
+- 新增 `#tools` 工具导航页；五类十项官方入口及个人使用说明由独立的 `src/content/tools.ts` 数据模块提供，支持搜索、分类筛选与空结果重置。页面在 1080px、640px 断点调整卡片与移动布局。
+- 目标框光标仅作用于显式标记的工具卡片与导航项，并受精细指针、减少动态效果、表单及模态窗口边界约束；移动触控环境不显示目标框。
+- 全量 Vitest 23 个文件、317/317 通过，TypeScript 与 Vite 生产构建通过；仍有既有的两个大于 500 kB 分块提醒。真实浏览器已在 1440×1000、1024×900、390×844 的深浅主题验证页面、筛选、链接安全属性、导航当前态、无横向溢出、末卡与音乐按钮间距及移动 Escape 焦点返回。
+- 已知限制：本次只验证本地 `/#tools`，未打开外部工具站点，也未推送或部署；线上可用性与外部站点内容不在此次验证范围内。
+
+## 2026-10-23 — Field Notes 改版 Task 9 本地验证与恢复收口
+
+- 在 `e4e2f935c74b2d75d97a640c58e3df91173389b7` 基础上逐项审计上次验证留下的 10 个未提交文件，保留并补齐触屏静态打字、44px 触控目标、文章/作品索引字号作用域、浅色导航与文章元信息对比度、留言输入区音乐避让；另补上窄屏音乐页和留言工具栏的可访问名称。没有新增依赖。
+- 最终定向回归：6 个测试文件、35/35 通过（10.88 秒）。隔离截图负载后的完整 `npm.cmd test`：39 个测试文件、405/405 通过（45.06 秒），没有未处理拒绝或计时器泄漏。`npm.cmd run build` 和 `npm.cmd run check:edge` 均通过，3 个 Edge Function 入口未改动且全部通过类型检查。构建保留既有大分块提醒：主包 527.13 kB、MusicPage 527.33 kB；未引入新的大型依赖。
+- 浏览器使用 Playwright CLI 独立 Chrome 会话 `task9-recovery-desktop` / `task9-recovery-touch`。深色、浅色分别覆盖 1440×1000、1024×900（精细指针）和 768×1024、390×844（触屏/粗指针）：共 8 个首页组合与 112 个非首页路由组合。首页覆盖 Hero/波浪与 WENHAO、开合 Card Nav、分组搜索、精选文章、倾斜作品卡、紧凑电商实验室、视觉随记及弹窗、写作预览、关于及页脚；非首页包含文章/作品索引、各 3 个初始详情、各 1 个 missing 路由、Tools、Guestbook、Commerce、Music。
+- 120 个路由/主题/尺寸组合均无横向溢出、无小于 44px 的可见交互目标；另测弹窗/播放器/表情面板，表情按钮实测约 44.33px。键盘遍历 9 个导航目标、Ctrl+K、搜索空结果恢复、模态正反向 Tab 限制及关闭后的焦点恢复通过；工具过滤重置为 10 项、文章过滤为设计 2 / 电商 1 / 全部 3，动态 missing 恢复正确。
+- 16 个尺寸/主题/动态偏好组合验证触屏或 reduced-motion 时无 Target Cursor、打字光标、粒子画布或倾斜，桌面正常模式仍保留有限动效。实际拦截图片并返回无效图像字节后，视觉随记卡片与弹窗使用带说明的生成替代图形，布局保持稳定。`?auth=guestbook` 仍解析为留言页（URL 保留查询参数，未执行 OAuth）。390px 留言/电商输入聚焦时折叠音乐入口隐藏；留言非聚焦与本地电商几何夹具保持 12px 间距，768px 保持测量避让。
+- 所有业务路径只读：留言列表响应在浏览器内替换为空数组，既有自动匿名身份与认证设置请求均被网络守卫拦截；最终审计为 124 次匿名 signup POST 和 124 次 settings GET 被拦截，248 条预期 `ERR_BLOCKED_BY_CLIENT`，页面异常 0、意外 console error/warning 0。没有真实登录、留言、图片上传、生成、删除、额度或外部付费操作；真实认证后工作台业务不在本轮浏览器验证范围内。
+- 最终本地预览 `http://127.0.0.1:5173/`，服务会话 `61284`。仅停止本轮已核实的旧 Vite PID 38464（原会话 31146），以进程级空白 public Supabase 配置重启同一工作区，防止用户打开预览时自动创建匿名身份；未读写任何 `.env*` 内容，未修改源码配置。已请求在应用浏览器打开，工作代理侧返回 queued，控制会话负责显示给用户。
+- `git diff --check` 通过；仅本轮相关源码、测试和本日志进入提交。`output/` 保持原有未跟踪状态、未触碰；临时脚本、快照、截图与日志仅位于 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`。数据库、Edge Function、GitHub workflow、环境文件和密钥无变更；未推送、创建 PR、部署或改 DNS。独立最终代码审查由控制代理在本轮提交 SHA 上继续执行。
+
+## 2026-10-24 — Field Notes Task 9 审查问题修复复核
+
+- 根据 Task 9 独立审查发现的三项阻断问题复核并保留修复：留言操作区在悬停、键盘焦点和移动端展开时改用自适应高度/换行，不再被 21px 高度裁切；留言页音乐弹层与按钮共用实测避让位移，并限制弹层高度；播放器打开后进入进度控制、关闭后返回按钮，歌单改用共享模态边界以保证背景 inert、双向 Tab 限制、Escape 与焦点返回。补上动作区、播放器、歌单及背景点击的回归测试。
+- 完整审计上轮遗留的 9 个未提交源码/测试文件（含 1 个新测试）。针对性命令 `npm.cmd test -- tests/guestbook-message-actions.test.tsx tests/music-dock.test.tsx tests/music-page-accessibility.test.tsx tests/modal-surface.test.tsx`：4 文件、26/26 通过。完整 `npm.cmd test`：40 文件、423/423 通过；`npm.cmd run build`、`npm.cmd run check:edge`、`git diff --check` 均通过。受管理沙盒的 Vitest 缓存重命名曾在断言开始前遇到 EPERM；在获准的本地执行环境中原命令通过，单 worker 重试在沙盒内仍遇到同一文件系统错误。
+- Playwright CLI 在 390×844、768×1024、1024×900 的深浅主题共 6 组真实浏览器复核中，读取本地只读留言夹具并阻止所有非本机请求。操作按钮实测均为 44px；人为收窄消息气泡后操作区为 96px，子按钮无祖先裁切。音乐弹层与入口保持 10px 间距，入口与输入区保持 12px 间距，弹层位于视口内且无横向溢出。进入播放器后的前向 Tab、Escape/收起/再次点击入口/点击外部、歌单双向焦点圈定/背景 inert/关闭返回均通过；页面异常和意外 console error/warning 均为 0。
+- 本地预览 `http://127.0.0.1:5173/` 在工作树中以进程级空白 `VITE_SUPABASE_URL`、`VITE_SUPABASE_PUBLISHABLE_KEY` 启动，执行会话 `64293`、Vite PID `28580`，与真实 Supabase 断开；未读取、打印或修改 `.env*`。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`，未触碰用户所有的未跟踪 `output/`。未执行真实认证、数据库改写、上传、付费调用、外部跳转、推送、PR、部署或 DNS 变更。构建仍有原有的大包提示（主包 519.77 kB，MusicPage 527.36 kB），本轮未新增依赖。
+
+## 2026-10-24 — Field Notes Task 9 输入焦点复核
+
+- 修复音乐弹层打开后第一次点击页面表单控件时焦点被强行拉回启动按钮的问题：仅在外部点击把原生焦点交给输入框、文本域、下拉框或可编辑区域时保留该焦点；Escape、弹层内收起、启动按钮、歌单以及点击普通背景按钮仍按原规则返回。新增输入框与留言文本域两项回归，先确认两项 RED，再确认修复后 GREEN。
+- `npm.cmd test -- tests/music-dock.test.tsx tests/modal-surface.test.tsx tests/music-page-accessibility.test.tsx`：3 文件、25/25 通过；完整 `npm.cmd test`：40 文件、425/425 通过。`npm.cmd run build`、`npm.cmd run check:edge`、`git diff --check` 通过；仍为原有主包 520.04 kB / MusicPage 527.36 kB 大分块提示，未新增依赖。
+- 使用复用的本机安全预览（127.0.0.1:5173，Vite PID 28580，进程级空白 Supabase public 配置）和 Playwright CLI，在 390×844 深浅主题实际点击打开播放器，再第一次点击留言框；两种主题均确认弹层收起、留言框保持焦点、移动端启动按钮隐藏。浏览器 page exception、console error/warning 和被阻止的远端请求均为 0。浏览器证据仅存于 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未触碰 `output/`，未执行真实认证、留言写入、上传或外部操作。
+
+## 2026-10-26 — Field Notes 最终审查缺口收口
+
+- 在既定设计/计划下审计并保留最终审查修复：延迟加载的文章/作品 CSS 仅作用于阅读页；481–760px 作品索引卡片由链接自身承载双列；新增提交后滚动边界，缓存详情/索引回到顶部、首页锚点在挂载后落位；视觉随记等模态打开时 Ctrl/Cmd+K 不再启动搜索。文章索引按日期复制排序；作品图像在首页、索引、详情共用定尺寸且带说明的错误后备；普通文章/作品索引链接移除 Target Cursor 标记。补齐不同日期的七条乱序内容、滚动、弹窗和图像错误回归。未修改业务/数据库逻辑或新增依赖。
+- 独立复跑聚焦 `10` 文件 `62/62`、完整 `43` 文件 `439/439`；`npm.cmd run build`、三个 Edge Function 的 `npm.cmd run check:edge`、`git diff --check` 均通过。构建仍有已有的大分块提示：主包 `520.15 kB`、音乐页 `527.36 kB`。
+- Playwright CLI 在真实 `600×900` 深色页面测得作品卡图片 `181.55px`、文案 `352.45px` 双列，无横向溢出；`1024×900` 深浅主题逐项走过阅读页→工具/留言/电商及相反加载顺序。已滚动 `700px` 的文章、项目和索引切换后均回到 `0`；首页锚点、后退/前进、视觉随记模态下 Ctrl/Cmd+K 抑制及关闭后搜索恢复通过。控制台 error/warning `0/0`；动态请求仅本机音乐资源，LRC 一次取消后重试 `200`、MP3 `206`，没有意外远端请求。
+- 安全预览为 `http://127.0.0.1:5174/`（Vite PID `34612`，启动包装 PID `3260`），仅绑定本机且进程级 Supabase public 环境值为空白。首次尝试的 `5173` 被占用，本轮未终止该端口上的任何进程。浏览器证据仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-field-notes-qa`；未查看、打印或修改 `.env*` 内容，未触碰或暂存用户的 `output/`，未登录、写入后端、上传、调用付费接口、打开外站、推送或部署。详见忽略目录中的 `final-fix-report.md`。
+## 2026-10-28 — Motion and loading polish 本地自动验证（浏览器待补）
+
+### 浏览器补验（替代下方“未进行真实浏览器验证”的状态）
+
+- Playwright CLI 本地 Chromium，127.0.0.1:4181，外部请求阻断。五个路由在各自新上下文延迟页面模块 1200ms：遮罩均为 `[0,0,1440,1000]`、z-index 1000、文案正确，左上命中遮罩；Tab 焦点留在 body，遮罩期间 shell 兄弟节点 inert，退出后 shell 子节点 inert 均恢复。加载至退出分别 2379、3048、2404、2500、2477ms（包含导航及延迟，不能作为精确最低时长）；同上下文返回首页再访问五条路由，150ms 检查均无遮罩。预先存在的关闭导航及音乐面板仍保持各自 inert。
+- 深浅主题各测 1440×1000、1024×900、768×1024、390×844：搜索与主题图标中心分别为 43px（1440）或 37px（其余）；1440 的快捷键中心亦为 43px，其他尺寸快捷键隐藏。按钮高度均 44px，搜索按钮宽度 95.66px 或 44px，主题按钮宽度 44px；胶囊右侧边距分别约 100.34、12、12、12px。文档宽度等于视口，无横向溢出。这里只测量了胶囊按钮，未逐个审计所有页面控件或裁切。
+- 粒子标题从 forming 到 settled；鼠标移入、点击、Enter、Space 后均再次进入 forming，键盘焦点保留。Canvas 获取、像素采样、ResizeObserver 构造分别注入失败时显示可读 WENHAO fallback，无页面异常；减少动态为无 canvas 静态标题，粗指针上下文标题可读并进入 settled。未逐粒子量化局部位移、每次完整回聚、空闲帧或粗指针点击。
+- 22 秒内观测到最终语句完整出现三次，三次均逐字删至空后从“记”重新开始；模拟 hidden 700ms 时当前文字不变，恢复后继续变化。加载中模拟 visibilitychange 后出现 is-page-hidden，进度动画状态 paused；恢复后类移除并正常完成。波浪测试误取伪元素，粒子帧暂停未实测，不能据此声明通过。
+- 工具路由减少动态时静态 wordmark 与底色完整；注入 Canvas/采样失败时遮罩文案、静态 WENHAO 和渐变完整、无页面异常。总导航耗时普通 1811ms、减少动态 1268ms（含网络和页面初始化，不足以独立证明 120ms 退出或无最低延迟）。捕获的路由和标题测试 console warning/error 与 page exception 为零；未完整覆盖退出中 Tab、指针阻断及所有主题交互。预览与浏览器已关闭，4181 无监听；仅临时目录存放测试脚本与浏览器产物，`output/` 未触碰。
+
+- 实现范围 `91f1259..2d63987`（含 `91f1259`；基线 HEAD `2d639879c75f82b7400dc9a2e2af2e1250383e45`）。聚焦命令 `npm.cmd test -- tests/route-loading-screen.test.tsx tests/particle-text.test.tsx tests/text-type.test.tsx tests/card-navigation.test.tsx tests/homepage-content.test.tsx tests/homepage-editorial.test.tsx tests/cross-page-shell.test.tsx tests/app-scroll.test.tsx tests/motion-profile.test.tsx tests/gradient-waves.test.tsx`：10 文件、75/75 通过；`npm.cmd test`：44 文件、464/464 通过。分别出现 9 和 15 条 jsdom Canvas `getContext()` 未实现提示；未见未处理拒绝、计时器泄漏或孤立动画帧警告。
+- `npm.cmd run build` 通过（218 模块）；保留大于 500 kB 的分块警告：index 524.28 kB、MusicPage 527.36 kB。`npm.cmd run check:edge` 的三个入口均通过；`git diff --check` 通过。
+- 使用进程级空白 Supabase public 值在 `127.0.0.1:4179` 启动预览并确认 HTTP 200，随后停止进程树。Playwright CLI 启动无输出且未建立会话，因此五个加载路由、缓存回访、遮罩及控件几何、焦点隔离、隐藏标签、粒子与打字循环、减少动态、粗指针、Canvas/observer 后备、双主题四尺寸、溢出及浏览器控制台均未进行真实浏览器验证；不能认定通过。自动化结果不替代这些检查。
+- 未读取或编辑 `.env*`，未触碰或暂存用户原有的 `output/`；未操作后端、认证、密钥、远程 Git 或生产环境。未测试真实登录、持久化、生成、上传、付费 API 或外部导航。
+
+## 2026-10-29 — Motion/loading Task 5 第二轮修复及定向浏览器收口
+
+- 基线 `fb959167cf8b91825a1c803d2500bfab3e147b8b`。实测发现全局 reduced-motion `transition-duration:.01ms!important` 覆盖加载层 120ms 淡出；仅给 `.route-loading-screen.is-reduced-motion.is-leaving` 的 `transition: opacity 120ms linear` 增加 `!important`，不削弱全局策略、不改普通模式。新增源样式回归锁定多类选择器、精确 opacity-only/120ms/linear/important、无 transform 及普通 360ms 双属性。
+- TDD：`npm.cmd test -- tests/route-loading-screen.test.tsx` 修复前为 1 failed/11 passed，断言明确缺少 important（此前一次缓存 EPERM、一次测试 URL 路径错误已隔离修正，不作为 RED）；修复后执行上一节同一 10 文件聚焦命令为 76/76，完整 `npm.cmd test` 为 44 文件 465/465。测试进程 TEMP/TMP 指向临时 QA 目录以避开受限缓存重命名错误。聚焦/完整分别保留原有 9/15 条 jsdom Canvas 未实现提示，无泄漏或未处理拒绝警告。
+- `npm.cmd run build` 通过、218 模块，仍为 index 524.28 kB / MusicPage 527.36 kB 已有大包提示；`npm.cmd run check:edge` 三入口通过，`git diff --check` 通过。
+- Playwright CLI 在本机 127.0.0.1:4182 安全预览（进程级空白 Supabase public 值、所有非 127.0.0.1 页面请求阻断）新上下文延迟工具页模块。真实 `.route-loading-waves` Animation/currentTime：隐藏前 325.304ms，隐藏稳定后 341.804ms，继续隐藏 600ms 仍为 341.804ms，恢复 300ms 后 616.572ms；playState paused→running。对应加载层 canvas clearRect 绘制数 30→31→31→41，证实形成中的粒子隐藏暂停、显示恢复并正常完成。隐藏为模拟 document.hidden/visibilitychange，不宣称操作系统后台节流测试。
+- 正常退出 computed transition 为 `opacity 0.36s, transform 0.36s`，ease/ease，is-leaving 到移除 362.1ms。导航前 emulate reduce 后，computed 为 `opacity 0.12s linear`、property opacity、duration 0.12s、transform none，移除差 122.6ms（非整次导航耗时）。仅验证这一受控工具路由的精确退出；最低延迟/缓存及其他路由仍以前轮证据和自动测试支持。
+- 退出中连续两次真实 Tab 后 activeElement=BODY，shell 全部非遮罩直接子节点 inert；真实点击 (50,50) 捕获 target 为 `route-loading-screen is-leaving`，同一时刻仍在退出且背景不可交互。移除后四个 shell 子节点 inert 均 false，搜索按钮真实 focus 成功。无背景 header/route/music 控件获得焦点或点击。
+- 精细指针 1440×1000：记录 6055 个粒子绘制坐标，指针 70px 内 490 粒子位移均值 5.136px、最大 8.916px；130px 外 5094 粒子最大 0.156px（有限形成的残差，非显著远端扰动）。移开并回聚后 800ms，draws 85→85、ParticleText RAF callbacks 83→83、pending 0→0；无页面异常。另测 hover/click/Enter/Space 各形成后回到 settled，click/键盘保持焦点；390×844 真实 hasTouch/isMobile 上下文 tap 后 forming→settled，非无限循环。
+- 四尺寸×深浅主题共八组补测全部可见胶囊后代的元素/文字 Range 矩形及真实裁切祖先，裁切与横向溢出均零；按钮最小 44×44px。胶囊 [x,y,w,h] 分别为 [1188.344,16,151.656,54]、[912,10,100,54]、[656,10,100,54]、[278,10,100,54]，主题不影响几何。图标及 kbd 的 scrollHeight 分别超过本身 line box 3–5px/2px，但 overflow visible、文字在所有裁切祖先内，不能将其误报为裁切；390px 浅色截图也已检查。
+- 本轮不重跑真实后端/认证/上传/生成/付费 API/外站或全站所有控件审计；前轮 Canvas/采样/observer fallback、五路由及打字循环证据保留。有限时间窗观测不保证所有设备/浏览器。全部临时脚本、快照及截图仅在 `C:\Users\lenovo\AppData\Local\Temp\wenhao-motion-loading-qa`；未读写 `.env*`、未触碰或暂存 `output/`，无后端、密钥、远程 Git 或生产变更。
+- 清理：停止本轮预览会话后，在浏览器所在主机环境确认 CLI default 已关闭、list 无浏览器，4182 无监听；关闭命令曾两次权限审核超时，普通受限环境无法观察主机会话，最终在同一主机环境完成关闭及复核。自查仅样式、回归测试、项目日志进入提交。
+
+## 2026-10-29 — 加载期间全局搜索快捷键复核
+
+- 最终审查发现此前验收遗漏了窗口级 Ctrl/Cmd+K：它可在加载或退出遮罩期间打开 body 下的搜索弹窗并夺取焦点。现保留快捷键的默认行为阻止，同时在加载遮罩存在时不打开搜索；遮罩移除后搜索和 Escape 焦点返回保持原样。真实搜索弹窗集成回归覆盖两种修饰键及加载、退出状态。
+- 修复前两个新增用例均因搜索弹窗出现而失败；修复后聚焦 4 文件 41/41、全量 44 文件 467/467 通过，构建和 Edge 检查通过，保留既有 Canvas 测试提示与大分块警告。本轮未补做真实浏览器快捷键探测。
+
+## 2026-10-30 — 紧凑工具目录本地验收
+
+- 收录 68 个唯一目的地，包含参考目录的 59 个目的地并保留个人常用工具；九个主分类加“我的常用”共十个展示分区。Playwright 在真实页面逐一搜索全部 68 个名称均有结果；分类工具数与展开后的卡片数一致。默认仅展开“我的常用”和“工具箱”，独立展开、全部展开/收起、搜索 Ollama 自动展开 AI 工具网站、清空后精确恢复原展开集合均通过。
+- 本地 Chromium 对 1440×1000、1024×900、390×844 三尺寸的深浅主题共六组验收并人工查看截图：依次三列/两列/单列，标题在首屏，卡片高度约 148px，无横向溢出。搜索框与按钮 computed min-height 44px；浏览器分数缩放矩形为 43.993px，按 0.1px 几何容差验收。页面滚动到底时最后卡片与音乐启动按钮顶部保留约 61px、68px、79px 间距。
+- 对 favicon 请求主动注入失败，六组均显示稳定的两字符 LOGO 后备，不出现破图；正常路径使用 favicon.im，第三方实时可达性不作永久保证。桌面 hover 上移 2px、外链箭头显现、键盘焦点描边、Target Cursor 激活通过；触屏上下文不挂载 Target Cursor。减少动态模式下折叠和卡片 computed transition 被既有全局规则压至 0.01ms、鼠标目标框移除，视觉上无过渡。
+- 完整 `npm.cmd test`：48 文件、480/480 通过；`npm.cmd run build` 通过，工具页保持独立懒加载 JS/CSS 分块。保留原有 JSDOM Canvas 未实现提示与 index/MusicPage 大于 500kB 的构建提示；无未处理异常。未修改生产逻辑、依赖、数据库或认证，未触碰或暂存用户 `output/`。
+- 预览地址 `http://127.0.0.1:5174/#tools`。本地待用户确认，未推送、未发布。
+
+## 2026-10-30 — 工具目录最终审查修复
+
+- 修复屏幕外懒加载 LOGO 在尚未请求时被五秒计时误判失败：IntersectionObserver 进入视口才设置图片地址并启动超时；未激活的图片不请求、不计时。域名标准化后以 host 为生命周期边界，保留成功/错误/超时、替换域名及卸载清理；空白域名立即使用两字符后备且无请求。搜索摘要加入当前去空格关键词，同数量搜索结果替换也会更新播报。
+- 恢复持久的渲染控件 computed min-height 回归：实际目录样式下，搜索、批量按钮、分类按钮、卡片与空结果“清除搜索”均至少 44px；保留密度源样式断言。增加 `tests/browser/tool-directory-regression.js` 可复跑的本地 Playwright CLI recipe，不增加依赖。
+- 六组尺寸/主题补验（1440×1000、1024×900、触屏 390×844，深/浅）：所有 favicon 请求用确定性有效 SVG 成功响应。全部展开后在顶部等待 5.5 秒，远处 Tavily 仍未请求、无错误后备；全部收起再展开并滚动到 Tavily 后成功加载。三/二/一列与无横向溢出通过；切换请求失败注入后两字符后备正常。真实空结果清除按钮高度 43.993px（computed 44px，按既有 0.1px 舍入容差）。本轮未重新逐项测音乐间距、光标和低动效，沿用上一节证据。
+- 完整 `npm.cmd test`：48 文件、487/487 通过；构建通过（222 模块），仅保留既有 Canvas 提示和大分块提示。未触碰或暂存 `output/`，未调用真实后端、登录、生成或外站导航。本地待用户确认，未推送、未发布。
+
+## 2026-10-31 — 首页精简与四卡指南本地预览
+
+- 根据用户确认，首页改为全屏 GradientWaves/WENHAO 粒子交互、AI 工程师、循环打字短句，下接四张互动指南与简洁页脚。撤下大「博客.」、介绍行、两枚 CTA 和原六个大首页板块；文章、作品、工具、AI 电商、管理、留言和音乐独立功能保留。
+- 四卡单选原位展开/收回，使用原创代码图形与仓库既有图片，不复制参考站源码或素材。站点数据取真实文章/分类/标签/工具数，无伪造访客数；文章预览自动切换、横向滑动与按钮切换，悬停/聚焦/页面隐藏/低动效暂停；索引链接实际进入分类/标签过滤后的文章页；联系卡只提供本站留言/更新入口，不添加未确认邮箱或假 RSS。
+- 右上合并为设置菜单，含搜索、公告、浅色/深色/跟随系统。搜索空闲状态不堆满内容，支持 Ctrl/Cmd+K、Enter 首个结果、Esc；公告复用焦点限制与背景 inert；系统偏好和解析后的 Theme 分开保存/监听。
+- 独立代码审查发现轮播悬停与焦点共用状态、设置 Tab 离开不关闭两项问题，均先用失败回归复现再修复；`08dd860` 范围复审确认关闭。原有被撤下组件仍单独测试，不以删除测试掩盖独立功能回归。
+- 完整 `npm.cmd test`：50 文件，500/500 通过；TypeScript/Vite 构建通过（223 模块）。保留已有 JSDOM Canvas 提示和 index/MusicPage 大分块提示，无新增依赖、数据库/认证/生成服务修改。`git diff --check` 通过。
+- Chrome 真实页面验证 1440×1000、1024×900、390×844 × 深浅主题：两列/两列/单列正确，四卡分别展开无横向溢出；可见触发、详情链接和摘要点击区至少约 43.993px（computed 最少 44px，以 0.1px 舍入容差核对）。首轮索引检查误纳入关闭 details 的后代，改为仅统计实际可见项后六组均通过。查看桌面首屏/四卡展开与手机卡片/公告/搜索截图，未保存到用户 output/。
+- 手机实际点击电商内容分类只显示对应一篇文章，搜索 Enter 进入全部文章页、公告焦点/关闭、跟随系统选项、Tab 离开设置关闭均已验证。减少动态通过单元测试与既有 CSS 规则覆盖，未额外模拟真实触屏设备、浏览器低动效环境或后台节流；不声称全设备覆盖。未执行后端写入、登录或付费调用。
+- 预览 `http://127.0.0.1:5174/#top`，四卡入口 `/#home-guide`。本地待用户视觉确认，未推送、未发布；用户 output/ 未改动。
+
+## 2026-11-03 — 用户明确授权发布，完成发布前检查
+
+- 用户明确要求“发布一下吧”，本次授权发布此前本地确认的四卡连续布局/叠卡动效、清晰四层插画、等高靠边顶栏、透明头像/favicon、目录搜索焦点修复与留言板同步/账号头像功能。
+- 发布前重新运行完整测试：55 文件 / 521 测试通过；TypeScript/Vite 生产构建通过；diff whitespace 检查通过。保留已有 Canvas 仿真与大分块提示。
+- 各修改已分别独立审查；高对比度焦点、低动效叠卡、滚动坐标和布局轨道问题已修复。数据库头像迁移已按用户单独授权完成，本次不重新执行 SQL。
+- 确认 Pages 仍为 legacy main `/`，域名 `geniusli.cn`；源码与部署工作树分离，发布前远端版本分别为 `2e12d3d` / `e1360e4`。只提交源码/测试/文档及指定素材，排除 `output/`、本地环境文件及构建缓存。保留工作树和旧哈希静态资源，方便后续迭代与缓存兼容。
+- 发布完成：源码 `dbf1f75`；静态发布 `36e62a0097cbe37c8a2b89c695f4cc30b0c7bc38`；GitHub Pages run `41592235814` success，Pages 状态 built。正式首页 HTTP 200，已引用 `index-DTRjkO5h.js` / `index-D9EnkZ3U.css`；头像 PNG、favicon PNG、工具 CSS、留言 JS 均 HTTP 200。构建生成的第三方 shader 模板字符串含原有空白，未手工改动哈希资源以消除生成文件 diff-whitespace 提示；源码 whitespace 检查通过。
+- 正式 Chrome 验收：留言板载入 28 条，14 个头像图片全部 complete/naturalWidth>0。实际刷新后同步按钮保持 43.993×43.993px、↻ 图标，未提交或修改留言。工具页显示 68 工具；点击搜索后输入框内部 outline none，外框 3px shadow，高度 45.239px。未重新登录、未触发 AI 生成/付费接口。未重新覆盖所有首页动效/低动效组合，沿用发布前本地验证。
+- 旧首页备份位于主工作区 `.deploy-backups/20261103-dbf1f75/index.html`；旧静态哈希文件保留。源码仅剩用户 `output/` 未跟踪，部署工作树保持干净。
+
+## 2026-11-03 — 私有访问统计发布
+
+- 用户提供 Cloudflare Web Analytics 公开站点 token 并明确要求“发布”。只在 HTTPS 正式域名加载一次官方模块脚本；本地开发、预览和认证回调不加载。不添加公开计数器、个人身份字段或自定义上报事件。
+- 重新通过 56 文件 / 525 项测试及生产构建；源码 `0bf28fd` 已推送，静态发布 `c3a400df119420c7aca28b081bf13a58df2a3fc3`，GitHub Pages run `41599739774` success。
+- 正式首页和新入口 `index-DOmz9wlt.js` 均 HTTP 200；首页引用新入口，线上包包含官方脚本地址和正确公开配置。浏览器工具在最终验收期间变为不可用，未验证浏览器实际上报或私有后台入库，不声称已有访问数或 hash 路由统计。
+- 旧首页备份 `.deploy-backups/20261103-analytics-0bf28fd/index.html`，保留旧静态文件。未修改数据库、域名设置或用户 `output/`。站长可在正常访问正式站后到自己的 Cloudflare Web Analytics 查看后续数据。

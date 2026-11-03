@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import type { GuestbookMessage, MessageStatus } from './types'
+import { GuestAvatar } from './GuestAvatar'
 
 const formatDate = (date: string) => new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(new Date(date))
 const formatTime = (date: string) => new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(date))
 
-const avatarText = (name: string) => name.replace(/\s/g, '').slice(0, 2).toUpperCase()
 
 export function MessageTimeline({
   messages,
@@ -61,7 +61,7 @@ export function MessageTimeline({
       return <div key={message.id}>
         {showDate && <div className="message-date"><span>{formatDate(message.createdAt)}</span></div>}
         <article className={message.isOwner ? 'message-row is-owner' : 'message-row'}>
-          <div className="message-avatar" aria-hidden="true">{avatarText(message.author)}</div>
+          <div className="message-avatar" aria-hidden="true"><GuestAvatar name={message.author} url={message.avatarUrl} /></div>
           <div className="message-body">
             <header>
               {message.website ? <a href={message.website} target="_blank" rel="noreferrer">{message.author}</a> : <strong>{message.author}</strong>}
